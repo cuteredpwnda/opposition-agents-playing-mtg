@@ -1,0 +1,63 @@
+# MTG Ontology — Competency Questions
+# These questions guide KnowledgeGraphBuilder's iterative discovery loop.
+# Each question represents something the knowledge graph should be able to answer.
+
+# === Card Lookups ===
+What is the mana cost and oracle text of a given card?
+What keywords does a given card have?
+What creature types does a given creature have?
+In which formats is a given card legal?
+What is the EDHREC rank and salt score of a given card?
+
+# === Combos ===
+What combos include a given card?
+What cards are needed to assemble a given combo?
+What effect does a given combo produce?
+What are the setup requirements for a given combo?
+How fragile is a given combo (how easily disrupted)?
+What combos produce infinite mana?
+What combos result in an instant win?
+
+# === Synergies ===
+What cards synergize with a given card?
+What is the synergy strength between two given cards?
+What tribal synergies exist for a given creature type?
+What mechanic-based synergies exist for a given keyword?
+
+# === Archetypes & Strategy ===
+What archetype does a given set of cards suggest?
+What are the signature cards of a given archetype?
+What win conditions does a given archetype typically use?
+What strategy (aggro, control, combo, etc.) does a given archetype employ?
+What are the weaknesses of a given archetype?
+What archetypes are strong against a given archetype?
+
+# === Counter-Play & Answers ===
+What cards effectively counter a given threat?
+What is the best timing to deploy a given answer?
+How effective is a given card as an answer to a given threat?
+What removal options exist for indestructible creatures?
+What answers exist for a given combo?
+
+# === Card Interactions & Rulings ===
+How do two given cards interact with each other?
+What are the official rulings for a given card?
+What comprehensive rule sections apply to a given interaction?
+Does a given card trigger another given card's ability?
+
+# === Deck Building ===
+What cards are in a given decklist?
+Who is the commander of a given Commander decklist?
+What archetype does a given decklist belong to?
+What format is a given decklist built for?
+
+# === Metagame ===
+What is the current metagame share of a given archetype?
+What are the top-tier archetypes in a given format?
+How has the metagame shifted after recent bans?
+
+# === Opponent Modeling ===
+Given an opponent is playing a control archetype, what counterspells might they have?
+Given cards already seen, what is the likely archetype of the opponent?
+What cards are typically in the hand of a player running a given archetype?
+What should I play around based on the opponent's open mana and archetype?

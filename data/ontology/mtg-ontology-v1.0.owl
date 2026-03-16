@@ -1,0 +1,1259 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rdf:RDF
+    xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+    xmlns:rdfs="http://www.w3.org/2000/01/rdf-schema#"
+    xmlns:owl="http://www.w3.org/2002/07/owl#"
+    xmlns:xsd="http://www.w3.org/2001/XMLSchema#"
+    xmlns:skos="http://www.w3.org/2004/02/skos/core#"
+    xmlns:dcterms="http://purl.org/dc/terms/"
+    xmlns:mtg="http://purl.org/mtg/ontology#"
+    xml:base="http://purl.org/mtg/ontology">
+
+  <!-- ================================================================== -->
+  <!--                       ONTOLOGY METADATA                            -->
+  <!-- ================================================================== -->
+
+  <owl:Ontology rdf:about="http://purl.org/mtg/ontology">
+    <rdfs:label xml:lang="en">Magic: The Gathering Ontology</rdfs:label>
+    <rdfs:comment xml:lang="en">
+      A formal OWL ontology for Magic: The Gathering, encoding cards, game
+      mechanics, combos, synergies, archetypes, and strategic relationships.
+      Designed to be used with KnowledgeGraphBuilder for automated KG
+      construction and OntologyExtender for human-in-the-loop extension.
+    </rdfs:comment>
+    <dcterms:creator>opposition-agents-playing-mtg</dcterms:creator>
+    <dcterms:created rdf:datatype="http://www.w3.org/2001/XMLSchema#date">2026-03-16</dcterms:created>
+    <owl:versionInfo>1.0.0</owl:versionInfo>
+    <owl:versionIRI rdf:resource="http://purl.org/mtg/ontology/1.0.0"/>
+  </owl:Ontology>
+
+  <!-- ================================================================== -->
+  <!--                  SECTION 1: ENUMERATED CLASSES                     -->
+  <!-- ================================================================== -->
+
+  <!-- ~~~~~~~~~~~~~~~~~~~~~~~ Color ~~~~~~~~~~~~~~~~~~~~~~~ -->
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#Color">
+    <rdfs:label xml:lang="en">Color</rdfs:label>
+    <rdfs:comment xml:lang="en">One of the five colors of mana in Magic: The Gathering.</rdfs:comment>
+    <owl:equivalentClass>
+      <owl:Class>
+        <owl:oneOf rdf:parseType="Collection">
+          <mtg:Color rdf:about="http://purl.org/mtg/ontology#White"/>
+          <mtg:Color rdf:about="http://purl.org/mtg/ontology#Blue"/>
+          <mtg:Color rdf:about="http://purl.org/mtg/ontology#Black"/>
+          <mtg:Color rdf:about="http://purl.org/mtg/ontology#Red"/>
+          <mtg:Color rdf:about="http://purl.org/mtg/ontology#Green"/>
+        </owl:oneOf>
+      </owl:Class>
+    </owl:equivalentClass>
+  </owl:Class>
+
+  <mtg:Color rdf:about="http://purl.org/mtg/ontology#White">
+    <rdfs:label xml:lang="en">White</rdfs:label>
+    <mtg:manaSymbol rdf:datatype="http://www.w3.org/2001/XMLSchema#string">{W}</mtg:manaSymbol>
+  </mtg:Color>
+  <mtg:Color rdf:about="http://purl.org/mtg/ontology#Blue">
+    <rdfs:label xml:lang="en">Blue</rdfs:label>
+    <mtg:manaSymbol rdf:datatype="http://www.w3.org/2001/XMLSchema#string">{U}</mtg:manaSymbol>
+  </mtg:Color>
+  <mtg:Color rdf:about="http://purl.org/mtg/ontology#Black">
+    <rdfs:label xml:lang="en">Black</rdfs:label>
+    <mtg:manaSymbol rdf:datatype="http://www.w3.org/2001/XMLSchema#string">{B}</mtg:manaSymbol>
+  </mtg:Color>
+  <mtg:Color rdf:about="http://purl.org/mtg/ontology#Red">
+    <rdfs:label xml:lang="en">Red</rdfs:label>
+    <mtg:manaSymbol rdf:datatype="http://www.w3.org/2001/XMLSchema#string">{R}</mtg:manaSymbol>
+  </mtg:Color>
+  <mtg:Color rdf:about="http://purl.org/mtg/ontology#Green">
+    <rdfs:label xml:lang="en">Green</rdfs:label>
+    <mtg:manaSymbol rdf:datatype="http://www.w3.org/2001/XMLSchema#string">{G}</mtg:manaSymbol>
+  </mtg:Color>
+
+  <!-- ~~~~~~~~~~~~~~~~~~~~~~~ Zone ~~~~~~~~~~~~~~~~~~~~~~~ -->
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#Zone">
+    <rdfs:label xml:lang="en">Zone</rdfs:label>
+    <rdfs:comment xml:lang="en">A game zone where cards or objects can exist (CR 400).</rdfs:comment>
+    <owl:equivalentClass>
+      <owl:Class>
+        <owl:oneOf rdf:parseType="Collection">
+          <mtg:Zone rdf:about="http://purl.org/mtg/ontology#Library"/>
+          <mtg:Zone rdf:about="http://purl.org/mtg/ontology#Hand"/>
+          <mtg:Zone rdf:about="http://purl.org/mtg/ontology#Battlefield"/>
+          <mtg:Zone rdf:about="http://purl.org/mtg/ontology#Graveyard"/>
+          <mtg:Zone rdf:about="http://purl.org/mtg/ontology#Exile"/>
+          <mtg:Zone rdf:about="http://purl.org/mtg/ontology#Stack"/>
+          <mtg:Zone rdf:about="http://purl.org/mtg/ontology#CommandZone"/>
+        </owl:oneOf>
+      </owl:Class>
+    </owl:equivalentClass>
+  </owl:Class>
+
+  <!-- ~~~~~~~~~~~~~~~~~~~~~~~ Phase ~~~~~~~~~~~~~~~~~~~~~~~ -->
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#Phase">
+    <rdfs:label xml:lang="en">Phase</rdfs:label>
+    <rdfs:comment xml:lang="en">A phase or step within a turn (CR 500).</rdfs:comment>
+  </owl:Class>
+
+  <mtg:Phase rdf:about="http://purl.org/mtg/ontology#UntapStep">
+    <rdfs:label xml:lang="en">Untap Step</rdfs:label>
+    <mtg:phaseOrder rdf:datatype="http://www.w3.org/2001/XMLSchema#integer">1</mtg:phaseOrder>
+  </mtg:Phase>
+  <mtg:Phase rdf:about="http://purl.org/mtg/ontology#UpkeepStep">
+    <rdfs:label xml:lang="en">Upkeep Step</rdfs:label>
+    <mtg:phaseOrder rdf:datatype="http://www.w3.org/2001/XMLSchema#integer">2</mtg:phaseOrder>
+  </mtg:Phase>
+  <mtg:Phase rdf:about="http://purl.org/mtg/ontology#DrawStep">
+    <rdfs:label xml:lang="en">Draw Step</rdfs:label>
+    <mtg:phaseOrder rdf:datatype="http://www.w3.org/2001/XMLSchema#integer">3</mtg:phaseOrder>
+  </mtg:Phase>
+  <mtg:Phase rdf:about="http://purl.org/mtg/ontology#MainPhase1">
+    <rdfs:label xml:lang="en">Main Phase 1</rdfs:label>
+    <mtg:phaseOrder rdf:datatype="http://www.w3.org/2001/XMLSchema#integer">4</mtg:phaseOrder>
+  </mtg:Phase>
+  <mtg:Phase rdf:about="http://purl.org/mtg/ontology#CombatBegin">
+    <rdfs:label xml:lang="en">Beginning of Combat</rdfs:label>
+    <mtg:phaseOrder rdf:datatype="http://www.w3.org/2001/XMLSchema#integer">5</mtg:phaseOrder>
+  </mtg:Phase>
+  <mtg:Phase rdf:about="http://purl.org/mtg/ontology#DeclareAttackers">
+    <rdfs:label xml:lang="en">Declare Attackers Step</rdfs:label>
+    <mtg:phaseOrder rdf:datatype="http://www.w3.org/2001/XMLSchema#integer">6</mtg:phaseOrder>
+  </mtg:Phase>
+  <mtg:Phase rdf:about="http://purl.org/mtg/ontology#DeclareBlockers">
+    <rdfs:label xml:lang="en">Declare Blockers Step</rdfs:label>
+    <mtg:phaseOrder rdf:datatype="http://www.w3.org/2001/XMLSchema#integer">7</mtg:phaseOrder>
+  </mtg:Phase>
+  <mtg:Phase rdf:about="http://purl.org/mtg/ontology#CombatDamage">
+    <rdfs:label xml:lang="en">Combat Damage Step</rdfs:label>
+    <mtg:phaseOrder rdf:datatype="http://www.w3.org/2001/XMLSchema#integer">8</mtg:phaseOrder>
+  </mtg:Phase>
+  <mtg:Phase rdf:about="http://purl.org/mtg/ontology#CombatEnd">
+    <rdfs:label xml:lang="en">End of Combat Step</rdfs:label>
+    <mtg:phaseOrder rdf:datatype="http://www.w3.org/2001/XMLSchema#integer">9</mtg:phaseOrder>
+  </mtg:Phase>
+  <mtg:Phase rdf:about="http://purl.org/mtg/ontology#MainPhase2">
+    <rdfs:label xml:lang="en">Main Phase 2</rdfs:label>
+    <mtg:phaseOrder rdf:datatype="http://www.w3.org/2001/XMLSchema#integer">10</mtg:phaseOrder>
+  </mtg:Phase>
+  <mtg:Phase rdf:about="http://purl.org/mtg/ontology#EndStep">
+    <rdfs:label xml:lang="en">End Step</rdfs:label>
+    <mtg:phaseOrder rdf:datatype="http://www.w3.org/2001/XMLSchema#integer">11</mtg:phaseOrder>
+  </mtg:Phase>
+  <mtg:Phase rdf:about="http://purl.org/mtg/ontology#CleanupStep">
+    <rdfs:label xml:lang="en">Cleanup Step</rdfs:label>
+    <mtg:phaseOrder rdf:datatype="http://www.w3.org/2001/XMLSchema#integer">12</mtg:phaseOrder>
+  </mtg:Phase>
+
+  <!-- ~~~~~~~~~~~~~~~~~~~~~~~ Format ~~~~~~~~~~~~~~~~~~~~~~~ -->
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#Format">
+    <rdfs:label xml:lang="en">Format</rdfs:label>
+    <rdfs:comment xml:lang="en">A sanctioned play format for Magic: The Gathering.</rdfs:comment>
+  </owl:Class>
+
+  <mtg:Format rdf:about="http://purl.org/mtg/ontology#Standard">
+    <rdfs:label xml:lang="en">Standard</rdfs:label>
+  </mtg:Format>
+  <mtg:Format rdf:about="http://purl.org/mtg/ontology#Commander">
+    <rdfs:label xml:lang="en">Commander (EDH)</rdfs:label>
+    <skos:altLabel xml:lang="en">EDH</skos:altLabel>
+  </mtg:Format>
+  <mtg:Format rdf:about="http://purl.org/mtg/ontology#Modern">
+    <rdfs:label xml:lang="en">Modern</rdfs:label>
+  </mtg:Format>
+  <mtg:Format rdf:about="http://purl.org/mtg/ontology#Pioneer">
+    <rdfs:label xml:lang="en">Pioneer</rdfs:label>
+  </mtg:Format>
+  <mtg:Format rdf:about="http://purl.org/mtg/ontology#Legacy">
+    <rdfs:label xml:lang="en">Legacy</rdfs:label>
+  </mtg:Format>
+  <mtg:Format rdf:about="http://purl.org/mtg/ontology#Vintage">
+    <rdfs:label xml:lang="en">Vintage</rdfs:label>
+  </mtg:Format>
+  <mtg:Format rdf:about="http://purl.org/mtg/ontology#Pauper">
+    <rdfs:label xml:lang="en">Pauper</rdfs:label>
+  </mtg:Format>
+
+  <!-- ~~~~~~~~~~~~~~~~~~~~~~~ Strategy ~~~~~~~~~~~~~~~~~~~~~~~ -->
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#Strategy">
+    <rdfs:label xml:lang="en">Strategy</rdfs:label>
+    <rdfs:comment xml:lang="en">A macro-level strategic approach (Aggro, Control, Combo, etc.).</rdfs:comment>
+  </owl:Class>
+
+  <mtg:Strategy rdf:about="http://purl.org/mtg/ontology#Aggro">
+    <rdfs:label xml:lang="en">Aggro</rdfs:label>
+    <rdfs:comment xml:lang="en">Win by dealing damage quickly with efficient creatures.</rdfs:comment>
+  </mtg:Strategy>
+  <mtg:Strategy rdf:about="http://purl.org/mtg/ontology#Midrange">
+    <rdfs:label xml:lang="en">Midrange</rdfs:label>
+    <rdfs:comment xml:lang="en">Win through individually powerful cards and attrition.</rdfs:comment>
+  </mtg:Strategy>
+  <mtg:Strategy rdf:about="http://purl.org/mtg/ontology#Control">
+    <rdfs:label xml:lang="en">Control</rdfs:label>
+    <rdfs:comment xml:lang="en">Win by answering threats and generating card advantage.</rdfs:comment>
+  </mtg:Strategy>
+  <mtg:Strategy rdf:about="http://purl.org/mtg/ontology#ComboStrategy">
+    <rdfs:label xml:lang="en">Combo</rdfs:label>
+    <rdfs:comment xml:lang="en">Win through a synergistic combination of specific cards.</rdfs:comment>
+  </mtg:Strategy>
+  <mtg:Strategy rdf:about="http://purl.org/mtg/ontology#Tempo">
+    <rdfs:label xml:lang="en">Tempo</rdfs:label>
+    <rdfs:comment xml:lang="en">Win by disrupting opponent while applying pressure.</rdfs:comment>
+  </mtg:Strategy>
+  <mtg:Strategy rdf:about="http://purl.org/mtg/ontology#Stax">
+    <rdfs:label xml:lang="en">Stax</rdfs:label>
+    <rdfs:comment xml:lang="en">Win by restricting opponents' ability to play the game.</rdfs:comment>
+  </mtg:Strategy>
+  <mtg:Strategy rdf:about="http://purl.org/mtg/ontology#Ramp">
+    <rdfs:label xml:lang="en">Ramp</rdfs:label>
+    <rdfs:comment xml:lang="en">Accelerate mana production to cast large spells ahead of curve.</rdfs:comment>
+  </mtg:Strategy>
+  <mtg:Strategy rdf:about="http://purl.org/mtg/ontology#Tribal">
+    <rdfs:label xml:lang="en">Tribal</rdfs:label>
+    <rdfs:comment xml:lang="en">Build around a specific creature type for synergy.</rdfs:comment>
+  </mtg:Strategy>
+
+  <!-- ================================================================== -->
+  <!--                   SECTION 2: CARD TYPE HIERARCHY                   -->
+  <!-- ================================================================== -->
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#Card">
+    <rdfs:label xml:lang="en">Card</rdfs:label>
+    <rdfs:comment xml:lang="en">
+      A Magic: The Gathering card. Represents the oracle (rules) identity
+      of a card, independent of any particular printing. Corresponds to a
+      Scryfall oracle card object.
+    </rdfs:comment>
+  </owl:Class>
+
+  <!-- Primary card types (CR 300) — all subclasses of Card -->
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#Creature">
+    <rdfs:label xml:lang="en">Creature</rdfs:label>
+    <rdfs:comment xml:lang="en">A permanent with power and toughness that can attack and block (CR 302).</rdfs:comment>
+    <rdfs:subClassOf rdf:resource="http://purl.org/mtg/ontology#Card"/>
+  </owl:Class>
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#Instant">
+    <rdfs:label xml:lang="en">Instant</rdfs:label>
+    <rdfs:comment xml:lang="en">A spell that can be cast any time you could cast an instant (CR 304).</rdfs:comment>
+    <rdfs:subClassOf rdf:resource="http://purl.org/mtg/ontology#Card"/>
+  </owl:Class>
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#Sorcery">
+    <rdfs:label xml:lang="en">Sorcery</rdfs:label>
+    <rdfs:comment xml:lang="en">A spell that can only be cast during a main phase when the stack is empty (CR 307).</rdfs:comment>
+    <rdfs:subClassOf rdf:resource="http://purl.org/mtg/ontology#Card"/>
+  </owl:Class>
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#Enchantment">
+    <rdfs:label xml:lang="en">Enchantment</rdfs:label>
+    <rdfs:comment xml:lang="en">A permanent that represents magical effects (CR 303).</rdfs:comment>
+    <rdfs:subClassOf rdf:resource="http://purl.org/mtg/ontology#Card"/>
+  </owl:Class>
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#Artifact">
+    <rdfs:label xml:lang="en">Artifact</rdfs:label>
+    <rdfs:comment xml:lang="en">A permanent representing a magical item (CR 301).</rdfs:comment>
+    <rdfs:subClassOf rdf:resource="http://purl.org/mtg/ontology#Card"/>
+  </owl:Class>
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#Planeswalker">
+    <rdfs:label xml:lang="en">Planeswalker</rdfs:label>
+    <rdfs:comment xml:lang="en">A permanent representing an ally who fights alongside you (CR 306).</rdfs:comment>
+    <rdfs:subClassOf rdf:resource="http://purl.org/mtg/ontology#Card"/>
+  </owl:Class>
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#Land">
+    <rdfs:label xml:lang="en">Land</rdfs:label>
+    <rdfs:comment xml:lang="en">A permanent that primarily produces mana (CR 305). Played, not cast.</rdfs:comment>
+    <rdfs:subClassOf rdf:resource="http://purl.org/mtg/ontology#Card"/>
+  </owl:Class>
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#Battle">
+    <rdfs:label xml:lang="en">Battle</rdfs:label>
+    <rdfs:comment xml:lang="en">A permanent representing a battlefield conflict (CR 310).</rdfs:comment>
+    <rdfs:subClassOf rdf:resource="http://purl.org/mtg/ontology#Card"/>
+  </owl:Class>
+
+  <!-- Subtypes as classes — cards can be multi-typed via OWL multiple inheritance -->
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#Aura">
+    <rdfs:label xml:lang="en">Aura</rdfs:label>
+    <rdfs:comment xml:lang="en">An enchantment subtype that attaches to another permanent.</rdfs:comment>
+    <rdfs:subClassOf rdf:resource="http://purl.org/mtg/ontology#Enchantment"/>
+  </owl:Class>
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#Equipment">
+    <rdfs:label xml:lang="en">Equipment</rdfs:label>
+    <rdfs:comment xml:lang="en">An artifact subtype that attaches to a creature.</rdfs:comment>
+    <rdfs:subClassOf rdf:resource="http://purl.org/mtg/ontology#Artifact"/>
+  </owl:Class>
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#Vehicle">
+    <rdfs:label xml:lang="en">Vehicle</rdfs:label>
+    <rdfs:comment xml:lang="en">An artifact that can be crewed to become a creature.</rdfs:comment>
+    <rdfs:subClassOf rdf:resource="http://purl.org/mtg/ontology#Artifact"/>
+  </owl:Class>
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#Saga">
+    <rdfs:label xml:lang="en">Saga</rdfs:label>
+    <rdfs:comment xml:lang="en">An enchantment with chapter abilities that trigger over multiple turns.</rdfs:comment>
+    <rdfs:subClassOf rdf:resource="http://purl.org/mtg/ontology#Enchantment"/>
+  </owl:Class>
+
+  <!-- Land subtypes -->
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#BasicLand">
+    <rdfs:label xml:lang="en">Basic Land</rdfs:label>
+    <rdfs:subClassOf rdf:resource="http://purl.org/mtg/ontology#Land"/>
+  </owl:Class>
+
+  <!-- ================================================================== -->
+  <!--              SECTION 3: CREATURE TYPE (TRIBE) TAXONOMY             -->
+  <!-- ================================================================== -->
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#CreatureType">
+    <rdfs:label xml:lang="en">Creature Type</rdfs:label>
+    <rdfs:comment xml:lang="en">A creature subtype / tribe (Elf, Goblin, Wizard, Dragon, etc.).</rdfs:comment>
+  </owl:Class>
+
+  <!-- Representative creature types — extensible by OntologyExtender -->
+  <mtg:CreatureType rdf:about="http://purl.org/mtg/ontology#Elf"><rdfs:label>Elf</rdfs:label></mtg:CreatureType>
+  <mtg:CreatureType rdf:about="http://purl.org/mtg/ontology#Goblin"><rdfs:label>Goblin</rdfs:label></mtg:CreatureType>
+  <mtg:CreatureType rdf:about="http://purl.org/mtg/ontology#Wizard"><rdfs:label>Wizard</rdfs:label></mtg:CreatureType>
+  <mtg:CreatureType rdf:about="http://purl.org/mtg/ontology#Dragon"><rdfs:label>Dragon</rdfs:label></mtg:CreatureType>
+  <mtg:CreatureType rdf:about="http://purl.org/mtg/ontology#Human"><rdfs:label>Human</rdfs:label></mtg:CreatureType>
+  <mtg:CreatureType rdf:about="http://purl.org/mtg/ontology#Zombie"><rdfs:label>Zombie</rdfs:label></mtg:CreatureType>
+  <mtg:CreatureType rdf:about="http://purl.org/mtg/ontology#Merfolk"><rdfs:label>Merfolk</rdfs:label></mtg:CreatureType>
+  <mtg:CreatureType rdf:about="http://purl.org/mtg/ontology#Angel"><rdfs:label>Angel</rdfs:label></mtg:CreatureType>
+  <mtg:CreatureType rdf:about="http://purl.org/mtg/ontology#Demon"><rdfs:label>Demon</rdfs:label></mtg:CreatureType>
+  <mtg:CreatureType rdf:about="http://purl.org/mtg/ontology#Vampire"><rdfs:label>Vampire</rdfs:label></mtg:CreatureType>
+  <mtg:CreatureType rdf:about="http://purl.org/mtg/ontology#Beast"><rdfs:label>Beast</rdfs:label></mtg:CreatureType>
+  <mtg:CreatureType rdf:about="http://purl.org/mtg/ontology#Soldier"><rdfs:label>Soldier</rdfs:label></mtg:CreatureType>
+  <mtg:CreatureType rdf:about="http://purl.org/mtg/ontology#Rogue"><rdfs:label>Rogue</rdfs:label></mtg:CreatureType>
+  <mtg:CreatureType rdf:about="http://purl.org/mtg/ontology#Cleric"><rdfs:label>Cleric</rdfs:label></mtg:CreatureType>
+  <mtg:CreatureType rdf:about="http://purl.org/mtg/ontology#Warrior"><rdfs:label>Warrior</rdfs:label></mtg:CreatureType>
+  <mtg:CreatureType rdf:about="http://purl.org/mtg/ontology#Knight"><rdfs:label>Knight</rdfs:label></mtg:CreatureType>
+  <mtg:CreatureType rdf:about="http://purl.org/mtg/ontology#Spirit"><rdfs:label>Spirit</rdfs:label></mtg:CreatureType>
+  <mtg:CreatureType rdf:about="http://purl.org/mtg/ontology#Elemental"><rdfs:label>Elemental</rdfs:label></mtg:CreatureType>
+  <mtg:CreatureType rdf:about="http://purl.org/mtg/ontology#Dinosaur"><rdfs:label>Dinosaur</rdfs:label></mtg:CreatureType>
+  <mtg:CreatureType rdf:about="http://purl.org/mtg/ontology#Sliver"><rdfs:label>Sliver</rdfs:label></mtg:CreatureType>
+
+  <!-- ================================================================== -->
+  <!--                SECTION 4: KEYWORD / ABILITY CLASSES                -->
+  <!-- ================================================================== -->
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#Keyword">
+    <rdfs:label xml:lang="en">Keyword</rdfs:label>
+    <rdfs:comment xml:lang="en">A keyword ability, keyword action, or ability word (CR 702–703).</rdfs:comment>
+  </owl:Class>
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#EvergreenKeyword">
+    <rdfs:label xml:lang="en">Evergreen Keyword</rdfs:label>
+    <rdfs:comment xml:lang="en">A keyword that appears in every or nearly every set.</rdfs:comment>
+    <rdfs:subClassOf rdf:resource="http://purl.org/mtg/ontology#Keyword"/>
+  </owl:Class>
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#AbilityWord">
+    <rdfs:label xml:lang="en">Ability Word</rdfs:label>
+    <rdfs:comment xml:lang="en">An italicized word that groups thematically related abilities (e.g., Landfall).</rdfs:comment>
+    <rdfs:subClassOf rdf:resource="http://purl.org/mtg/ontology#Keyword"/>
+  </owl:Class>
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#MechanicKeyword">
+    <rdfs:label xml:lang="en">Mechanic Keyword</rdfs:label>
+    <rdfs:comment xml:lang="en">A set-specific or era-specific keyword mechanic (e.g., Storm, Cascade, Infect).</rdfs:comment>
+    <rdfs:subClassOf rdf:resource="http://purl.org/mtg/ontology#Keyword"/>
+  </owl:Class>
+
+  <!-- Evergreen keyword instances -->
+  <mtg:EvergreenKeyword rdf:about="http://purl.org/mtg/ontology#Flying"><rdfs:label>Flying</rdfs:label><rdfs:comment>This creature can only be blocked by creatures with flying or reach.</rdfs:comment></mtg:EvergreenKeyword>
+  <mtg:EvergreenKeyword rdf:about="http://purl.org/mtg/ontology#FirstStrike"><rdfs:label>First Strike</rdfs:label></mtg:EvergreenKeyword>
+  <mtg:EvergreenKeyword rdf:about="http://purl.org/mtg/ontology#DoubleStrike"><rdfs:label>Double Strike</rdfs:label></mtg:EvergreenKeyword>
+  <mtg:EvergreenKeyword rdf:about="http://purl.org/mtg/ontology#Deathtouch"><rdfs:label>Deathtouch</rdfs:label></mtg:EvergreenKeyword>
+  <mtg:EvergreenKeyword rdf:about="http://purl.org/mtg/ontology#Trample"><rdfs:label>Trample</rdfs:label></mtg:EvergreenKeyword>
+  <mtg:EvergreenKeyword rdf:about="http://purl.org/mtg/ontology#Haste"><rdfs:label>Haste</rdfs:label></mtg:EvergreenKeyword>
+  <mtg:EvergreenKeyword rdf:about="http://purl.org/mtg/ontology#Flash"><rdfs:label>Flash</rdfs:label></mtg:EvergreenKeyword>
+  <mtg:EvergreenKeyword rdf:about="http://purl.org/mtg/ontology#Hexproof"><rdfs:label>Hexproof</rdfs:label></mtg:EvergreenKeyword>
+  <mtg:EvergreenKeyword rdf:about="http://purl.org/mtg/ontology#Indestructible"><rdfs:label>Indestructible</rdfs:label></mtg:EvergreenKeyword>
+  <mtg:EvergreenKeyword rdf:about="http://purl.org/mtg/ontology#Vigilance"><rdfs:label>Vigilance</rdfs:label></mtg:EvergreenKeyword>
+  <mtg:EvergreenKeyword rdf:about="http://purl.org/mtg/ontology#Lifelink"><rdfs:label>Lifelink</rdfs:label></mtg:EvergreenKeyword>
+  <mtg:EvergreenKeyword rdf:about="http://purl.org/mtg/ontology#Reach"><rdfs:label>Reach</rdfs:label></mtg:EvergreenKeyword>
+  <mtg:EvergreenKeyword rdf:about="http://purl.org/mtg/ontology#Menace"><rdfs:label>Menace</rdfs:label></mtg:EvergreenKeyword>
+  <mtg:EvergreenKeyword rdf:about="http://purl.org/mtg/ontology#Ward"><rdfs:label>Ward</rdfs:label></mtg:EvergreenKeyword>
+  <mtg:EvergreenKeyword rdf:about="http://purl.org/mtg/ontology#Defender"><rdfs:label>Defender</rdfs:label></mtg:EvergreenKeyword>
+
+  <!-- Ability word instances -->
+  <mtg:AbilityWord rdf:about="http://purl.org/mtg/ontology#Landfall"><rdfs:label>Landfall</rdfs:label></mtg:AbilityWord>
+  <mtg:AbilityWord rdf:about="http://purl.org/mtg/ontology#Constellation"><rdfs:label>Constellation</rdfs:label></mtg:AbilityWord>
+  <mtg:AbilityWord rdf:about="http://purl.org/mtg/ontology#Revolt"><rdfs:label>Revolt</rdfs:label></mtg:AbilityWord>
+  <mtg:AbilityWord rdf:about="http://purl.org/mtg/ontology#Magecraft"><rdfs:label>Magecraft</rdfs:label></mtg:AbilityWord>
+  <mtg:AbilityWord rdf:about="http://purl.org/mtg/ontology#Threshold"><rdfs:label>Threshold</rdfs:label></mtg:AbilityWord>
+
+  <!-- Mechanic keyword instances -->
+  <mtg:MechanicKeyword rdf:about="http://purl.org/mtg/ontology#Storm"><rdfs:label>Storm</rdfs:label></mtg:MechanicKeyword>
+  <mtg:MechanicKeyword rdf:about="http://purl.org/mtg/ontology#Cascade"><rdfs:label>Cascade</rdfs:label></mtg:MechanicKeyword>
+  <mtg:MechanicKeyword rdf:about="http://purl.org/mtg/ontology#Infect"><rdfs:label>Infect</rdfs:label></mtg:MechanicKeyword>
+  <mtg:MechanicKeyword rdf:about="http://purl.org/mtg/ontology#Annihilator"><rdfs:label>Annihilator</rdfs:label></mtg:MechanicKeyword>
+  <mtg:MechanicKeyword rdf:about="http://purl.org/mtg/ontology#Dredge"><rdfs:label>Dredge</rdfs:label></mtg:MechanicKeyword>
+  <mtg:MechanicKeyword rdf:about="http://purl.org/mtg/ontology#Madness"><rdfs:label>Madness</rdfs:label></mtg:MechanicKeyword>
+  <mtg:MechanicKeyword rdf:about="http://purl.org/mtg/ontology#Flashback"><rdfs:label>Flashback</rdfs:label></mtg:MechanicKeyword>
+  <mtg:MechanicKeyword rdf:about="http://purl.org/mtg/ontology#Proliferate"><rdfs:label>Proliferate</rdfs:label></mtg:MechanicKeyword>
+  <mtg:MechanicKeyword rdf:about="http://purl.org/mtg/ontology#Convoke"><rdfs:label>Convoke</rdfs:label></mtg:MechanicKeyword>
+  <mtg:MechanicKeyword rdf:about="http://purl.org/mtg/ontology#Emerge"><rdfs:label>Emerge</rdfs:label></mtg:MechanicKeyword>
+  <mtg:MechanicKeyword rdf:about="http://purl.org/mtg/ontology#Morph"><rdfs:label>Morph</rdfs:label></mtg:MechanicKeyword>
+  <mtg:MechanicKeyword rdf:about="http://purl.org/mtg/ontology#Mutate"><rdfs:label>Mutate</rdfs:label></mtg:MechanicKeyword>
+
+  <!-- ================================================================== -->
+  <!--                       SECTION 5: ABILITY TYPES                     -->
+  <!-- ================================================================== -->
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#Ability">
+    <rdfs:label xml:lang="en">Ability</rdfs:label>
+    <rdfs:comment xml:lang="en">An ability on a card or object (CR 113).</rdfs:comment>
+  </owl:Class>
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#ActivatedAbility">
+    <rdfs:label xml:lang="en">Activated Ability</rdfs:label>
+    <rdfs:comment xml:lang="en">An ability with a cost : effect structure (CR 602).</rdfs:comment>
+    <rdfs:subClassOf rdf:resource="http://purl.org/mtg/ontology#Ability"/>
+  </owl:Class>
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#TriggeredAbility">
+    <rdfs:label xml:lang="en">Triggered Ability</rdfs:label>
+    <rdfs:comment xml:lang="en">An ability that triggers on an event: When/Whenever/At (CR 603).</rdfs:comment>
+    <rdfs:subClassOf rdf:resource="http://purl.org/mtg/ontology#Ability"/>
+  </owl:Class>
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#StaticAbility">
+    <rdfs:label xml:lang="en">Static Ability</rdfs:label>
+    <rdfs:comment xml:lang="en">An ability that applies continuously while the object is in the relevant zone (CR 604).</rdfs:comment>
+    <rdfs:subClassOf rdf:resource="http://purl.org/mtg/ontology#Ability"/>
+  </owl:Class>
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#ManaAbility">
+    <rdfs:label xml:lang="en">Mana Ability</rdfs:label>
+    <rdfs:comment xml:lang="en">An activated or triggered ability that produces mana and does not use the stack (CR 605).</rdfs:comment>
+    <rdfs:subClassOf rdf:resource="http://purl.org/mtg/ontology#Ability"/>
+  </owl:Class>
+
+  <!-- ================================================================== -->
+  <!--                  SECTION 6: STRATEGIC CONCEPTS                     -->
+  <!-- ================================================================== -->
+
+  <!-- ~~~~~~~~~~~~~~~~~~~~~~~ Effect ~~~~~~~~~~~~~~~~~~~~~~~ -->
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#Effect">
+    <rdfs:label xml:lang="en">Effect</rdfs:label>
+    <rdfs:comment xml:lang="en">A game effect produced by a spell, ability, or combo.</rdfs:comment>
+  </owl:Class>
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#ReplacementEffect">
+    <rdfs:label xml:lang="en">Replacement Effect</rdfs:label>
+    <rdfs:comment xml:lang="en">"If ... would ... instead" — modifies events before they happen (CR 614).</rdfs:comment>
+    <rdfs:subClassOf rdf:resource="http://purl.org/mtg/ontology#Effect"/>
+  </owl:Class>
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#ContinuousEffect">
+    <rdfs:label xml:lang="en">Continuous Effect</rdfs:label>
+    <rdfs:comment xml:lang="en">An ongoing effect that modifies characteristics or game rules (CR 611).</rdfs:comment>
+    <rdfs:subClassOf rdf:resource="http://purl.org/mtg/ontology#Effect"/>
+  </owl:Class>
+
+  <!-- Named effect results (for combos) -->
+  <mtg:Effect rdf:about="http://purl.org/mtg/ontology#InfiniteMana"><rdfs:label>Infinite Mana</rdfs:label></mtg:Effect>
+  <mtg:Effect rdf:about="http://purl.org/mtg/ontology#InfiniteDamage"><rdfs:label>Infinite Damage</rdfs:label></mtg:Effect>
+  <mtg:Effect rdf:about="http://purl.org/mtg/ontology#InfiniteTokens"><rdfs:label>Infinite Tokens</rdfs:label></mtg:Effect>
+  <mtg:Effect rdf:about="http://purl.org/mtg/ontology#InfiniteLifegain"><rdfs:label>Infinite Lifegain</rdfs:label></mtg:Effect>
+  <mtg:Effect rdf:about="http://purl.org/mtg/ontology#InfiniteDraw"><rdfs:label>Infinite Draw</rdfs:label></mtg:Effect>
+  <mtg:Effect rdf:about="http://purl.org/mtg/ontology#LibraryExile"><rdfs:label>Library Exile (Win)</rdfs:label><rdfs:comment>Win via exiling own library (e.g. Thassa's Oracle + Demonic Consultation).</rdfs:comment></mtg:Effect>
+  <mtg:Effect rdf:about="http://purl.org/mtg/ontology#MillOut"><rdfs:label>Mill Out</rdfs:label></mtg:Effect>
+  <mtg:Effect rdf:about="http://purl.org/mtg/ontology#BoardLock"><rdfs:label>Board Lock</rdfs:label><rdfs:comment>A state where opponents cannot meaningfully act.</rdfs:comment></mtg:Effect>
+  <mtg:Effect rdf:about="http://purl.org/mtg/ontology#ExtraTurns"><rdfs:label>Extra Turns</rdfs:label></mtg:Effect>
+
+  <!-- ~~~~~~~~~~~~~~~~~~~~~~~ Combo ~~~~~~~~~~~~~~~~~~~~~~~ -->
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#Combo">
+    <rdfs:label xml:lang="en">Combo</rdfs:label>
+    <rdfs:comment xml:lang="en">
+      A synergistic combination of two or more cards that produces a powerful
+      (often game-winning) effect. Sourced from Commander Spellbook, EDHREC,
+      and LLM-assisted discovery.
+    </rdfs:comment>
+  </owl:Class>
+
+  <!-- ~~~~~~~~~~~~~~~~~~~~~~~ Synergy ~~~~~~~~~~~~~~~~~~~~~~~ -->
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#Synergy">
+    <rdfs:label xml:lang="en">Synergy</rdfs:label>
+    <rdfs:comment xml:lang="en">
+      A positive interaction between two cards that is weaker than a combo
+      but still strategically significant (e.g. Rhystic Study in a deck
+      that wants to draw cards).
+    </rdfs:comment>
+  </owl:Class>
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#TribalSynergy">
+    <rdfs:label xml:lang="en">Tribal Synergy</rdfs:label>
+    <rdfs:subClassOf rdf:resource="http://purl.org/mtg/ontology#Synergy"/>
+  </owl:Class>
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#MechanicSynergy">
+    <rdfs:label xml:lang="en">Mechanic Synergy</rdfs:label>
+    <rdfs:subClassOf rdf:resource="http://purl.org/mtg/ontology#Synergy"/>
+  </owl:Class>
+
+  <!-- ~~~~~~~~~~~~~~~~~~~~~~~ Archetype ~~~~~~~~~~~~~~~~~~~~~~~ -->
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#Archetype">
+    <rdfs:label xml:lang="en">Archetype</rdfs:label>
+    <rdfs:comment xml:lang="en">
+      A named deck archetype defined by its color identity, strategy, and
+      characteristic card choices (e.g. "Azorius Control", "Mono-Green Stompy").
+    </rdfs:comment>
+  </owl:Class>
+
+  <!-- ~~~~~~~~~~~~~~~~~~~~~~~ CounterPlay ~~~~~~~~~~~~~~~~~~~~~~~ -->
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#CounterPlay">
+    <rdfs:label xml:lang="en">Counter-Play</rdfs:label>
+    <rdfs:comment xml:lang="en">
+      A strategic answer to a specific threat, combo, or strategy.
+      Encodes "what beats what" knowledge essential for opponent modeling.
+    </rdfs:comment>
+  </owl:Class>
+
+  <!-- ~~~~~~~~~~~~~~~~~~~~~~~ Interaction ~~~~~~~~~~~~~~~~~~~~~~~ -->
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#Interaction">
+    <rdfs:label xml:lang="en">Interaction</rdfs:label>
+    <rdfs:comment xml:lang="en">
+      A rules interaction between two cards — how they work together or
+      against each other based on the comprehensive rules.
+    </rdfs:comment>
+  </owl:Class>
+
+  <!-- ~~~~~~~~~~~~~~~~~~~~~~~ Ruling ~~~~~~~~~~~~~~~~~~~~~~~ -->
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#Ruling">
+    <rdfs:label xml:lang="en">Ruling</rdfs:label>
+    <rdfs:comment xml:lang="en">
+      An official rules clarification for a card, sourced from Scryfall
+      rulings or the Comprehensive Rules.
+    </rdfs:comment>
+  </owl:Class>
+
+  <!-- ~~~~~~~~~~~~~~~~~~~~~~~ Decklist ~~~~~~~~~~~~~~~~~~~~~~~ -->
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#Decklist">
+    <rdfs:label xml:lang="en">Decklist</rdfs:label>
+    <rdfs:comment xml:lang="en">A specific deck configuration with a list of cards and quantities.</rdfs:comment>
+  </owl:Class>
+
+  <!-- ~~~~~~~~~~~~~~~~~~~~~~~ MetagameSnapshot ~~~~~~~~~~~~~~~~~~~~~~~ -->
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#MetagameSnapshot">
+    <rdfs:label xml:lang="en">Metagame Snapshot</rdfs:label>
+    <rdfs:comment xml:lang="en">
+      A point-in-time picture of the competitive metagame for a format,
+      capturing archetype prevalence, win rates, and tier placement.
+    </rdfs:comment>
+  </owl:Class>
+
+  <!-- ================================================================== -->
+  <!--                 SECTION 7: OBJECT PROPERTIES (EDGES)               -->
+  <!-- ================================================================== -->
+
+  <!-- ~~~~~~~~~~~~~~~~~~~~~~ Card → Keyword ~~~~~~~~~~~~~~~~~~~~~~ -->
+
+  <owl:ObjectProperty rdf:about="http://purl.org/mtg/ontology#hasKeyword">
+    <rdfs:label xml:lang="en">has keyword</rdfs:label>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Card"/>
+    <rdfs:range rdf:resource="http://purl.org/mtg/ontology#Keyword"/>
+  </owl:ObjectProperty>
+
+  <!-- ~~~~~~~~~~~~~~~~~~~~~~ Card → Color ~~~~~~~~~~~~~~~~~~~~~~ -->
+
+  <owl:ObjectProperty rdf:about="http://purl.org/mtg/ontology#hasColorIdentity">
+    <rdfs:label xml:lang="en">has color identity</rdfs:label>
+    <rdfs:comment xml:lang="en">The color identity of a card, used for Commander deck-building restrictions.</rdfs:comment>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Card"/>
+    <rdfs:range rdf:resource="http://purl.org/mtg/ontology#Color"/>
+  </owl:ObjectProperty>
+
+  <owl:ObjectProperty rdf:about="http://purl.org/mtg/ontology#hasColor">
+    <rdfs:label xml:lang="en">has color</rdfs:label>
+    <rdfs:comment xml:lang="en">The color(s) of a card (from its mana cost).</rdfs:comment>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Card"/>
+    <rdfs:range rdf:resource="http://purl.org/mtg/ontology#Color"/>
+  </owl:ObjectProperty>
+
+  <!-- ~~~~~~~~~~~~~~~~~~~~~~ Card → CreatureType ~~~~~~~~~~~~~~~~~~~~~~ -->
+
+  <owl:ObjectProperty rdf:about="http://purl.org/mtg/ontology#hasCreatureType">
+    <rdfs:label xml:lang="en">has creature type</rdfs:label>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Creature"/>
+    <rdfs:range rdf:resource="http://purl.org/mtg/ontology#CreatureType"/>
+  </owl:ObjectProperty>
+
+  <!-- ~~~~~~~~~~~~~~~~~~~~~~ Card → Ability ~~~~~~~~~~~~~~~~~~~~~~ -->
+
+  <owl:ObjectProperty rdf:about="http://purl.org/mtg/ontology#hasAbility">
+    <rdfs:label xml:lang="en">has ability</rdfs:label>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Card"/>
+    <rdfs:range rdf:resource="http://purl.org/mtg/ontology#Ability"/>
+  </owl:ObjectProperty>
+
+  <!-- ~~~~~~~~~~~~~~~~~~~~~~ Card → Ruling ~~~~~~~~~~~~~~~~~~~~~~ -->
+
+  <owl:ObjectProperty rdf:about="http://purl.org/mtg/ontology#hasRuling">
+    <rdfs:label xml:lang="en">has ruling</rdfs:label>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Card"/>
+    <rdfs:range rdf:resource="http://purl.org/mtg/ontology#Ruling"/>
+  </owl:ObjectProperty>
+
+  <!-- ~~~~~~~~~~~~~~~~~~~~~~ Card → Format legality ~~~~~~~~~~~~~~~~~~~~~~ -->
+
+  <owl:ObjectProperty rdf:about="http://purl.org/mtg/ontology#legalIn">
+    <rdfs:label xml:lang="en">legal in</rdfs:label>
+    <rdfs:comment xml:lang="en">The card is legal to play in this format.</rdfs:comment>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Card"/>
+    <rdfs:range rdf:resource="http://purl.org/mtg/ontology#Format"/>
+  </owl:ObjectProperty>
+
+  <owl:ObjectProperty rdf:about="http://purl.org/mtg/ontology#bannedIn">
+    <rdfs:label xml:lang="en">banned in</rdfs:label>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Card"/>
+    <rdfs:range rdf:resource="http://purl.org/mtg/ontology#Format"/>
+  </owl:ObjectProperty>
+
+  <!-- ~~~~~~~~~~~~~~~~~~~~~~ Combo relationships ~~~~~~~~~~~~~~~~~~~~~~ -->
+
+  <owl:ObjectProperty rdf:about="http://purl.org/mtg/ontology#partOfCombo">
+    <rdfs:label xml:lang="en">part of combo</rdfs:label>
+    <rdfs:comment xml:lang="en">This card is a component piece of a combo.</rdfs:comment>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Card"/>
+    <rdfs:range rdf:resource="http://purl.org/mtg/ontology#Combo"/>
+  </owl:ObjectProperty>
+
+  <owl:ObjectProperty rdf:about="http://purl.org/mtg/ontology#hasComboComponent">
+    <rdfs:label xml:lang="en">has combo component</rdfs:label>
+    <rdfs:comment xml:lang="en">This combo requires this card as a component.</rdfs:comment>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Combo"/>
+    <rdfs:range rdf:resource="http://purl.org/mtg/ontology#Card"/>
+    <owl:inverseOf rdf:resource="http://purl.org/mtg/ontology#partOfCombo"/>
+  </owl:ObjectProperty>
+
+  <owl:ObjectProperty rdf:about="http://purl.org/mtg/ontology#producesEffect">
+    <rdfs:label xml:lang="en">produces effect</rdfs:label>
+    <rdfs:comment xml:lang="en">The combo or card produces this effect when it resolves.</rdfs:comment>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Combo"/>
+    <rdfs:range rdf:resource="http://purl.org/mtg/ontology#Effect"/>
+  </owl:ObjectProperty>
+
+  <!-- ~~~~~~~~~~~~~~~~~~~~~~ Synergy relationships ~~~~~~~~~~~~~~~~~~~~~~ -->
+
+  <owl:ObjectProperty rdf:about="http://purl.org/mtg/ontology#synergizesWith">
+    <rdfs:label xml:lang="en">synergizes with</rdfs:label>
+    <rdfs:comment xml:lang="en">This card has a positive synergy with the target card.</rdfs:comment>
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#SymmetricProperty"/>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Card"/>
+    <rdfs:range rdf:resource="http://purl.org/mtg/ontology#Card"/>
+  </owl:ObjectProperty>
+
+  <owl:ObjectProperty rdf:about="http://purl.org/mtg/ontology#hasSynergyWith">
+    <rdfs:label xml:lang="en">has synergy with (reified)</rdfs:label>
+    <rdfs:comment xml:lang="en">Links a card to a reified Synergy node (for storing strength and description).</rdfs:comment>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Card"/>
+    <rdfs:range rdf:resource="http://purl.org/mtg/ontology#Synergy"/>
+  </owl:ObjectProperty>
+
+  <owl:ObjectProperty rdf:about="http://purl.org/mtg/ontology#synergyInvolves">
+    <rdfs:label xml:lang="en">synergy involves</rdfs:label>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Synergy"/>
+    <rdfs:range rdf:resource="http://purl.org/mtg/ontology#Card"/>
+  </owl:ObjectProperty>
+
+  <!-- ~~~~~~~~~~~~~~~~~~~~~~ Card ↔ Card strategic edges ~~~~~~~~~~~~~~~~~~~~~~ -->
+
+  <owl:ObjectProperty rdf:about="http://purl.org/mtg/ontology#counters">
+    <rdfs:label xml:lang="en">counters</rdfs:label>
+    <rdfs:comment xml:lang="en">This card is an effective answer to the target card (e.g. removal, counterspell).</rdfs:comment>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Card"/>
+    <rdfs:range rdf:resource="http://purl.org/mtg/ontology#Card"/>
+  </owl:ObjectProperty>
+
+  <owl:ObjectProperty rdf:about="http://purl.org/mtg/ontology#enables">
+    <rdfs:label xml:lang="en">enables</rdfs:label>
+    <rdfs:comment xml:lang="en">This card enables or supports the target card's strategy.</rdfs:comment>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Card"/>
+    <rdfs:range rdf:resource="http://purl.org/mtg/ontology#Card"/>
+  </owl:ObjectProperty>
+
+  <owl:ObjectProperty rdf:about="http://purl.org/mtg/ontology#triggers">
+    <rdfs:label xml:lang="en">triggers</rdfs:label>
+    <rdfs:comment xml:lang="en">This card triggers an ability on the target card.</rdfs:comment>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Card"/>
+    <rdfs:range rdf:resource="http://purl.org/mtg/ontology#Card"/>
+  </owl:ObjectProperty>
+
+  <!-- ~~~~~~~~~~~~~~~~~~~~~~ Archetype relationships ~~~~~~~~~~~~~~~~~~~~~~ -->
+
+  <owl:ObjectProperty rdf:about="http://purl.org/mtg/ontology#belongsToArchetype">
+    <rdfs:label xml:lang="en">belongs to archetype</rdfs:label>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Card"/>
+    <rdfs:range rdf:resource="http://purl.org/mtg/ontology#Archetype"/>
+  </owl:ObjectProperty>
+
+  <owl:ObjectProperty rdf:about="http://purl.org/mtg/ontology#hasSignatureCard">
+    <rdfs:label xml:lang="en">has signature card</rdfs:label>
+    <rdfs:comment xml:lang="en">A card that is iconic or essential to this archetype.</rdfs:comment>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Archetype"/>
+    <rdfs:range rdf:resource="http://purl.org/mtg/ontology#Card"/>
+  </owl:ObjectProperty>
+
+  <owl:ObjectProperty rdf:about="http://purl.org/mtg/ontology#hasStrategy">
+    <rdfs:label xml:lang="en">has strategy</rdfs:label>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Archetype"/>
+    <rdfs:range rdf:resource="http://purl.org/mtg/ontology#Strategy"/>
+  </owl:ObjectProperty>
+
+  <owl:ObjectProperty rdf:about="http://purl.org/mtg/ontology#hasWinCondition">
+    <rdfs:label xml:lang="en">has win condition</rdfs:label>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Archetype"/>
+    <rdfs:range rdf:resource="http://purl.org/mtg/ontology#Combo"/>
+  </owl:ObjectProperty>
+
+  <owl:ObjectProperty rdf:about="http://purl.org/mtg/ontology#weakAgainst">
+    <rdfs:label xml:lang="en">weak against</rdfs:label>
+    <rdfs:comment xml:lang="en">This archetype has a disadvantaged matchup against the target.</rdfs:comment>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Archetype"/>
+    <rdfs:range rdf:resource="http://purl.org/mtg/ontology#Archetype"/>
+  </owl:ObjectProperty>
+
+  <owl:ObjectProperty rdf:about="http://purl.org/mtg/ontology#strongAgainst">
+    <rdfs:label xml:lang="en">strong against</rdfs:label>
+    <rdfs:comment xml:lang="en">This archetype has an advantaged matchup against the target.</rdfs:comment>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Archetype"/>
+    <rdfs:range rdf:resource="http://purl.org/mtg/ontology#Archetype"/>
+  </owl:ObjectProperty>
+
+  <owl:ObjectProperty rdf:about="http://purl.org/mtg/ontology#archetypeForFormat">
+    <rdfs:label xml:lang="en">archetype for format</rdfs:label>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Archetype"/>
+    <rdfs:range rdf:resource="http://purl.org/mtg/ontology#Format"/>
+  </owl:ObjectProperty>
+
+  <owl:ObjectProperty rdf:about="http://purl.org/mtg/ontology#archetypeColorIdentity">
+    <rdfs:label xml:lang="en">archetype color identity</rdfs:label>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Archetype"/>
+    <rdfs:range rdf:resource="http://purl.org/mtg/ontology#Color"/>
+  </owl:ObjectProperty>
+
+  <!-- ~~~~~~~~~~~~~~~~~~~~~~ CounterPlay relationships ~~~~~~~~~~~~~~~~~~~~~~ -->
+
+  <owl:ObjectProperty rdf:about="http://purl.org/mtg/ontology#counterplayThreat">
+    <rdfs:label xml:lang="en">counter-play threat</rdfs:label>
+    <rdfs:comment xml:lang="en">The threat that this counter-play addresses.</rdfs:comment>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#CounterPlay"/>
+    <rdfs:range rdf:resource="http://purl.org/mtg/ontology#Card"/>
+  </owl:ObjectProperty>
+
+  <owl:ObjectProperty rdf:about="http://purl.org/mtg/ontology#counterplayAnswer">
+    <rdfs:label xml:lang="en">counter-play answer</rdfs:label>
+    <rdfs:comment xml:lang="en">The card that answers the threat.</rdfs:comment>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#CounterPlay"/>
+    <rdfs:range rdf:resource="http://purl.org/mtg/ontology#Card"/>
+  </owl:ObjectProperty>
+
+  <owl:ObjectProperty rdf:about="http://purl.org/mtg/ontology#counterplayTiming">
+    <rdfs:label xml:lang="en">counter-play timing</rdfs:label>
+    <rdfs:comment xml:lang="en">The optimal phase to deploy the answer.</rdfs:comment>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#CounterPlay"/>
+    <rdfs:range rdf:resource="http://purl.org/mtg/ontology#Phase"/>
+  </owl:ObjectProperty>
+
+  <!-- ~~~~~~~~~~~~~~~~~~~~~~ Interaction relationships ~~~~~~~~~~~~~~~~~~~~~~ -->
+
+  <owl:ObjectProperty rdf:about="http://purl.org/mtg/ontology#interactionCardA">
+    <rdfs:label xml:lang="en">interaction card A</rdfs:label>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Interaction"/>
+    <rdfs:range rdf:resource="http://purl.org/mtg/ontology#Card"/>
+  </owl:ObjectProperty>
+
+  <owl:ObjectProperty rdf:about="http://purl.org/mtg/ontology#interactionCardB">
+    <rdfs:label xml:lang="en">interaction card B</rdfs:label>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Interaction"/>
+    <rdfs:range rdf:resource="http://purl.org/mtg/ontology#Card"/>
+  </owl:ObjectProperty>
+
+  <!-- ~~~~~~~~~~~~~~~~~~~~~~ Decklist relationships ~~~~~~~~~~~~~~~~~~~~~~ -->
+
+  <owl:ObjectProperty rdf:about="http://purl.org/mtg/ontology#containsCard">
+    <rdfs:label xml:lang="en">contains card</rdfs:label>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Decklist"/>
+    <rdfs:range rdf:resource="http://purl.org/mtg/ontology#Card"/>
+  </owl:ObjectProperty>
+
+  <owl:ObjectProperty rdf:about="http://purl.org/mtg/ontology#hasCommander">
+    <rdfs:label xml:lang="en">has commander</rdfs:label>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Decklist"/>
+    <rdfs:range rdf:resource="http://purl.org/mtg/ontology#Card"/>
+  </owl:ObjectProperty>
+
+  <owl:ObjectProperty rdf:about="http://purl.org/mtg/ontology#deckArchetype">
+    <rdfs:label xml:lang="en">deck archetype</rdfs:label>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Decklist"/>
+    <rdfs:range rdf:resource="http://purl.org/mtg/ontology#Archetype"/>
+  </owl:ObjectProperty>
+
+  <owl:ObjectProperty rdf:about="http://purl.org/mtg/ontology#deckFormat">
+    <rdfs:label xml:lang="en">deck format</rdfs:label>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Decklist"/>
+    <rdfs:range rdf:resource="http://purl.org/mtg/ontology#Format"/>
+  </owl:ObjectProperty>
+
+  <!-- ~~~~~~~~~~~~~~~~~~~~~~ Metagame relationships ~~~~~~~~~~~~~~~~~~~~~~ -->
+
+  <owl:ObjectProperty rdf:about="http://purl.org/mtg/ontology#snapshotFormat">
+    <rdfs:label xml:lang="en">snapshot format</rdfs:label>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#MetagameSnapshot"/>
+    <rdfs:range rdf:resource="http://purl.org/mtg/ontology#Format"/>
+  </owl:ObjectProperty>
+
+  <owl:ObjectProperty rdf:about="http://purl.org/mtg/ontology#includesArchetype">
+    <rdfs:label xml:lang="en">includes archetype</rdfs:label>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#MetagameSnapshot"/>
+    <rdfs:range rdf:resource="http://purl.org/mtg/ontology#Archetype"/>
+  </owl:ObjectProperty>
+
+  <!-- ================================================================== -->
+  <!--                  SECTION 8: DATA PROPERTIES (ATTRS)                -->
+  <!-- ================================================================== -->
+
+  <!-- Card data properties -->
+
+  <owl:DatatypeProperty rdf:about="http://purl.org/mtg/ontology#cardName">
+    <rdfs:label xml:lang="en">card name</rdfs:label>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Card"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#FunctionalProperty"/>
+  </owl:DatatypeProperty>
+
+  <owl:DatatypeProperty rdf:about="http://purl.org/mtg/ontology#manaCostText">
+    <rdfs:label xml:lang="en">mana cost text</rdfs:label>
+    <rdfs:comment xml:lang="en">The mana cost in Scryfall notation, e.g. "{2}{W}{U}".</rdfs:comment>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Card"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+  </owl:DatatypeProperty>
+
+  <owl:DatatypeProperty rdf:about="http://purl.org/mtg/ontology#manaValue">
+    <rdfs:label xml:lang="en">mana value</rdfs:label>
+    <rdfs:comment xml:lang="en">Converted mana cost / mana value (integer).</rdfs:comment>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Card"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#nonNegativeInteger"/>
+  </owl:DatatypeProperty>
+
+  <owl:DatatypeProperty rdf:about="http://purl.org/mtg/ontology#oracleText">
+    <rdfs:label xml:lang="en">oracle text</rdfs:label>
+    <rdfs:comment xml:lang="en">The official rules text of the card (Scryfall oracle_text field).</rdfs:comment>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Card"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+  </owl:DatatypeProperty>
+
+  <owl:DatatypeProperty rdf:about="http://purl.org/mtg/ontology#typeLine">
+    <rdfs:label xml:lang="en">type line</rdfs:label>
+    <rdfs:comment xml:lang="en">Full type line, e.g. "Legendary Creature — Elf Druid".</rdfs:comment>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Card"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+  </owl:DatatypeProperty>
+
+  <owl:DatatypeProperty rdf:about="http://purl.org/mtg/ontology#power">
+    <rdfs:label xml:lang="en">power</rdfs:label>
+    <rdfs:comment xml:lang="en">Power of a creature. String because it can be "*" or "1+*".</rdfs:comment>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Creature"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+  </owl:DatatypeProperty>
+
+  <owl:DatatypeProperty rdf:about="http://purl.org/mtg/ontology#toughness">
+    <rdfs:label xml:lang="en">toughness</rdfs:label>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Creature"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+  </owl:DatatypeProperty>
+
+  <owl:DatatypeProperty rdf:about="http://purl.org/mtg/ontology#loyalty">
+    <rdfs:label xml:lang="en">loyalty</rdfs:label>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Planeswalker"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+  </owl:DatatypeProperty>
+
+  <owl:DatatypeProperty rdf:about="http://purl.org/mtg/ontology#defense">
+    <rdfs:label xml:lang="en">defense</rdfs:label>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Battle"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#nonNegativeInteger"/>
+  </owl:DatatypeProperty>
+
+  <owl:DatatypeProperty rdf:about="http://purl.org/mtg/ontology#scryfallId">
+    <rdfs:label xml:lang="en">Scryfall oracle ID</rdfs:label>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Card"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#FunctionalProperty"/>
+  </owl:DatatypeProperty>
+
+  <owl:DatatypeProperty rdf:about="http://purl.org/mtg/ontology#imageUri">
+    <rdfs:label xml:lang="en">image URI</rdfs:label>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Card"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#anyURI"/>
+  </owl:DatatypeProperty>
+
+  <owl:DatatypeProperty rdf:about="http://purl.org/mtg/ontology#rarity">
+    <rdfs:label xml:lang="en">rarity</rdfs:label>
+    <rdfs:comment xml:lang="en">Card rarity: common, uncommon, rare, mythic.</rdfs:comment>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Card"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+  </owl:DatatypeProperty>
+
+  <owl:DatatypeProperty rdf:about="http://purl.org/mtg/ontology#setCode">
+    <rdfs:label xml:lang="en">set code</rdfs:label>
+    <rdfs:comment xml:lang="en">Three-letter set code (e.g., "MKM", "WOE").</rdfs:comment>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Card"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+  </owl:DatatypeProperty>
+
+  <!-- Combo data properties -->
+
+  <owl:DatatypeProperty rdf:about="http://purl.org/mtg/ontology#comboDescription">
+    <rdfs:label xml:lang="en">combo description</rdfs:label>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Combo"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+  </owl:DatatypeProperty>
+
+  <owl:DatatypeProperty rdf:about="http://purl.org/mtg/ontology#setupRequirements">
+    <rdfs:label xml:lang="en">setup requirements</rdfs:label>
+    <rdfs:comment xml:lang="en">What needs to be true for the combo to work (e.g., "Both on battlefield, 3 mana open").</rdfs:comment>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Combo"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+  </owl:DatatypeProperty>
+
+  <owl:DatatypeProperty rdf:about="http://purl.org/mtg/ontology#fragility">
+    <rdfs:label xml:lang="en">fragility</rdfs:label>
+    <rdfs:comment xml:lang="en">How easy the combo is to disrupt (0.0 = very resilient, 1.0 = very fragile).</rdfs:comment>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Combo"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#float"/>
+  </owl:DatatypeProperty>
+
+  <owl:DatatypeProperty rdf:about="http://purl.org/mtg/ontology#commanderSpellbookId">
+    <rdfs:label xml:lang="en">Commander Spellbook ID</rdfs:label>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Combo"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+  </owl:DatatypeProperty>
+
+  <!-- Synergy data properties -->
+
+  <owl:DatatypeProperty rdf:about="http://purl.org/mtg/ontology#synergyStrength">
+    <rdfs:label xml:lang="en">synergy strength</rdfs:label>
+    <rdfs:comment xml:lang="en">Strength of the synergy (0.0–1.0).</rdfs:comment>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Synergy"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#float"/>
+  </owl:DatatypeProperty>
+
+  <owl:DatatypeProperty rdf:about="http://purl.org/mtg/ontology#synergyDescription">
+    <rdfs:label xml:lang="en">synergy description</rdfs:label>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Synergy"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+  </owl:DatatypeProperty>
+
+  <!-- CounterPlay data properties -->
+
+  <owl:DatatypeProperty rdf:about="http://purl.org/mtg/ontology#effectiveness">
+    <rdfs:label xml:lang="en">effectiveness</rdfs:label>
+    <rdfs:comment xml:lang="en">How effective this counter-play is (0.0–1.0).</rdfs:comment>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#CounterPlay"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#float"/>
+  </owl:DatatypeProperty>
+
+  <!-- Interaction data properties -->
+
+  <owl:DatatypeProperty rdf:about="http://purl.org/mtg/ontology#interactionType">
+    <rdfs:label xml:lang="en">interaction type</rdfs:label>
+    <rdfs:comment xml:lang="en">Type of interaction: Counters, Removes, Enables, Triggers, Buffs, Taxes, etc.</rdfs:comment>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Interaction"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+  </owl:DatatypeProperty>
+
+  <owl:DatatypeProperty rdf:about="http://purl.org/mtg/ontology#interactionDescription">
+    <rdfs:label xml:lang="en">interaction description</rdfs:label>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Interaction"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+  </owl:DatatypeProperty>
+
+  <!-- Ruling data properties -->
+
+  <owl:DatatypeProperty rdf:about="http://purl.org/mtg/ontology#rulingText">
+    <rdfs:label xml:lang="en">ruling text</rdfs:label>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Ruling"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+  </owl:DatatypeProperty>
+
+  <owl:DatatypeProperty rdf:about="http://purl.org/mtg/ontology#rulingDate">
+    <rdfs:label xml:lang="en">ruling date</rdfs:label>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Ruling"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#date"/>
+  </owl:DatatypeProperty>
+
+  <owl:DatatypeProperty rdf:about="http://purl.org/mtg/ontology#comprehensiveRuleRef">
+    <rdfs:label xml:lang="en">comprehensive rule reference</rdfs:label>
+    <rdfs:comment xml:lang="en">Reference to the relevant section in the MTG Comprehensive Rules (e.g., "CR 702.2").</rdfs:comment>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Ruling"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+  </owl:DatatypeProperty>
+
+  <!-- Archetype data properties -->
+
+  <owl:DatatypeProperty rdf:about="http://purl.org/mtg/ontology#archetypeName">
+    <rdfs:label xml:lang="en">archetype name</rdfs:label>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Archetype"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#FunctionalProperty"/>
+  </owl:DatatypeProperty>
+
+  <!-- Metagame data properties -->
+
+  <owl:DatatypeProperty rdf:about="http://purl.org/mtg/ontology#snapshotDate">
+    <rdfs:label xml:lang="en">snapshot date</rdfs:label>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#MetagameSnapshot"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#date"/>
+  </owl:DatatypeProperty>
+
+  <owl:DatatypeProperty rdf:about="http://purl.org/mtg/ontology#archetypeMetashare">
+    <rdfs:label xml:lang="en">archetype metagame share</rdfs:label>
+    <rdfs:comment xml:lang="en">Share of the metagame for an archetype within a snapshot (0.0–1.0).</rdfs:comment>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#MetagameSnapshot"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#float"/>
+  </owl:DatatypeProperty>
+
+  <!-- Generic shared data properties -->
+
+  <owl:DatatypeProperty rdf:about="http://purl.org/mtg/ontology#manaSymbol">
+    <rdfs:label xml:lang="en">mana symbol</rdfs:label>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Color"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+  </owl:DatatypeProperty>
+
+  <owl:DatatypeProperty rdf:about="http://purl.org/mtg/ontology#phaseOrder">
+    <rdfs:label xml:lang="en">phase order</rdfs:label>
+    <rdfs:comment xml:lang="en">Numeric order of this phase within a turn (1-based).</rdfs:comment>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Phase"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#positiveInteger"/>
+  </owl:DatatypeProperty>
+
+  <owl:DatatypeProperty rdf:about="http://purl.org/mtg/ontology#edhrecRank">
+    <rdfs:label xml:lang="en">EDHREC rank</rdfs:label>
+    <rdfs:comment xml:lang="en">EDHREC popularity rank (lower = more popular in Commander).</rdfs:comment>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Card"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#nonNegativeInteger"/>
+  </owl:DatatypeProperty>
+
+  <owl:DatatypeProperty rdf:about="http://purl.org/mtg/ontology#edhrecSaltScore">
+    <rdfs:label xml:lang="en">EDHREC salt score</rdfs:label>
+    <rdfs:comment xml:lang="en">EDHREC salt score — how much this card annoys opponents.</rdfs:comment>
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Card"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#float"/>
+  </owl:DatatypeProperty>
+
+  <!-- ================================================================== -->
+  <!--            SECTION 9: OWL CONSTRAINTS & AXIOMS                     -->
+  <!-- ================================================================== -->
+
+  <!-- Every Card must have exactly one cardName -->
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#Card">
+    <rdfs:subClassOf>
+      <owl:Restriction>
+        <owl:onProperty rdf:resource="http://purl.org/mtg/ontology#cardName"/>
+        <owl:qualifiedCardinality rdf:datatype="http://www.w3.org/2001/XMLSchema#nonNegativeInteger">1</owl:qualifiedCardinality>
+        <owl:onDataRange rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+      </owl:Restriction>
+    </rdfs:subClassOf>
+  </owl:Class>
+
+  <!-- Every Combo must have at least 2 components -->
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#Combo">
+    <rdfs:subClassOf>
+      <owl:Restriction>
+        <owl:onProperty rdf:resource="http://purl.org/mtg/ontology#hasComboComponent"/>
+        <owl:minQualifiedCardinality rdf:datatype="http://www.w3.org/2001/XMLSchema#nonNegativeInteger">2</owl:minQualifiedCardinality>
+        <owl:onClass rdf:resource="http://purl.org/mtg/ontology#Card"/>
+      </owl:Restriction>
+    </rdfs:subClassOf>
+  </owl:Class>
+
+  <!-- Every Combo must produce at least one Effect -->
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#Combo">
+    <rdfs:subClassOf>
+      <owl:Restriction>
+        <owl:onProperty rdf:resource="http://purl.org/mtg/ontology#producesEffect"/>
+        <owl:minCardinality rdf:datatype="http://www.w3.org/2001/XMLSchema#nonNegativeInteger">1</owl:minCardinality>
+      </owl:Restriction>
+    </rdfs:subClassOf>
+  </owl:Class>
+
+  <!-- Every Synergy involves at least 2 cards -->
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#Synergy">
+    <rdfs:subClassOf>
+      <owl:Restriction>
+        <owl:onProperty rdf:resource="http://purl.org/mtg/ontology#synergyInvolves"/>
+        <owl:minQualifiedCardinality rdf:datatype="http://www.w3.org/2001/XMLSchema#nonNegativeInteger">2</owl:minQualifiedCardinality>
+        <owl:onClass rdf:resource="http://purl.org/mtg/ontology#Card"/>
+      </owl:Restriction>
+    </rdfs:subClassOf>
+  </owl:Class>
+
+  <!-- Every CounterPlay has exactly one threat and one answer -->
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#CounterPlay">
+    <rdfs:subClassOf>
+      <owl:Restriction>
+        <owl:onProperty rdf:resource="http://purl.org/mtg/ontology#counterplayThreat"/>
+        <owl:qualifiedCardinality rdf:datatype="http://www.w3.org/2001/XMLSchema#nonNegativeInteger">1</owl:qualifiedCardinality>
+        <owl:onClass rdf:resource="http://purl.org/mtg/ontology#Card"/>
+      </owl:Restriction>
+    </rdfs:subClassOf>
+    <rdfs:subClassOf>
+      <owl:Restriction>
+        <owl:onProperty rdf:resource="http://purl.org/mtg/ontology#counterplayAnswer"/>
+        <owl:qualifiedCardinality rdf:datatype="http://www.w3.org/2001/XMLSchema#nonNegativeInteger">1</owl:qualifiedCardinality>
+        <owl:onClass rdf:resource="http://purl.org/mtg/ontology#Card"/>
+      </owl:Restriction>
+    </rdfs:subClassOf>
+  </owl:Class>
+
+  <!-- Every Creature must have power and toughness -->
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#Creature">
+    <rdfs:subClassOf>
+      <owl:Restriction>
+        <owl:onProperty rdf:resource="http://purl.org/mtg/ontology#power"/>
+        <owl:qualifiedCardinality rdf:datatype="http://www.w3.org/2001/XMLSchema#nonNegativeInteger">1</owl:qualifiedCardinality>
+        <owl:onDataRange rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+      </owl:Restriction>
+    </rdfs:subClassOf>
+    <rdfs:subClassOf>
+      <owl:Restriction>
+        <owl:onProperty rdf:resource="http://purl.org/mtg/ontology#toughness"/>
+        <owl:qualifiedCardinality rdf:datatype="http://www.w3.org/2001/XMLSchema#nonNegativeInteger">1</owl:qualifiedCardinality>
+        <owl:onDataRange rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+      </owl:Restriction>
+    </rdfs:subClassOf>
+  </owl:Class>
+
+  <!-- Every Interaction links exactly two cards -->
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#Interaction">
+    <rdfs:subClassOf>
+      <owl:Restriction>
+        <owl:onProperty rdf:resource="http://purl.org/mtg/ontology#interactionCardA"/>
+        <owl:qualifiedCardinality rdf:datatype="http://www.w3.org/2001/XMLSchema#nonNegativeInteger">1</owl:qualifiedCardinality>
+        <owl:onClass rdf:resource="http://purl.org/mtg/ontology#Card"/>
+      </owl:Restriction>
+    </rdfs:subClassOf>
+    <rdfs:subClassOf>
+      <owl:Restriction>
+        <owl:onProperty rdf:resource="http://purl.org/mtg/ontology#interactionCardB"/>
+        <owl:qualifiedCardinality rdf:datatype="http://www.w3.org/2001/XMLSchema#nonNegativeInteger">1</owl:qualifiedCardinality>
+        <owl:onClass rdf:resource="http://purl.org/mtg/ontology#Card"/>
+      </owl:Restriction>
+    </rdfs:subClassOf>
+  </owl:Class>
+
+  <!-- ================================================================== -->
+  <!--          SECTION 10: EXAMPLE ABOX INSTANCES (SEED DATA)            -->
+  <!-- ================================================================== -->
+
+  <!--
+    A few representative card + combo instances to demonstrate the ontology
+    in action and serve as sanity-check data for SHACL validation.
+  -->
+
+  <!-- Example Card: Thassa's Oracle -->
+  <mtg:Creature rdf:about="http://purl.org/mtg/ontology#ThassasOracle">
+    <rdfs:label>Thassa's Oracle</rdfs:label>
+    <mtg:cardName>Thassa's Oracle</mtg:cardName>
+    <mtg:manaCostText>{U}{U}</mtg:manaCostText>
+    <mtg:manaValue rdf:datatype="http://www.w3.org/2001/XMLSchema#nonNegativeInteger">2</mtg:manaValue>
+    <mtg:typeLine>Creature — Merfolk Wizard</mtg:typeLine>
+    <mtg:oracleText>When Thassa's Oracle enters the battlefield, look at the top X cards of your library, where X is your devotion to blue. Put up to one of them on top of your library and the rest on the bottom of your library in a random order. If X is greater than or equal to the number of cards in your library, you win the game.</mtg:oracleText>
+    <mtg:power>1</mtg:power>
+    <mtg:toughness>3</mtg:toughness>
+    <mtg:hasColorIdentity rdf:resource="http://purl.org/mtg/ontology#Blue"/>
+    <mtg:hasCreatureType rdf:resource="http://purl.org/mtg/ontology#Merfolk"/>
+    <mtg:hasCreatureType rdf:resource="http://purl.org/mtg/ontology#Wizard"/>
+    <mtg:partOfCombo rdf:resource="http://purl.org/mtg/ontology#ThoradeConsultCombo"/>
+  </mtg:Creature>
+
+  <!-- Example Card: Demonic Consultation -->
+  <mtg:Instant rdf:about="http://purl.org/mtg/ontology#DemonicConsultation">
+    <rdfs:label>Demonic Consultation</rdfs:label>
+    <mtg:cardName>Demonic Consultation</mtg:cardName>
+    <mtg:manaCostText>{B}</mtg:manaCostText>
+    <mtg:manaValue rdf:datatype="http://www.w3.org/2001/XMLSchema#nonNegativeInteger">1</mtg:manaValue>
+    <mtg:typeLine>Instant</mtg:typeLine>
+    <mtg:oracleText>Name a card. Exile the top six cards of your library, then reveal cards from the top of your library until you reveal the named card. Put that card into your hand and exile all other cards revealed this way.</mtg:oracleText>
+    <mtg:hasColorIdentity rdf:resource="http://purl.org/mtg/ontology#Black"/>
+    <mtg:partOfCombo rdf:resource="http://purl.org/mtg/ontology#ThoradeConsultCombo"/>
+  </mtg:Instant>
+
+  <!-- Example Combo: Thoracle + Consultation -->
+  <mtg:Combo rdf:about="http://purl.org/mtg/ontology#ThoradeConsultCombo">
+    <rdfs:label>Thassa's Oracle + Demonic Consultation</rdfs:label>
+    <mtg:comboDescription>Cast Demonic Consultation naming a card not in your deck to exile your entire library, then cast Thassa's Oracle to win the game via its ETB trigger.</mtg:comboDescription>
+    <mtg:hasComboComponent rdf:resource="http://purl.org/mtg/ontology#ThassasOracle"/>
+    <mtg:hasComboComponent rdf:resource="http://purl.org/mtg/ontology#DemonicConsultation"/>
+    <mtg:producesEffect rdf:resource="http://purl.org/mtg/ontology#LibraryExile"/>
+    <mtg:setupRequirements>Thassa's Oracle in hand, Demonic Consultation in hand, {U}{U}{B} mana available.</mtg:setupRequirements>
+    <mtg:fragility rdf:datatype="http://www.w3.org/2001/XMLSchema#float">0.4</mtg:fragility>
+  </mtg:Combo>
+
+  <!-- Example Card: Rhystic Study -->
+  <mtg:Enchantment rdf:about="http://purl.org/mtg/ontology#RhysticStudy">
+    <rdfs:label>Rhystic Study</rdfs:label>
+    <mtg:cardName>Rhystic Study</mtg:cardName>
+    <mtg:manaCostText>{2}{U}</mtg:manaCostText>
+    <mtg:manaValue rdf:datatype="http://www.w3.org/2001/XMLSchema#nonNegativeInteger">3</mtg:manaValue>
+    <mtg:typeLine>Enchantment</mtg:typeLine>
+    <mtg:oracleText>Whenever an opponent casts a spell, you may draw a card unless that player pays {1}.</mtg:oracleText>
+    <mtg:hasColorIdentity rdf:resource="http://purl.org/mtg/ontology#Blue"/>
+  </mtg:Enchantment>
+
+  <!-- Example Card: Sol Ring -->
+  <mtg:Artifact rdf:about="http://purl.org/mtg/ontology#SolRing">
+    <rdfs:label>Sol Ring</rdfs:label>
+    <mtg:cardName>Sol Ring</mtg:cardName>
+    <mtg:manaCostText>{1}</mtg:manaCostText>
+    <mtg:manaValue rdf:datatype="http://www.w3.org/2001/XMLSchema#nonNegativeInteger">1</mtg:manaValue>
+    <mtg:typeLine>Artifact</mtg:typeLine>
+    <mtg:oracleText>{T}: Add {C}{C}.</mtg:oracleText>
+    <mtg:hasKeyword rdf:resource="http://purl.org/mtg/ontology#Deathtouch"/>
+  </mtg:Artifact>
+
+  <!-- Example Card: Counterspell -->
+  <mtg:Instant rdf:about="http://purl.org/mtg/ontology#Counterspell">
+    <rdfs:label>Counterspell</rdfs:label>
+    <mtg:cardName>Counterspell</mtg:cardName>
+    <mtg:manaCostText>{U}{U}</mtg:manaCostText>
+    <mtg:manaValue rdf:datatype="http://www.w3.org/2001/XMLSchema#nonNegativeInteger">2</mtg:manaValue>
+    <mtg:typeLine>Instant</mtg:typeLine>
+    <mtg:oracleText>Counter target spell.</mtg:oracleText>
+    <mtg:hasColorIdentity rdf:resource="http://purl.org/mtg/ontology#Blue"/>
+  </mtg:Instant>
+
+  <!-- Example CounterPlay: Counterspell answers Thassa's Oracle -->
+  <mtg:CounterPlay rdf:about="http://purl.org/mtg/ontology#CounterspellVsThoracle">
+    <rdfs:label>Counterspell vs Thassa's Oracle</rdfs:label>
+    <mtg:counterplayThreat rdf:resource="http://purl.org/mtg/ontology#ThassasOracle"/>
+    <mtg:counterplayAnswer rdf:resource="http://purl.org/mtg/ontology#Counterspell"/>
+    <mtg:effectiveness rdf:datatype="http://www.w3.org/2001/XMLSchema#float">0.95</mtg:effectiveness>
+    <mtg:counterplayTiming rdf:resource="http://purl.org/mtg/ontology#MainPhase1"/>
+  </mtg:CounterPlay>
+
+</rdf:RDF>

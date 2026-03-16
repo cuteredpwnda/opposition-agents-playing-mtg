@@ -1,0 +1,44 @@
+# Docker Compose for opposition-agents-playing-mtg
+#
+# Services:
+#   - neo4j: Graph database with n10s (neosemantics) + APOC plugins
+#
+# Usage:
+#   docker compose up -d
+#   docker compose logs -f neo4j
+#
+# Neo4j Browser: http://localhost:7474
+# Bolt:          bolt://localhost:7687
+
+services:
+  neo4j:
+    image: neo4j:5-community
+    container_name: mtg-neo4j
+    ports:
+      - "7474:7474"   # HTTP / Browser
+      - "7687:7687"   # Bolt
+    environment:
+      NEO4J_AUTH: neo4j/mtgpassword
+      NEO4J_PLUGINS: '["apoc", "n10s"]'
+      NEO4J_server_memory_heap_initial__size: 512m
+      NEO4J_server_memory_heap_max__size: 1G
+      NEO4J_server_memory_pagecache_size: 512m
+      # Allow file:// imports from the /import directory
+      NEO4J_dbms_security_allow__csv__import__from__file__urls: "true"
+      NEO4J_dbms_security_procedures_unrestricted: "apoc.*,n10s.*"
+      NEO4J_dbms_security_procedures_allowlist: "apoc.*,n10s.*"
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+      - ./data/ontology:/import/ontology:ro
+      - ./neo4j/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "neo4j status || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  neo4j_data:
+  neo4j_logs:

@@ -69,9 +69,11 @@ Build a Python-based agentic framework where LLM-powered agents play full games 
 │   └────────────────────────┬─────────────────────────────┘              │
 │                            │                                            │
 │   ┌────────────────────────▼─────────────────────────────┐              │
-│   │              MTG KNOWLEDGE GRAPH / ONTOLOGY           │              │
+│   │            MTG KNOWLEDGE GRAPH (Neo4j)                │              │
+│   │   n10s (OWL ontology import) · APOC (graph algos)     │              │
 │   │   Cards · Combos · Synergies · Archetypes · Rulings   │              │
-│   │   Counter-play Patterns · Mana Curves · Win Cons      │              │
+│   │   Cypher + vector search · Community detection         │              │
+│   │   KGPlatform tooling for KG build + HITL extension    │              │
 │   └──────────────────────────────────────────────────────┘              │
 │                                                                        │
 │   ┌──────────────────────────────────────────────────────┐              │
@@ -344,6 +346,28 @@ class RulesEngine:
         """Move to next phase/step, handling turn-based actions."""
         ...
 ```
+
+### 4.4 Reusable Open-Source Components
+
+Rather than building the entire engine from scratch, we can **accelerate significantly** by adapting existing MIT-licensed Python projects. Here's a concrete mapping of what to take from each:
+
+| Component | Source Project | What to Adapt |
+|-----------|---------------|---------------|
+| **Game loop** (`get_moves()` / `make_move()`) | [open-mtg](https://github.com/hlynurd/open-mtg) | Core game loop pattern, phase enum, and the stateless `get_moves`→`make_move` interface that plugs cleanly into MCTS or RL agents |
+| **Combat system** | [open-mtg](https://github.com/hlynurd/open-mtg) | Attacker/blocker enumeration, damage assignment ordering (CR 509/510), trample, first strike |
+| **The Stack** | [mtg-python-engine](https://github.com/wanqizhu/mtg-python-engine) | `play.Play()` objects on stack, LIFO resolution, target legality checking before resolution, spell fizzling |
+| **Triggered abilities** | [mtg-python-engine](https://github.com/wanqizhu/mtg-python-engine) | `triggers.triggerConditions` (onETB, onAttack, onControllerLifeGain, etc.), intervening-if clauses |
+| **Activated abilities** | [mtg-python-engine](https://github.com/wanqizhu/mtg-python-engine) | `abilities.ActivatedAbility()` with cost parsing, tap symbol, `can_activate()` checks |
+| **Static/continuous effects** | [mtg-python-engine](https://github.com/wanqizhu/mtg-python-engine) | `add_effect()` / `add_static_effect()` with toggle functions, effect expiration, power/toughness modification |
+| **State-based actions** | [mtg-python-engine](https://github.com/wanqizhu/mtg-python-engine) | `check_state_based_actions()` — creature death, player loss, legend rule |
+| **Game state rollback** | [mtg-python-engine](https://github.com/wanqizhu/mtg-python-engine) | Deep-copy based state snapshots for rewinding illegal actions |
+| **MCTS AI baseline** | [open-mtg](https://github.com/hlynurd/open-mtg) | `mcts.py` — Monte Carlo Tree Search reference implementation for MTG |
+| **Agent architecture** | [mtg-player](https://github.com/theRealMarkCastillo/mtg-player) | LLM tool-calling pattern (get_game_state, get_legal_actions, execute_action), chain-of-thought prompts, heuristic fallback, multi-provider LLM support |
+| **Pydantic game models** | [mtg-player](https://github.com/theRealMarkCastillo/mtg-player) | Player state, card models, game state representation using Pydantic v2 |
+| **Opponent modeling** | [mtg-player](https://github.com/theRealMarkCastillo/mtg-player) | `OpponentModelingTool` for tracking opponent strategy and threat assessment |
+| **Scryfall integration** | [Scrython](https://github.com/NandaScott/Scrython) | Use directly via `pip install scrython` — card lookup, bulk download, rulings, rate limiting, caching |
+
+> **Note on Forge/XMage**: These Java engines (GPL-3.0) have the most complete rules implementations (20k+ cards). We cannot directly port code due to GPL licensing, but they serve as an invaluable **correctness reference** when implementing complex interactions like layer ordering, replacement effect chains, or unusual triggered ability interactions.
 
 ---
 
@@ -832,7 +856,172 @@ class BoardStateEncoder:
         return torch.tensor(features, dtype=torch.float32)
 ```
 
-### 8.3 Combo Detection via GNN
+### 8.3 GraphRAG Integration (Neo4j + APOC + n10s)
+
+Rather than running a separate GraphRAG pipeline (e.g., microsoft/graphrag), we implement **GraphRAG-style retrieval natively in Neo4j** using APOC graph algorithms, n10s ontology expansion, full-text indexes, and Neo4j's native vector search. For more sophisticated QA we can optionally layer [GraphQAAgent](https://github.com/DataScienceLabFHSWF/GraphQAAgent) on top.
+
+#### Why Neo4j-native GraphRAG?
+
+| Feature | microsoft/graphrag | Neo4j + APOC + n10s |
+|---------|-------------------|---------------------|
+| Graph source | Builds its own entity graph from text | Uses **our OWL-driven KG** directly |
+| Ontology | None | **n10s** — OWL class hierarchy, synonym expansion, SHACL validation |
+| Community detection | Leiden (Python) | **APOC** `apoc.algo.louvain` / GDS Leiden — runs in-database |
+| Graph traversal | Python NetworkX | **APOC** `apoc.path.subgraphAll` — native, fast |
+| Importance scoring | Community summaries | **APOC** `apoc.algo.pageRank` + centrality |
+| Vector search | Separate embeddings store | **Neo4j 5.x native vector index** — no Qdrant needed |
+| Full-text search | N/A | **Neo4j full-text index** (Lucene-backed) |
+| Cypher generation | N/A | **LLM → Cypher** — query the graph directly |
+| One database | ❌ (separate stores) | ✅ Everything in Neo4j |
+
+#### Retrieval Strategies
+
+```python
+from neo4j import AsyncGraphDatabase
+from langchain_neo4j import Neo4jGraph
+
+class MTGGraphRAG:
+    """GraphRAG-style retrieval implemented natively on Neo4j.
+    
+    Strategies:
+    1. subgraph:  APOC path expansion around an entity
+    2. cypher:    LLM generates Cypher from natural language
+    3. vector:    Neo4j native vector similarity search
+    4. fulltext:  Lucene full-text search over card text
+    5. community: APOC community detection + summaries
+    6. hybrid:    Combine vector + graph + fulltext with RRF
+    """
+    
+    def __init__(self, uri: str, user: str, password: str):
+        self.driver = AsyncGraphDatabase.driver(uri, auth=(user, password))
+    
+    async def subgraph_retrieval(self, card_name: str, depth: int = 2) -> dict:
+        """APOC subgraph expansion — get strategic context around an entity."""
+        query = """
+        MATCH (start:Card {cardName: $card_name})
+        CALL apoc.path.subgraphAll(start, {
+          maxLevel: $depth,
+          relationshipFilter: 'PART_OF_COMBO|SYNERGIZES_WITH|COUNTERS|ENABLES|BELONGS_TO_ARCHETYPE|HAS_WIN_CONDITION'
+        }) YIELD nodes, relationships
+        RETURN nodes, relationships
+        """
+        async with self.driver.session() as session:
+            result = await session.run(query, card_name=card_name, depth=depth)
+            record = await result.single()
+            return self._format_subgraph(record)
+    
+    async def vector_retrieval(self, query_embedding: list[float], k: int = 10) -> list[dict]:
+        """Neo4j native vector index search."""
+        query = """
+        CALL db.index.vector.queryNodes('cardEmbeddings', $k, $embedding)
+        YIELD node, score
+        RETURN node.cardName AS card, score
+        """
+        async with self.driver.session() as session:
+            result = await session.run(query, k=k, embedding=query_embedding)
+            return [dict(r) async for r in result]
+    
+    async def fulltext_retrieval(self, search_text: str, limit: int = 10) -> list[dict]:
+        """Lucene full-text search over card text."""
+        query = """
+        CALL db.index.fulltext.queryNodes('cardSearch', $text)
+        YIELD node, score
+        RETURN node.cardName AS card, node.oracleText AS text, score
+        LIMIT $limit
+        """
+        async with self.driver.session() as session:
+            result = await session.run(query, text=search_text, limit=limit)
+            return [dict(r) async for r in result]
+    
+    async def community_retrieval(self, card_name: str) -> dict:
+        """Get the strategic community cluster a card belongs to."""
+        query = """
+        MATCH (c:Card {cardName: $card_name})
+        WITH c.strategicCluster AS cluster
+        MATCH (member:Card {strategicCluster: cluster})
+        RETURN cluster,
+               collect(member.cardName) AS members,
+               count(member) AS size
+        """
+        async with self.driver.session() as session:
+            result = await session.run(query, card_name=card_name)
+            record = await result.single()
+            return dict(record) if record else {}
+    
+    async def find_combos(self, available_cards: list[str]) -> list[dict]:
+        """Detect available combos from hand + battlefield."""
+        query = """
+        MATCH (combo:Combo)
+        WHERE ALL(piece IN [(combo)<-[:PART_OF_COMBO]-(c:Card) | c.cardName]
+                  WHERE piece IN $available)
+        MATCH (combo)<-[:PART_OF_COMBO]-(c:Card)
+        MATCH (combo)-[:PRODUCES_EFFECT]->(e:Effect)
+        RETURN combo.comboDescription AS description,
+               collect(DISTINCT c.cardName) AS pieces,
+               collect(DISTINCT e.name) AS effects
+        """
+        async with self.driver.session() as session:
+            result = await session.run(query, available=available_cards)
+            return [dict(r) async for r in result]
+    
+    async def matchup_analysis(self, my_archetype: str, opp_archetype: str) -> dict:
+        """Archetype matchup analysis using graph traversal."""
+        query = """
+        MATCH (me:Archetype {name: $my_arch})
+        MATCH (opp:Archetype {name: $opp_arch})
+        OPTIONAL MATCH (me)-[w:WEAK_AGAINST]->(opp)
+        OPTIONAL MATCH (me)-[s:STRONG_AGAINST]->(opp)
+        OPTIONAL MATCH (me)-[:HAS_WIN_CONDITION]->(myWin:Combo)
+        OPTIONAL MATCH (opp)-[:HAS_WIN_CONDITION]->(oppWin:Combo)
+        OPTIONAL MATCH (answer:Card)-[:COUNTERS]->(oppKey:Card)<-[:BELONGS_TO_ARCHETYPE]-(opp)
+        WHERE (answer)-[:BELONGS_TO_ARCHETYPE]->(me)
+        RETURN me.name AS myArchetype, opp.name AS oppArchetype,
+               w IS NOT NULL AS isUnfavorable,
+               s IS NOT NULL AS isFavorable,
+               collect(DISTINCT myWin.comboDescription) AS myWinCons,
+               collect(DISTINCT oppWin.comboDescription) AS oppWinCons,
+               collect(DISTINCT answer.cardName) AS keyAnswers
+        """
+        async with self.driver.session() as session:
+            result = await session.run(query, my_arch=my_archetype, opp_arch=opp_archetype)
+            record = await result.single()
+            return dict(record) if record else {}
+```
+
+#### Hybrid Knowledge Architecture (Neo4j-native)
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│              HYBRID KNOWLEDGE LAYER (Neo4j)                      │
+│                                                                  │
+│  ┌────────────────────────────────────────────────────────────┐  │
+│  │                Neo4j (single instance)                      │  │
+│  │                                                            │  │
+│  │  ┌────────────────┐  ┌──────────────┐  ┌───────────────┐  │  │
+│  │  │ ABox (data)    │  │ TBox (schema)│  │ Vector Index  │  │  │
+│  │  │ 30k+ Card nodes│  │ n10s OWL     │  │ 384-dim       │  │  │
+│  │  │ Combo nodes    │  │ import       │  │ embeddings    │  │  │
+│  │  │ Archetype nodes│  │ SHACL shapes │  │ per card      │  │  │
+│  │  │ Synergy edges  │  │ Class hier.  │  │               │  │  │
+│  │  └────────────────┘  └──────────────┘  └───────────────┘  │  │
+│  │                                                            │  │
+│  │  Plugins: n10s (ontology) · APOC (algorithms) · GDS (opt) │  │
+│  └────────────────────────────┬───────────────────────────────┘  │
+│                               │                                  │
+│  ┌────────────────────────────▼───────────────────────────────┐  │
+│  │  Retrieval Layer                                           │  │
+│  │  Cypher queries · APOC subgraph · Vector similarity        │  │
+│  │  Full-text search · Community clusters · LLM→Cypher        │  │
+│  └────────────────────────────────────────────────────────────┘  │
+│                                                                  │
+│  ┌────────────────────────────────────────────────────────────┐  │
+│  │  GNN Embedder (PyG GraphSAGE)                              │  │
+│  │  Export graph → train → write embeddings back to Neo4j     │  │
+│  └────────────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+### 8.4 Combo Detection via GNN
 
 ```python
 class ComboDetector:
@@ -1075,6 +1264,10 @@ def build_rules_vectorstore(comprehensive_rules_path: str) -> FAISS:
 ## 11. External API Integrations
 
 ### 11.1 Scryfall API Client
+
+> **Use [Scrython](https://github.com/NandaScott/Scrython)** (`pip install scrython`) — a mature, MIT-licensed Python wrapper for the Scryfall API with built-in rate limiting, caching, bulk data download, and full type support. 158 stars, actively maintained (v2.0.2, 2025). See Section 4.4 for full reuse details.
+
+If a custom async client is needed (e.g., for integration with our async game loop), here is the pattern:
 
 ```python
 import httpx
@@ -1613,10 +1806,11 @@ opposition-agents-playing-mtg/
 │   │
 │   ├── knowledge/                     # MTG Ontology & Knowledge Graph
 │   │   ├── __init__.py
-│   │   ├── ontology.py               # Schema definitions (Card, Combo, Synergy, etc.)
-│   │   ├── knowledge_graph.py        # NetworkX graph + query methods
-│   │   ├── graph_embedder.py         # GNN embeddings (PyG)
+│   │   ├── knowledge_graph.py        # Neo4j-backed KG (Cypher queries, APOC algos)
+│   │   ├── graph_rag.py              # GraphRAG retrieval (subgraph, vector, fulltext, hybrid)
+│   │   ├── graph_embedder.py         # GNN embeddings (PyG) + Neo4j vector writeback
 │   │   ├── kg_builder.py             # Populate KG from various sources
+│   │   ├── n10s_setup.py             # n10s graph config + OWL ontology import
 │   │   └── combo_database.py         # Commander Spellbook integration
 │   │
 │   ├── judge/                         # Judge agent
@@ -1651,10 +1845,20 @@ opposition-agents-playing-mtg/
 │       └── card_renderer.py          # Card image loading/display utils
 │
 ├── data/
+│   ├── ontology/
+│   │   ├── mtg-ontology-v1.0.owl     # Formal OWL ontology (RDF/XML)
+│   │   └── mtg-shapes.ttl            # SHACL shapes for validation
+│   ├── competency_questions.txt      # KG competency questions
 │   ├── comprehensive_rules.txt       # MTG Comprehensive Rules full text
 │   ├── card_cache.db                 # SQLite cache of Scryfall card data
-│   ├── combos.json                   # Commander Spellbook combo dump
-│   └── knowledge_graph.gpickle       # Serialized knowledge graph
+│   └── combos.json                   # Commander Spellbook combo dump
+│
+├── neo4j/                             # Neo4j configuration
+│   ├── plugins/                      # n10s + APOC JARs (mounted into container)
+│   ├── init/                         # Cypher scripts run on first start
+│   │   └── 01_init_n10s.cypher       # n10s config + ontology import + indexes
+│   └── conf/
+│       └── neo4j.conf                # Neo4j server config (plugins, memory)
 │
 ├── models/                            # Trained model weights
 │   ├── neural_reasoner.pt
@@ -1685,9 +1889,12 @@ opposition-agents-playing-mtg/
 │   └── 04_training_analysis.ipynb
 │
 └── scripts/
-    ├── build_card_cache.py           # Download Scryfall bulk data
-    ├── build_knowledge_graph.py      # Build KG from all sources
-    └── run_training.py               # Launch self-play training
+    ├── import_scryfall.py            # Download Scryfall bulk data → Neo4j
+    ├── import_combos.py              # Commander Spellbook → Neo4j Combo nodes
+    ├── import_edhrec.py              # EDHREC synergies/archetypes → Neo4j
+    ├── build_embeddings.py           # Train GNN → write vectors to Neo4j
+    ├── run_training.py               # Launch self-play training
+    └── validate_kg.py                # Run n10s SHACL validation
 ```
 
 ---
@@ -1698,12 +1905,17 @@ opposition-agents-playing-mtg/
 |-------|-----------|---------|
 | **LLM Framework** | LangChain + LangGraph | Agent orchestration, tool calling, game state machine |
 | **LLM Providers** | OpenAI GPT-4o / Anthropic Claude / local Llama | Agent brains, judge agent |
-| **Knowledge Graph** | NetworkX (in-memory) + optional Neo4j (persistent) | Card relationships, combos, synergies |
+| **OWL Ontology** | `mtg-ontology-v1.0.owl` (RDF/XML) | Formal TBox — classes, properties, constraints |
+| **Knowledge Graph** | Neo4j 5.x (persistent, single instance) | ABox (data) + TBox (via n10s) + vector indexes + full-text indexes |
+| **n10s (neosemantics)** | [neo4j-labs/neosemantics](https://github.com/neo4j-labs/neosemantics) | OWL ontology import into Neo4j, SHACL validation, RDF ↔ LPG mapping |
+| **APOC** | [neo4j/apoc](https://github.com/neo4j/apoc) | Graph algorithms (PageRank, Louvain, path expansion), full-text, utilities |
+| **KGPlatform** | [KGPlatform](https://github.com/DataScienceLabFHSWF/KGPlatform) (MIT) | KnowledgeGraphBuilder (doc→KG extraction), GraphQAAgent, OntologyExtender |
+| **Ontology Extension** | [OntologyExtender](https://github.com/DataScienceLabFHSWF/OntologyExtender) (MIT) | HITL multi-agent debate for ontology evolution, gap detection, OWL export |
 | **Graph ML** | PyTorch Geometric (PyG) | GNN embeddings, graph-based reasoning |
 | **Neural Networks** | PyTorch | Neural reasoning module, training |
 | **Active Inference** | pymdp (partial) + custom | Belief updating, free energy minimization |
-| **Vector Store** | FAISS or ChromaDB | RAG over Comprehensive Rules |
-| **Card Data** | Scryfall API + SQLite cache | Card info, images, rulings |
+| **Vector Store** | Neo4j native vector index (5.x) | Card embeddings, semantic similarity — no separate store needed |
+| **Scryfall Wrapper** | [Scrython](https://github.com/NandaScott/Scrython) (158 stars, MIT, `pip install scrython`) | Card data, images, rulings, bulk download with built-in rate limiting + caching |
 | **Decklists** | Moxfield / Archidekt / plaintext | Deck importing |
 | **Combos** | Commander Spellbook API | Combo database |
 | **Visualization** | Streamlit (MVP) / PyGame / FastAPI+React | Game board UI |
@@ -1717,17 +1929,19 @@ opposition-agents-playing-mtg/
 
 ### Phase 1: Foundation (Weeks 1–3)
 
-**Goal:** Playable simplified game with random agents.
+**Goal:** Playable simplified game with random agents. **Leverage existing open-source projects** (see Appendix C) to accelerate.
 
 - [ ] Set up project structure, dependencies, pyproject.toml
-- [ ] Implement Scryfall API client with caching (bulk data download)
-- [ ] Define core data models (GameState, PlayerState, CardInstance, zones)
-- [ ] Implement basic turn structure (phases, untap, draw, main, combat, end)
+- [ ] **Evaluate and fork/adapt** [open-mtg](https://github.com/hlynurd/open-mtg) game loop + [mtg-python-engine](https://github.com/wanqizhu/mtg-python-engine) stack/triggers (both MIT)
+- [ ] **Adopt [Scrython](https://github.com/NandaScott/Scrython)** for Scryfall API access (`pip install scrython`) — cards, rulings, bulk data
+- [ ] Study [mtg-player](https://github.com/theRealMarkCastillo/mtg-player) agent architecture and Pydantic models as reference
+- [ ] Define core data models (GameState, PlayerState, CardInstance, zones) — adapt from mtg-player's Pydantic models
+- [ ] Implement basic turn structure (phases, untap, draw, main, combat, end) — port from open-mtg's `phases.py`
 - [ ] Implement mana system (tap lands, pay costs, mana pool)
-- [ ] Implement basic creature combat (attack, block, damage)
-- [ ] Implement the stack (cast spells, resolve, LIFO order)
-- [ ] Implement state-based actions (0 life = lose, 0 toughness = die)
-- [ ] Build random agent (picks random legal action)
+- [ ] Implement basic creature combat (attack, block, damage) — adapt open-mtg's combat with damage assignment ordering
+- [ ] Implement the stack (cast spells, resolve, LIFO order) — port from mtg-python-engine's stack
+- [ ] Implement state-based actions (0 life = lose, 0 toughness = die) — port from mtg-python-engine's SBA implementation
+- [ ] Build random agent (picks random legal action) — use open-mtg's `random_policy.py` as baseline
 - [ ] Run first full game between two random agents with basic decks
 - [ ] Decklist loader (plaintext format)
 
@@ -1743,19 +1957,29 @@ opposition-agents-playing-mtg/
 - [ ] Test LLM agent vs random agent — verify it wins consistently
 - [ ] Basic Streamlit visualization (board state, card images)
 
-### Phase 3: Knowledge Graph & Ontology (Weeks 7–9)
+### Phase 3: OWL Ontology, Knowledge Graph & Neo4j Integration (Weeks 7–9)
 
-**Goal:** Agents have deep strategic knowledge.
+**Goal:** Agents have deep strategic knowledge via a formally validated OWL-driven KG in Neo4j, queryable through Cypher + APOC + vector search.
 
-- [ ] Define ontology schema (Card, Combo, Synergy, Archetype, Interaction, CounterPlay)
-- [ ] Build KG from Scryfall bulk data (all cards as nodes)
-- [ ] Import Commander Spellbook combo data
-- [ ] Build archetype classifier (from EDHREC/MTGGoldfish data)
-- [ ] Implement combo detector (hand + battlefield → available combos)
-- [ ] Implement synergy scoring between cards
-- [ ] Implement counter-play lookup ("what answers card X?")
-- [ ] Wire KG into agent decision pipeline as LangChain tool
-- [ ] LLM-assisted oracle text parsing for automatic interaction edge extraction
+- [ ] Set up Neo4j 5.x Docker container with **n10s** and **APOC** plugins
+- [ ] Initialize n10s graph config and import `data/ontology/mtg-ontology-v1.0.owl` via `n10s.onto.import.fetch()`
+- [ ] Write SHACL shapes file (`data/ontology/mtg-shapes.ttl`) and import via `n10s.validation.shacl.import.fetch()`
+- [ ] Review & extend OWL ontology (add missing creature types, keywords, mechanics)
+- [ ] Write Scryfall bulk data import script (`scripts/import_scryfall.py`): JSON → batch `MERGE` Card nodes
+- [ ] Import Commander Spellbook combo data (`scripts/import_combos.py`): Combo nodes + `PART_OF_COMBO` edges
+- [ ] Import EDHREC synergy/archetype data: Synergy edges, Archetype nodes
+- [ ] Build full-text index: `db.index.fulltext.createNodeIndex('cardSearch', ['Card'], ['cardName','oracleText','typeLine'])`
+- [ ] Run APOC community detection (`apoc.algo.louvain`) → set `strategicCluster` on cards
+- [ ] Run APOC PageRank → set `metagameImportance` on cards
+- [ ] Generate card embeddings (GraphSAGE on exported graph), write back to Neo4j vector index
+- [ ] Validate KG with `n10s.validation.shacl.validate()`
+- [ ] Build `MTGKnowledgeGraph` Python class (see Section 3.4) — Cypher queries for combos, synergies, answers
+- [ ] Build `MTGGraphRAG` retrieval class (see Section 8.3) — subgraph, vector, fulltext, community, hybrid
+- [ ] Wire KG into agent decision pipeline as LangChain tools
+- [ ] Build combo detector (hand + battlefield → Cypher → available combos)
+- [ ] Build archetype classifier (cards seen → Cypher → archetype probabilities)
+- [ ] Set up OntologyExtender for HITL extension workflow (your brother extends the ontology)
+- [ ] Run first OntologyExtender gap analysis → identify missing classes/properties
 
 ### Phase 4: Active Inference & Opponent Modeling (Weeks 10–12)
 
@@ -1828,7 +2052,7 @@ opposition-agents-playing-mtg/
 | Risk | Mitigation |
 |------|-----------|
 | **LLM hallucination on rules** | Judge agent with RAG over Comprehensive Rules; structured action validation by rules engine (never trust raw LLM output for game state changes) |
-| **Game engine complexity** | Start with a subset of MTG (creature combat + instants/sorceries); incrementally add complexity. Consider using existing open-source engines as reference (Forge, XMage). |
+| **Game engine complexity** | **Fork/adapt existing MIT-licensed Python engines** (open-mtg for game loop, mtg-python-engine for stack/triggers, mtg-player for agent tooling). Use Forge/XMage as correctness reference. See Appendix C. |
 | **Scryfall rate limits** | Bulk data download + local SQLite cache; only hit API for missing cards |
 | **Moxfield API not public** | Fall back to Archidekt API or plaintext decklist importing |
 | **Active inference scalability** | Start with heuristic approximations; exact Bayesian inference is intractable over full card space. Use variational methods. |
@@ -1846,8 +2070,7 @@ opposition-agents-playing-mtg/
    - Training: Local model (Llama 3) for high-volume self-play
 
 3. **Knowledge graph persistence?**
-   - MVP: NetworkX in-memory + gpickle serialization
-   - Scale: Neo4j for complex graph queries and multi-user access
+   - **Decision: Neo4j from the start** — n10s for OWL ontology, APOC for graph algorithms, native vector indexes. No need for in-memory MVP + later migration.
 
 4. **How to handle cards with extremely complex text?**
    - Parse keywords mechanically; fall back to LLM interpretation with judge validation for novel/complex abilities.

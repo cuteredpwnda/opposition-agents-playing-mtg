@@ -1,0 +1,140 @@
+@prefix sh:    <http://www.w3.org/ns/shacl#> .
+@prefix xsd:   <http://www.w3.org/2001/XMLSchema#> .
+@prefix mtg:   <http://purl.org/mtg/ontology#> .
+@prefix rdfs:  <http://www.w3.org/2000/01/rdf-schema#> .
+
+# ===========================================================================
+# SHACL Shapes for MTG Ontology Validation
+# Used by n10s: CALL n10s.validation.shacl.import.fetch(..., 'Turtle')
+# ===========================================================================
+
+# ---------------------------------------------------------------------------
+# Card shape — validate all Card nodes
+# ---------------------------------------------------------------------------
+mtg:CardShape
+    a sh:NodeShape ;
+    sh:targetClass mtg:Card ;
+
+    # cardName is required and must be a non-empty string
+    sh:property [
+        sh:path mtg:cardName ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:minLength 1 ;
+        sh:name "Card Name" ;
+        sh:message "Every Card must have exactly one non-empty cardName." ;
+    ] ;
+
+    # oracleText is optional but must be string if present
+    sh:property [
+        sh:path mtg:oracleText ;
+        sh:datatype xsd:string ;
+        sh:maxCount 1 ;
+    ] ;
+
+    # manaValue must be a non-negative integer
+    sh:property [
+        sh:path mtg:manaValue ;
+        sh:datatype xsd:integer ;
+        sh:minInclusive 0 ;
+        sh:maxCount 1 ;
+    ] ;
+
+    # typeLine is required
+    sh:property [
+        sh:path mtg:typeLine ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+
+    # colors must be valid color values
+    sh:property [
+        sh:path mtg:hasColor ;
+        sh:class mtg:Color ;
+    ] ;
+
+    # colorIdentity must be valid color values
+    sh:property [
+        sh:path mtg:hasColorIdentity ;
+        sh:class mtg:Color ;
+    ] .
+
+
+# ---------------------------------------------------------------------------
+# Creature shape — creatures must have power and toughness
+# ---------------------------------------------------------------------------
+mtg:CreatureShape
+    a sh:NodeShape ;
+    sh:targetClass mtg:Creature ;
+
+    sh:property [
+        sh:path mtg:power ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:name "Power" ;
+        sh:message "Every Creature must have a power value." ;
+    ] ;
+
+    sh:property [
+        sh:path mtg:toughness ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:name "Toughness" ;
+        sh:message "Every Creature must have a toughness value." ;
+    ] .
+
+
+# ---------------------------------------------------------------------------
+# Combo shape — combos must have at least 2 pieces
+# ---------------------------------------------------------------------------
+mtg:ComboShape
+    a sh:NodeShape ;
+    sh:targetClass mtg:Combo ;
+
+    sh:property [
+        sh:path [ sh:inversePath mtg:partOfCombo ] ;
+        sh:minCount 2 ;
+        sh:name "Combo Pieces" ;
+        sh:message "A Combo must have at least 2 component cards." ;
+    ] ;
+
+    sh:property [
+        sh:path mtg:comboDescription ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] .
+
+
+# ---------------------------------------------------------------------------
+# Archetype shape
+# ---------------------------------------------------------------------------
+mtg:ArchetypeShape
+    a sh:NodeShape ;
+    sh:targetClass mtg:Archetype ;
+
+    sh:property [
+        sh:path mtg:name ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] .
+
+
+# ---------------------------------------------------------------------------
+# Keyword shape
+# ---------------------------------------------------------------------------
+mtg:KeywordShape
+    a sh:NodeShape ;
+    sh:targetClass mtg:Keyword ;
+
+    sh:property [
+        sh:path mtg:name ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] .

@@ -1,0 +1,32 @@
+.env
+__pycache__/
+*.pyc
+*.pyo
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+
+# Neo4j data (managed by Docker volumes)
+neo4j/data/
+neo4j/logs/
+
+# Downloaded data files
+data/card_cache.db
+data/combos.json
+data/comprehensive_rules.txt
+data/scryfall_bulk/
+
+# Model weights
+models/*.pt
+models/*.pth
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
+.DS_Store

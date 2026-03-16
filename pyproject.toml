@@ -1,0 +1,83 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "opposition-agents-mtg"
+version = "0.1.0"
+description = "Agentic framework where LLM agents play Magic: The Gathering"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Felix Neubürger" }]
+
+dependencies = [
+    # Core
+    "pydantic>=2.0",
+    "pydantic-settings>=2.0",
+
+    # LLM / Agent framework
+    "langchain>=0.3",
+    "langgraph>=0.2",
+    "langchain-openai>=0.2",
+    "langchain-anthropic>=0.2",
+    "langchain-community>=0.3",
+    "langchain-neo4j>=0.2",
+
+    # Neo4j
+    "neo4j>=5.20",
+
+    # Scryfall
+    "scrython>=2.0",
+
+    # HTTP
+    "httpx>=0.27",
+
+    # Async
+    "asyncio-extra>=1.0; python_version<'3.12'",
+
+    # Data
+    "numpy>=1.26",
+    "scipy>=1.12",
+    "pandas>=2.1",
+]
+
+[project.optional-dependencies]
+ml = [
+    "torch>=2.2",
+    "torch-geometric>=2.5",
+    "pymdp>=0.1",
+]
+ui = [
+    "streamlit>=1.30",
+    "pygame>=2.5",
+    "fastapi>=0.110",
+    "uvicorn>=0.27",
+]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "pytest-cov>=5.0",
+    "ruff>=0.5",
+    "mypy>=1.9",
+]
+all = ["opposition-agents-mtg[ml,ui,dev]"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
