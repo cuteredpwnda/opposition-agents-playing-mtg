@@ -161,6 +161,44 @@ class GameRunner:
                     game_state = move_card(game_state, card_to_draw.instance_id, Zone.LIBRARY, Zone.HAND, player.player_id)
                     player.has_drawn_for_turn = True
 
+            # Combat phases
+            if phase == Phase.COMBAT_ATTACKERS:
+                from src.engine.combat import declare_attackers
+                pid = game_state.active_player.player_id
+                agent = agents[pid]
+                
+                # Active player makes attacker decisions until they pass
+                while not game_state.game_over:
+                    legal = self.engine.get_legal_actions(game_state, pid)
+                    
+                    # Check if there are any attack options
+                    attack_options = [a for a in legal if a.action_type == ActionType.DECLARE_ATTACKERS]
+                    if not attack_options:
+                        # No more creatures to attack with
+                        break
+                    
+                    action = await agent.decide_action(game_state, legal)
+                    
+                    # Notify all observers
+                    for a in agents.values():
+                        await a.observe(game_state, action)
+                    
+                    # Check if passed
+                    if action.action_type == ActionType.PASS_PRIORITY:
+                        break
+                    
+                    # Execute attack action
+                    game_state = self.engine.execute_action(game_state, action)
+            
+            if phase == Phase.COMBAT_BLOCKERS:
+                # Defending players declare blockers (for now, empty)
+                pass
+            
+            if phase == Phase.COMBAT_DAMAGE:
+                from src.engine.combat import resolve_combat_damage
+                # Resolve combat damage
+                resolve_combat_damage(game_state)
+
             # In main phases, active player can cast spells/play lands
             if is_main_phase(phase):
                 pid = game_state.active_player.player_id

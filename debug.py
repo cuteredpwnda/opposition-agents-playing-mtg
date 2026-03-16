@@ -16,7 +16,7 @@ from src.orchestrator.game_runner import GameRunner, GameConfig
 
 
 async def main():
-    config = GameConfig(format="standard", starting_life=20, max_turns=5)
+    config = GameConfig(format="standard", starting_life=20, max_turns=20)
     runner = GameRunner(config)
     
     agent1 = RandomAgent(player_id="Alice", name="Random Alice")
@@ -24,7 +24,7 @@ async def main():
     
     agents = {"Alice": agent1, "Bob": agent2}
     
-    # Simple deck
+    # Deck with lands and creatures
     deck = [
         {
             "name": "Plains",
@@ -35,9 +35,35 @@ async def main():
             "toughness": None,
             "cmc": 0,
             "keywords": [],
-            "set": "DOM",  # IMPORTANT: without a set, cards are treated as tokens!
+            "set": "DOM",
         }
-        for _ in range(20)
+        for _ in range(10)
+    ] + [
+        {
+            "name": "Mountain",
+            "mana_cost": "",
+            "type_line": "Land — Mountain",
+            "oracle_text": "{T}: Add {R}.",
+            "power": None,
+            "toughness": None,
+            "cmc": 0,
+            "keywords": [],
+            "set": "DOM",
+        }
+        for _ in range(10)
+    ] + [
+        {
+            "name": "Soldier",
+            "mana_cost": "{1}{W}",
+            "type_line": "Creature — Human Soldier",
+            "oracle_text": "",
+            "power": "2",
+            "toughness": "2",
+            "cmc": 2,
+            "keywords": [],
+            "set": "DOM",
+        }
+        for _ in range(8)
     ] + [
         {
             "name": "Goblin",
@@ -50,7 +76,7 @@ async def main():
             "keywords": [],
             "set": "DOM",
         }
-        for _ in range(20)
+        for _ in range(12)
     ]
     
     decks = {"Alice": deck.copy(), "Bob": deck.copy()}

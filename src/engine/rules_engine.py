@@ -34,8 +34,7 @@ class RulesEngine:
         # Always can pass priority
         actions.append(Action(action_type=ActionType.PASS_PRIORITY, player_id=player_id))
 
-        # Can always concede
-        actions.append(Action(action_type=ActionType.CONCEDE, player_id=player_id))
+        # NOTE: CONCEDE is not offered as a legal action for agents (they should stay in game)
 
         hand = [c for c in state.cards if c.zone == Zone.HAND and c.owner_id == player_id]
         battlefield = [c for c in state.cards if c.zone == Zone.BATTLEFIELD and c.owner_id == player_id]
@@ -94,6 +93,25 @@ class RulesEngine:
                         card_instance_id=card.instance_id,
                     )
                 )
+
+        # Combat actions: declare attackers/blockers during combat phases
+        from .game_state import Phase
+        if state.phase == Phase.COMBAT_ATTACKERS and state.players[state.active_player_index].player_id == player_id:
+            # During declare attackers, generate options for attacking creatures
+            # For now, simple approach: each untapped creature can attack
+            for card in battlefield:
+                if card.is_creature() and not card.tapped and not card.summoning_sick:
+                    # For simplicity, creatures attack the defending player (next player in turn order)
+                    defender_idx = (state.active_player_index + 1) % len(state.players)
+                    defender_id = state.players[defender_idx].player_id
+                    actions.append(
+                        Action(
+                            action_type=ActionType.DECLARE_ATTACKERS,
+                            player_id=player_id,
+                            card_instance_id=card.instance_id,
+                            targets=[defender_id],
+                        )
+                    )
 
         return actions
 
@@ -175,6 +193,16 @@ class RulesEngine:
                             player.mana_pool["G"] += 1
                         else:
                             player.mana_pool["C"] += 1
+            return state
+        
+        if action.action_type == ActionType.DECLARE_ATTACKERS:
+            if action.card_instance_id and action.targets:
+                card = next((c for c in state.cards if c.instance_id == action.card_instance_id), None)
+                defender_id = action.targets[0]
+                if card:
+                    from .combat import declare_attackers
+                    declare_attackers(state, {action.card_instance_id: defender_id})
+                    card.tapped = True
             return state
         
         # Default: no change
