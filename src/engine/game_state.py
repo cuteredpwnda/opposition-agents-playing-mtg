@@ -75,6 +75,32 @@ class ActionType(str, Enum):
     SPECIAL_ACTION = auto()
 
 
+class TriggerType(str, Enum):
+    """Types of triggers (when X happens, ability triggers)."""
+    
+    ENTERS_BATTLEFIELD = "enters_battlefield"
+    LEAVES_BATTLEFIELD = "leaves_battlefield"
+    ATTACKS = "attacks"
+    BLOCKS = "blocks"
+    CAST = "cast"
+    DEALT_DAMAGE = "dealt_damage"
+    CREATURE_DIES = "creature_dies"
+    LIFE_GAIN = "life_gain"
+    COMBAT_DAMAGE = "combat_damage"
+
+
+@dataclass
+class Trigger:
+    """A triggered ability awaiting resolution."""
+    
+    trigger_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    source_card_id: str = ""  # Which card is triggering
+    controller_id: str = ""  # Who controls the trigger
+    trigger_type: TriggerType = TriggerType.ENTERS_BATTLEFIELD
+    description: str = ""  # "draw a card", "deal 1 damage", etc.
+    on_stack: bool = False  # Whether this trigger has been put on stack
+
+
 # ---------------------------------------------------------------------------
 # Data Models
 # ---------------------------------------------------------------------------
@@ -219,6 +245,7 @@ class GameState:
     players: list[PlayerState] = field(default_factory=list)
     cards: list[CardInstance] = field(default_factory=list)
     stack: list[StackItem] = field(default_factory=list)
+    triggered_abilities: list[Trigger] = field(default_factory=list)  # Pending triggers
     combat: Optional[CombatState] = None
     game_log: list[str] = field(default_factory=list)
     game_over: bool = False

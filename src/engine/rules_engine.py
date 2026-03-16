@@ -229,7 +229,8 @@ class RulesEngine:
         For other spells, effects are applied (not implemented in Phase 1).
         """
         from .zones import move_card
-        from .game_state import Zone
+        from .game_state import Zone, StackItem
+        from .triggers import check_enters_battlefield_triggers, resolve_trigger
         
         source_card_id = stack_item.source_card_id
         card = next((c for c in state.cards if c.instance_id == source_card_id), None)
@@ -247,6 +248,29 @@ class RulesEngine:
             card.summoning_sick = True
             card.turn_entered = state.turn_number
             state.log(f"{card.name} enters the battlefield")
+            
+            # CHECK TRIGGERED ABILITIES
+            # Check what ETB triggers should fire from other permanents and this card
+            etb_triggers = check_enters_battlefield_triggers(state, card)
+            
+            for trigger in etb_triggers:
+                # Add trigger to the stack (triggered abilities go on stack)
+                # Create a stack item for this triggered ability
+                trigger_stack_item = StackItem(
+                    source_card_id=trigger.source_card_id,
+                    controller_id=trigger.controller_id,
+                    is_spell=False,  # It's an ability, not a spell
+                    card_data={
+                        "name": f"[Trigger] {trigger.description}",
+                        "type_line": "Ability",
+                    }
+                )
+                state.stack.append(trigger_stack_item)
+                state.log(f"[TRIGGER] {trigger.description} added to stack")
+                
+                # Store the trigger for resolution
+                state.triggered_abilities.append(trigger)
+        
         else:
             # For non-creatures, move to graveyard (they've resolved)
             # TODO: Implement actual spell resolution effects
@@ -254,6 +278,41 @@ class RulesEngine:
             state.log(f"{card.name} resolves")
         
         return state
+
+    def resolve_stack_item(self, state: GameState) -> GameState:
+        """Resolve the top of the stack (spell or ability).
+        
+        Handles both spells (creatures) and triggered abilities.
+        """
+        from .triggers import resolve_trigger
+        
+        if len(state.stack) == 0:
+            return state
+        
+        stack_item = state.stack.pop()
+        
+        # Check if this is a triggered ability
+        if not stack_item.is_spell:
+            # This is a triggered ability on the stack
+            state.log(f"{stack_item.card_data.get('name', 'Ability')} resolves")
+            
+            # Find the corresponding trigger
+            trigger = next(
+                (t for t in state.triggered_abilities if t.source_card_id == stack_item.source_card_id),
+                None
+            )
+            
+            if trigger:
+                # Apply the trigger's effect
+                state = resolve_trigger(state, trigger)
+                state.triggered_abilities.remove(trigger)
+            
+            return state
+        
+        else:
+            # This is a spell, resolve it normally (put it back and call resolve_spell)
+            state.stack.append(stack_item)
+            return self.resolve_spell(state, stack_item)
 
     def check_state_based_actions(self, state: GameState) -> list[str]:
         """CR 704 — check and apply state-based actions.

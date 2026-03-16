@@ -134,13 +134,8 @@ async def run_priority_loop(
                     # Stack has items, resolve top
                     game_state.log("All players passed, stack non-empty → resolving top of stack")
                     
-                    # Get and resolve the top of stack
-                    if len(game_state.stack) > 0:
-                        stack_item = game_state.stack[-1]  # Peek at top
-                        game_state.stack.pop()  # Remove from stack
-                        
-                        # Apply resolution effects (moves card to BF or GY)
-                        game_state = rules_engine.resolve_spell(game_state, stack_item)
+                    # Resolve top of stack using the new resolve_stack_item method
+                    game_state = rules_engine.resolve_stack_item(game_state)
                     
                     # After resolution, reset passed set and give AP priority again
                     passed_players = set()
