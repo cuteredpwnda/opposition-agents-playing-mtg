@@ -62,6 +62,8 @@ class MTGKnowledgeGraph:
         self, available_cards: list[str]
     ) -> list[dict[str, Any]]:
         """Find combos where ALL pieces are in the available card list."""
+        if not available_cards:
+            return []
         query = """
         MATCH (combo:Combo)
         WITH combo, [(combo)<-[:PART_OF_COMBO]-(c:Card) | c.cardName] AS pieces
@@ -78,14 +80,17 @@ class MTGKnowledgeGraph:
         self, available_cards: list[str]
     ) -> list[dict[str, Any]]:
         """Find combos where all pieces except one are available."""
+        if not available_cards:
+            return []
         query = """
         MATCH (combo:Combo)
         WITH combo, [(combo)<-[:PART_OF_COMBO]-(c:Card) | c.cardName] AS pieces
         WITH combo, pieces,
              [p IN pieces WHERE NOT p IN $available] AS missing
         WHERE size(missing) = 1
+        MATCH (combo)<-[:PART_OF_COMBO]-(c:Card)
         RETURN combo.comboDescription AS description,
-               pieces,
+               collect(DISTINCT c.cardName) AS pieces,
                missing[0] AS missingPiece,
                combo.fragility AS fragility
         """
@@ -126,17 +131,21 @@ class MTGKnowledgeGraph:
         self, cards_seen: list[str]
     ) -> list[dict[str, Any]]:
         """Given cards observed, rank likely archetypes."""
+        if not cards_seen:
+            return []
         query = """
         UNWIND $cards AS cardName
         MATCH (c:Card {cardName: cardName})-[:BELONGS_TO_ARCHETYPE]->(a:Archetype)
-        WITH a, count(c) AS matchCount
+        WITH a, count(DISTINCT cardName) AS matchCount
         RETURN a.name AS archetype,
                matchCount,
                toFloat(matchCount) / size($cards) AS confidence
         ORDER BY confidence DESC
         LIMIT 5
         """
-        return await self._run_query(query, cards=cards_seen)
+        results = await self._run_query(query, cards=cards_seen)
+        # If no archetype matches, return empty list
+        return results if results else []
 
     async def get_archetype_signature_cards(
         self, archetype_name: str
@@ -192,14 +201,14 @@ class MTGKnowledgeGraph:
         near = await self.detect_near_combos(available)
 
         threats = []
-        for card in opponent_cards:
+        for card in opponent_cards[:5]:  # Limit to 5 opponent cards for perf
             answers = await self.get_answers_to(card)
             if answers:
-                threats.append({"threat": card, "answers": answers})
+                threats.append({"threat": card, "answers": answers[:3]})
 
         return {
-            "available_combos": combos,
-            "near_combos": near,
+            "available_combos": combos[:10],
+            "near_combos": near[:10],
             "threat_answers": threats,
         }
 

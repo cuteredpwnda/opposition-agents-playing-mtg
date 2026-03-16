@@ -133,6 +133,27 @@ class CardInstance:
     def toughness(self) -> Optional[str]:
         return self.card_data.get("toughness")
 
+    @property
+    def is_token(self) -> bool:
+        """Check if this card is a token (lacks a card set, o/w has token=true)."""
+        return self.card_data.get("token", False) or self.card_data.get("set") is None
+
+    @property
+    def keywords(self) -> list[str]:
+        """Extract keywords from oracle text and keywords field."""
+        oracle_keywords = self.card_data.get("keywords", [])
+        if isinstance(oracle_keywords, str):
+            oracle_keywords = [oracle_keywords]
+        # Also parse from oracle text
+        text_keywords = []
+        oracle = self.oracle_text.lower()
+        keyword_list = ["flying", "flash", "lifelink", "deathtouch", "trample", 
+                        "menace", "shadow", "unblockable", "vigilance", "reach"]
+        for kw in keyword_list:
+            if kw in oracle:
+                text_keywords.append(kw)
+        return list(set(oracle_keywords + text_keywords))
+
 
 @dataclass
 class PlayerState:

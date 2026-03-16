@@ -24,8 +24,12 @@ class RulesEngine:
         This is the core interface that agents use — adapted from open-mtg's
         ``game.get_moves()`` pattern, extended with priority and instant-speed.
         """
+        from .mana import can_pay, parse_mana_cost
+        
         actions: list[Action] = []
-        player = next(p for p in state.players if p.player_id == player_id)
+        player = next((p for p in state.players if p.player_id == player_id), None)
+        if not player:
+            return []
 
         # Always can pass priority
         actions.append(Action(action_type=ActionType.PASS_PRIORITY, player_id=player_id))
@@ -33,22 +37,141 @@ class RulesEngine:
         # Can always concede
         actions.append(Action(action_type=ActionType.CONCEDE, player_id=player_id))
 
+        hand = [c for c in state.cards if c.zone == Zone.HAND and c.owner_id == player_id]
+        battlefield = [c for c in state.cards if c.zone == Zone.BATTLEFIELD and c.owner_id == player_id]
+
         # Sorcery-speed actions: only during own main phase with empty stack
         if (
-            state.active_player.player_id == player_id
+            state.players[state.active_player_index].player_id == player_id
             and is_main_phase(state.phase)
             and stack_is_empty(state)
         ):
-            actions.extend(self._get_sorcery_speed_actions(state, player_id))
+            # Play a land (once per turn)
+            if player.land_plays_remaining > 0:
+                for card in hand:
+                    if card.is_land():
+                        actions.append(
+                            Action(
+                                action_type=ActionType.PLAY_LAND,
+                                player_id=player_id,
+                                card_instance_id=card.instance_id,
+                            )
+                        )
+
+            # Cast sorceries and creatures (non-instant)
+            for card in hand:
+                if not card.is_land() and not card.is_instant():
+                    cost = parse_mana_cost(card.mana_cost or "")
+                    if can_pay(player, cost):
+                        actions.append(
+                            Action(
+                                action_type=ActionType.CAST_SPELL,
+                                player_id=player_id,
+                                card_instance_id=card.instance_id,
+                            )
+                        )
 
         # Instant-speed actions: any time you have priority
-        actions.extend(self._get_instant_speed_actions(state, player_id))
+        for card in hand:
+            if card.is_instant() or "flash" in card.oracle_text.lower():
+                cost = parse_mana_cost(card.mana_cost or "")
+                if can_pay(player, cost):
+                    actions.append(
+                        Action(
+                            action_type=ActionType.CAST_SPELL,
+                            player_id=player_id,
+                            card_instance_id=card.instance_id,
+                        )
+                    )
+
+        # Activated abilities of permanents (basic impl: tap for mana)
+        for card in battlefield:
+            if card.is_land() and not card.tapped:
+                actions.append(
+                    Action(
+                        action_type=ActionType.ACTIVATE_ABILITY,
+                        player_id=player_id,
+                        card_instance_id=card.instance_id,
+                    )
+                )
 
         return actions
 
     def execute_action(self, state: GameState, action: Action) -> GameState:
         """Apply an action, update state, check SBAs, queue triggers."""
-        # TODO: implement per action type
+        from .zones import move_card
+        from .mana import pay_cost, parse_mana_cost
+        
+        if action.action_type == ActionType.PASS_PRIORITY:
+            # No state change on pass
+            return state
+        
+        if action.action_type == ActionType.CONCEDE:
+            state.game_over = True
+            # Winner is next player
+            players_list = state.players
+            idx = next((i for i, p in enumerate(players_list) if p.player_id == action.player_id), 0)
+            state.winner = players_list[(idx + 1) % len(players_list)]
+            return state
+        
+        if action.action_type == ActionType.PLAY_LAND:
+            if action.card_instance_id:
+                card = next((c for c in state.cards if c.instance_id == action.card_instance_id), None)
+                if card:
+                    # Move card from hand to battlefield
+                    state = move_card(
+                        state, action.card_instance_id, Zone.HAND, Zone.BATTLEFIELD,
+                        action.player_id
+                    )
+                    card.tapped = False
+                    player = next((p for p in state.players if p.player_id == action.player_id), None)
+                    if player:
+                        player.land_plays_remaining -= 1
+            return state
+        
+        if action.action_type == ActionType.CAST_SPELL:
+            if action.card_instance_id:
+                card = next((c for c in state.cards if c.instance_id == action.card_instance_id), None)
+                if card:
+                    # Pay mana
+                    cost = parse_mana_cost(card.mana_cost or "")
+                    player = next((p for p in state.players if p.player_id == action.player_id), None)
+                    if player:
+                        player.mana_pool = pay_cost(player.mana_pool, cost)
+                    
+                    # Move from hand to stack
+                    from .stack import push_to_stack
+                    state = move_card(
+                        state, action.card_instance_id, Zone.HAND, Zone.STACK,
+                        action.player_id
+                    )
+                    state = push_to_stack(state, card, action.player_id)
+            return state
+        
+        if action.action_type == ActionType.ACTIVATE_ABILITY:
+            if action.card_instance_id:
+                card = next((c for c in state.cards if c.instance_id == action.card_instance_id), None)
+                if card and card.is_land():
+                    # Tap for mana
+                    card.tapped = True
+                    player = next((p for p in state.players if p.player_id == action.player_id), None)
+                    if player:
+                        # Basic land produces one mana of appropriate color
+                        if "Plains" in card.name:
+                            player.mana_pool["W"] += 1
+                        elif "Island" in card.name:
+                            player.mana_pool["U"] += 1
+                        elif "Swamp" in card.name:
+                            player.mana_pool["B"] += 1
+                        elif "Mountain" in card.name:
+                            player.mana_pool["R"] += 1
+                        elif "Forest" in card.name:
+                            player.mana_pool["G"] += 1
+                        else:
+                            player.mana_pool["C"] += 1
+            return state
+        
+        # Default: no change
         return state
 
     def check_state_based_actions(self, state: GameState) -> list[str]:
@@ -56,104 +179,61 @@ class RulesEngine:
 
         Returns list of events that occurred.
         """
+        from .zones import move_card
+        
         events: list[str] = []
 
         # Players at 0 or less life lose
-        for player in state.players:
+        surviving_players = list(state.players)
+        for player in list(surviving_players):
             if player.life_total <= 0:
                 events.append(f"{player.name} loses the game (life <= 0)")
-                # TODO: eliminate player
+                surviving_players.remove(player)
+                state.players = surviving_players
 
         # Creatures with lethal damage or 0 toughness die
-        for card in state.cards:
+        for card in list(state.cards):
             if card.zone != Zone.BATTLEFIELD or not card.is_creature():
                 continue
+            
             toughness = _parse_int(card.toughness)
             if toughness is not None and card.damage_marked >= toughness:
                 events.append(f"{card.name} dies (lethal damage)")
-                # TODO: move to graveyard
-            if toughness is not None and toughness <= 0:
+                state = move_card(state, card.instance_id, Zone.BATTLEFIELD, Zone.GRAVEYARD, card.owner)
+                card.damage_marked = 0
+            elif toughness is not None and toughness <= 0:
                 events.append(f"{card.name} dies (0 toughness)")
+                state = move_card(state, card.instance_id, Zone.BATTLEFIELD, Zone.GRAVEYARD, card.owner)
 
         # Commander damage check (21+)
         if state.format == "commander":
-            for player in state.players:
-                for cmd_id, dmg in player.commander_damage_received.items():
+            for player in list(surviving_players):
+                for cmd_id, dmg in list(player.commander_damage_received.items()):
                     if dmg >= 21:
                         events.append(
-                            f"{player.name} loses (21+ commander damage from {cmd_id})"
+                            f"{player.name} loses (21+ commander damage)"
                         )
+                        surviving_players.remove(player)
+                        state.players = surviving_players
+                        break
+
+        # Tokens cease to exist when they leave battlefield
+        for card in list(state.cards):
+            if card.is_token and card.zone != Zone.BATTLEFIELD:
+                if card in state.cards:
+                    state.cards.remove(card)
+                    events.append(f"{card.name} token ceases to exist")
+
+        # Game ends if only one player remains
+        if len(surviving_players) == 1:
+            state.game_over = True
+            state.winner = surviving_players[0]
+            events.append(f"{surviving_players[0].name} wins the game!")
+        elif len(surviving_players) == 0:
+            state.game_over = True
+            events.append("Draw!")
 
         return events
-
-    # -- Private helpers --
-
-    def _get_sorcery_speed_actions(
-        self, state: GameState, player_id: str
-    ) -> list[Action]:
-        """Actions available at sorcery speed."""
-        actions: list[Action] = []
-        player = next(p for p in state.players if p.player_id == player_id)
-        hand = state.cards_in_zone(player_id, Zone.HAND)
-
-        # Play a land (once per turn)
-        if player.land_plays_remaining > 0:
-            for card in hand:
-                if card.is_land():
-                    actions.append(
-                        Action(
-                            action_type=ActionType.PLAY_LAND,
-                            player_id=player_id,
-                            card_instance_id=card.instance_id,
-                        )
-                    )
-
-        # Cast sorcery-speed spells
-        for card in hand:
-            if not card.is_land() and not card.is_instant():
-                actions.append(
-                    Action(
-                        action_type=ActionType.CAST_SPELL,
-                        player_id=player_id,
-                        card_instance_id=card.instance_id,
-                    )
-                )
-
-        return actions
-
-    def _get_instant_speed_actions(
-        self, state: GameState, player_id: str
-    ) -> list[Action]:
-        """Actions available at instant speed (whenever you have priority)."""
-        actions: list[Action] = []
-        hand = state.cards_in_zone(player_id, Zone.HAND)
-
-        # Cast instants / cards with flash
-        for card in hand:
-            if card.is_instant():
-                actions.append(
-                    Action(
-                        action_type=ActionType.CAST_SPELL,
-                        player_id=player_id,
-                        card_instance_id=card.instance_id,
-                    )
-                )
-            elif "flash" in card.card_data.get("keywords", []):
-                actions.append(
-                    Action(
-                        action_type=ActionType.CAST_SPELL,
-                        player_id=player_id,
-                        card_instance_id=card.instance_id,
-                    )
-                )
-
-        # Activated abilities of permanents on battlefield
-        battlefield = state.cards_in_zone(player_id, Zone.BATTLEFIELD)
-        for card in battlefield:
-            # TODO: parse activated abilities from oracle text
-            pass
-
-        return actions
 
 
 def _parse_int(val: str | None) -> int | None:

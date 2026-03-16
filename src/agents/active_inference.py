@@ -115,11 +115,29 @@ class ActiveInferenceModule:
 
         High for: Thoughtseize, Gitaxian Probe, probing attacks.
         """
-        # Heuristic: discard/reveal spells have high epistemic value
-        if action.card and action.card.oracle_text:
-            text = action.card.oracle_text.lower()
-            if any(kw in text for kw in ["look at", "reveal", "target player discards"]):
-                return 0.3
+        if action.card_instance_id is None:
+            return 0.0
+        
+        # Find the card in game state
+        card = next((c for c in game_state.cards if c.instance_id == action.card_instance_id), None)
+        if card is None:
+            return 0.0
+        
+        text = card.oracle_text.lower()
+        
+        # Discard/reveal effects have high epistemic value
+        if any(kw in text for kw in ["look at", "reveal", "target player discards"]):
+            return 0.4  # Strong information gathering
+        
+        # Draw effects
+        if "draw" in text:
+            return 0.2
+        
+        # Thoughtseize/Duress-like effects
+        if "sacrifice" in text and "hand" in text:
+            return 0.35
+        
+        # Default: no epistemic value
         return 0.0
 
     def _compute_pragmatic_value(
@@ -129,7 +147,36 @@ class ActiveInferenceModule:
 
         High for: combo pieces, lethal damage, key threats.
         """
-        if action.card is None:
+        if action.card_instance_id is None:
             return 0.0
-        # Simple heuristic: higher CMC cards are typically higher impact
-        return min(action.card.cmc / 10.0, 0.5)
+        
+        # Find the card in game state
+        card = next((c for c in game_state.cards if c.instance_id == action.card_instance_id), None)
+        if card is None:
+            return 0.0
+        
+        text = card.oracle_text.lower()
+        
+        # Win/infinite combos are highest priority
+        if any(kw in text for kw in ["win", "infinite", "draw"]):
+            return 0.5
+        
+        # Creatures with high power deal threat
+        if card.is_creature() and card.power:
+            try:
+                power_val = int(card.power)
+                return min(power_val / 20.0, 0.4)
+            except (ValueError, TypeError):
+                pass
+        
+        # Removal/interaction / counters
+        if any(kw in text for kw in ["destroy", "return", "counter", "remove"]):
+            return 0.25
+        
+        # Mana acceleration/ramp
+        if any(kw in text for kw in ["add {", "ramp", "search", "fetch"]):
+            return 0.15
+        
+        # Default: value based on mana cost
+        cmc = card.cmc or 0.0
+        return min(cmc / 10.0, 0.3)

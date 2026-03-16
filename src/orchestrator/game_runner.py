@@ -81,103 +81,109 @@ class GameRunner:
     ) -> GameState:
         """Initialize game state, shuffle libraries, draw opening hands."""
         import random
+        from src.engine.game_state import Zone
 
-        life = self.config.starting_life
-        players = {pid: PlayerState(life=life) for pid in agents}
-        cards_in_zone: dict[tuple[str, str], list[CardInstance]] = {}
-
-        for pid, deck_data in decks.items():
-            library = [
-                CardInstance(
-                    instance_id=f"{pid}_{i}",
-                    owner=pid,
-                    controller=pid,
-                    name=card.get("name", f"Card_{i}"),
-                    oracle_text=card.get("oracle_text", ""),
-                    type_line=card.get("type_line", ""),
-                    mana_cost=card.get("mana_cost", ""),
-                    cmc=int(card.get("cmc", 0)),
-                    is_creature="Creature" in card.get("type_line", ""),
-                    is_land="Land" in card.get("type_line", ""),
-                    is_instant="Instant" in card.get("type_line", ""),
-                    power=int(card["power"]) if card.get("power", "").isdigit() else None,
-                    toughness=int(card["toughness"]) if card.get("toughness", "").isdigit() else None,
+        # Create players list
+        player_ids = list(agents.keys())
+        players: list[PlayerState] = []
+        for pid in player_ids:
+            players.append(
+                PlayerState(
+                    player_id=pid,
+                    name=pid,
+                    life_total=self.config.starting_life,
                 )
-                for i, card in enumerate(deck_data)
-            ]
-            random.shuffle(library)
+            )
+
+        # Load cards for each player
+        all_cards: list[CardInstance] = []
+        for pid, deck_data in decks.items():
+            for i, card_dict in enumerate(deck_data):
+                card = CardInstance(
+                    instance_id=f"{pid}_{i}",
+                    card_data=card_dict,  # Store full Scryfall card object
+                    zone=Zone.LIBRARY,
+                    owner_id=pid,
+                    controller_id=pid,
+                )
+                all_cards.append(card)
+
+            # Shuffle library for this player
+            library_cards = [c for c in all_cards if c.owner_id == pid]
+            random.shuffle(library_cards)
 
             # Draw opening hand of 7
-            hand = library[:7]
-            library = library[7:]
+            hand_size = 0
+            for card in library_cards:
+                if hand_size < 7:
+                    card.zone = Zone.HAND
+                    hand_size += 1
+                else:
+                    card.zone = Zone.LIBRARY
 
-            cards_in_zone[(pid, "library")] = library
-            cards_in_zone[(pid, "hand")] = hand
-            cards_in_zone[(pid, "battlefield")] = []
-            cards_in_zone[(pid, "graveyard")] = []
-            cards_in_zone[(pid, "exile")] = []
-            cards_in_zone[(pid, "command")] = []
-
-        player_ids = list(agents.keys())
-        return GameState(
-            players=players,
-            active_player=player_ids[0],
-            priority_player=player_ids[0],
-            phase=Phase.UNTAP,
+        # Create game state
+        game_state = GameState(
+            format=self.config.format,
             turn_number=1,
-            cards_in_zone=cards_in_zone,
+            active_player_index=0,
+            priority_player_index=0,
+            phase=Phase.UNTAP,
+            players=players,
+            cards=all_cards,
         )
+
+        return game_state
 
     async def _play_turn(
         self, game_state: GameState, agents: dict[str, MTGAgent]
     ) -> GameState:
         """Play a single turn (all phases)."""
         from src.engine.phases import PHASE_ORDER, advance_phase
+        from src.engine.game_state import ActionType
 
         for phase in PHASE_ORDER:
             game_state.phase = phase
 
-            # Give each player priority in APNAP order
-            passed: set[str] = set()
-            order = get_priority_order(game_state)
-            game_state.priority_player = order[0]
-
-            while True:
-                pid = game_state.priority_player
+            # In main phases, each player gets a chance to cast spells/play lands
+            if phase in [Phase.MAIN_1, Phase.MAIN_2]:
+                # Active player has priority
+                pid = game_state.players[game_state.active_player_index].player_id
                 agent = agents[pid]
-                legal = self.engine.get_legal_actions(game_state, pid)
-
-                if not legal:
-                    passed.add(pid)
-                else:
+                
+                # Player makes decisions until they pass
+                while True:
+                    legal = self.engine.get_legal_actions(game_state, pid)
+                    
+                    if not legal:
+                        break
+                    
                     action = await agent.decide_action(game_state, legal)
-                    # Notify all agents of the action
+                    
+                    # Notify all observers of action
                     for a in agents.values():
-                        a.observe(game_state, action)
-
-                    if action.action_type.value == "pass_priority":
-                        passed.add(pid)
-                    else:
-                        passed.clear()
-                        game_state = self.engine.execute_action(game_state, action)
-
-                result = priority_action_result(game_state, passed)
-                if result == "advance_phase":
-                    break
-                if result == "resolve":
-                    from src.engine.stack import resolve_top
-                    game_state = resolve_top(game_state)
-                    passed.clear()
-                    continue
-
-                game_state = advance_priority(game_state)
-
+                        await a.observe(game_state, action)
+                    
+                    # Check if player passed priority
+                    if action.action_type == ActionType.PASS_PRIORITY:
+                        break
+                    
+                    # Execute the action
+                    game_state = self.engine.execute_action(game_state, action)
+                    
+                    # Check SBAs immediately
+                    sba_events = self.engine.check_state_based_actions(game_state)
+                    if game_state.game_over:
+                        return game_state
+            
             # Check SBAs after each phase
-            game_state = self.engine.check_state_based_actions(game_state)
+            sba_events = self.engine.check_state_based_actions(game_state)
             if game_state.game_over:
-                break
+                return game_state
 
-        if not game_state.game_over:
-            game_state = advance_phase(game_state)
+        # Advance to next turn
+        game_state.turn_number += 1
+        game_state.active_player_index = (game_state.active_player_index + 1) % len(game_state.players)
+        game_state.priority_player_index = game_state.active_player_index
+        game_state.phase = Phase.UNTAP
 
         return game_state

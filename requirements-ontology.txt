@@ -1,0 +1,28 @@
+# Ontology Extension & Validation Requirements
+# For Phase 1-5 of systematic MTG ontology evolution
+
+# RDF/OWL Tools
+rdflib==6.2.0                          # RDF parsing and serialization
+owlrl==6.0.0                           # OWL 2 RL entailment engine
+pyshacl==0.23.0                        # SHACL constraint validation
+
+# Ontology Extension (OntologyExtender Framework)
+# Note: This is MIT-licensed. Install from GitHub if not on PyPI
+# pip install git+https://github.com/DataScienceLabFHSWF/OntologyExtender.git
+OntologyExtender>=0.5.0                # Multi-agent ontology evolution
+
+# NLP for Comprehensive Rules Extraction
+spacy>=3.7.0                           # Linguistic analysis
+en-core-web-lg @ https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.7.0/en_core_web_lg-3.7.0-py3-none-any.whl
+nltk>=3.8.1                            # Natural Language Toolkit
+transformers>=4.35.0                   # Hugging Face models (for OpenIE)
+
+# Information Extraction
+openie>=5.0.0                          # Open Information Extraction
+requests>=2.31.0                       # HTTP for APIs (Scryfall, Commander Spellbook)
+
+# LLM Integration (for OntologyExtender agents)
+openai>=1.2.0                          # GPT-4 API for proposal generation
+
+# Semantic Analysis
+semantic-router>=0.0.39                # Semantic similarity routing (optional, for candidate ranking)

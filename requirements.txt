@@ -1,0 +1,38 @@
+pydantic==2.5.3
+pydantic-settings==2.1.0
+
+# Neo4j and Graph
+neo4j==5.16.0
+
+# LLM Integration
+langchain>=0.1.0
+langchain-core>=0.1.0
+langgraph>=0.0.1
+langchain-openai>=0.0.1
+
+# HTTP Client
+httpx>=0.25.0
+
+# Data & Science
+numpy>=1.24.0
+pandas>=2.0.0
+
+# MTG Integration
+scrython>=5.3.0
+
+# Testing
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.1.0
+
+# Code Quality
+black>=23.11.0
+isort>=5.13.0
+flake8>=6.1.0
+
+# Utilities
+python-dotenv>=1.0.0
+pyyaml>=6.0
+
+# Logging
+structlog>=23.2.0
