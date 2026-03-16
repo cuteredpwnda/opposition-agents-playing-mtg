@@ -31,8 +31,8 @@ def resolve_top(state: GameState) -> StackItem | None:
         state.log(f"{card_name} fizzled — all targets are illegal")
         return item
 
-    state.log(f"{card_name} resolves")
-    # Actual resolution logic is handled by the rules engine
+    state.log(f"{card_name} resolves (via stack)")
+    # Actual resolution effects are handled by the rules engine resolve_spell method
     return item
 
 

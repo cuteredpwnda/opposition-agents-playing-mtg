@@ -19,6 +19,7 @@ from src.orchestrator.priority_loop import (
     advance_priority,
     get_priority_order,
     priority_action_result,
+    run_priority_loop,
 )
 
 logger = logging.getLogger(__name__)
@@ -204,36 +205,21 @@ class GameRunner:
                 game_state.combat = CombatState()
             
             if phase == Phase.COMBAT_ATTACKERS:
-                from src.engine.combat import declare_attackers
-                pid = game_state.active_player.player_id
-                agent = agents[pid]
+                # Active player declares attackers with stack/priority support
+                game_state.priority_player_index = game_state.active_player_index
+                game_state = await run_priority_loop(game_state, agents, self.engine)
                 
-                # Active player makes attacker decisions until they pass
-                while not game_state.game_over:
-                    legal = self.engine.get_legal_actions(game_state, pid)
-                    
-                    # Check if there are any attack options
-                    attack_options = [a for a in legal if a.action_type == ActionType.DECLARE_ATTACKERS]
-                    if not attack_options:
-                        # No more creatures to attack with
-                        break
-                    
-                    action = await agent.decide_action(game_state, legal)
-                    
-                    # Notify all observers
-                    for a in agents.values():
-                        await a.observe(game_state, action)
-                    
-                    # Check if passed
-                    if action.action_type == ActionType.PASS_PRIORITY:
-                        break
-                    
-                    # Execute attack action
-                    game_state = self.engine.execute_action(game_state, action)
+                if game_state.game_over:
+                    return game_state
             
             if phase == Phase.COMBAT_BLOCKERS:
-                # Defending players declare blockers (for now, empty)
-                pass
+                # Defending player declares blockers with stack/priority support
+                defending_player_idx = (game_state.active_player_index + 1) % len(game_state.players)
+                game_state.priority_player_index = defending_player_idx
+                game_state = await run_priority_loop(game_state, agents, self.engine)
+                
+                if game_state.game_over:
+                    return game_state
             
             if phase == Phase.COMBAT_DAMAGE:
                 from src.engine.combat import resolve_combat_damage
@@ -246,35 +232,16 @@ class GameRunner:
                 for player in game_state.players:
                     empty_mana_pool(player)
 
-            # In main phases, active player can cast spells/play lands
+            # In main phases, use full priority loop (enables stack + instant-speed)
             if is_main_phase(phase):
-                pid = game_state.active_player.player_id
-                agent = agents[pid]
+                # Initialize priority to active player
+                game_state.priority_player_index = game_state.active_player_index
                 
-                # Player makes decisions until they pass
-                while not game_state.game_over:
-                    legal = self.engine.get_legal_actions(game_state, pid)
-                    
-                    if not legal:
-                        break
-                    
-                    action = await agent.decide_action(game_state, legal)
-                    
-                    # Notify all observers of action
-                    for a in agents.values():
-                        await a.observe(game_state, action)
-                    
-                    # Check if player passed priority
-                    if action.action_type == ActionType.PASS_PRIORITY:
-                        break
-                    
-                    # Execute the action
-                    game_state = self.engine.execute_action(game_state, action)
-                    
-                    # Check SBAs immediately
-                    self.engine.check_state_based_actions(game_state)
-                    if game_state.game_over:
-                        return game_state
+                # Run full priority loop until stack empties and all pass
+                game_state = await run_priority_loop(game_state, agents, self.engine)
+                
+                if game_state.game_over:
+                    return game_state
             
             # Check SBAs after each phase
             sba_events = self.engine.check_state_based_actions(game_state)

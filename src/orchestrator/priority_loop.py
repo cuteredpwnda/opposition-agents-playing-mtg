@@ -10,8 +10,8 @@ Reference: Section 5.3 of PLAN.md, CR 117.
 
 from __future__ import annotations
 
-from src.engine.game_state import GameState
-from src.engine.stack import is_empty as stack_is_empty
+from src.engine.game_state import GameState, ActionType
+from src.engine.stack import is_empty as stack_is_empty, resolve_top
 
 
 def get_priority_order(game_state: GameState) -> list[str]:
@@ -70,3 +70,97 @@ def priority_action_result(
             return "advance_phase"
         return "resolve"
     return "continue"
+
+
+async def run_priority_loop(
+    game_state: GameState,
+    agents: dict[str, object],
+    rules_engine: object,
+) -> GameState:
+    """Execute a full priority loop.
+    
+    This is the core MTG action resolution mechanic:
+    1. Current priority player acts (cast spell, activate ability, pass)
+    2. If they pass, priority moves to next player in APNAP order
+    3. When all players pass in succession, resolve top of stack (if any)
+    4. Repeat until stack is empty and all pass
+    
+    Args:
+        game_state: Current game state with priority tracking
+        agents: Mapping of player_id → agent with decide_action() method
+        rules_engine: RulesEngine instance for get_legal_actions() and execute_action()
+    
+    Returns:
+        Updated game state with priority loop completed
+    """
+    passed_players: set[str] = set()
+    
+    while True:
+        if game_state.game_over:
+            return game_state
+        
+        # Get current priority player
+        priority_player_id = game_state.priority_player.player_id
+        agent = agents.get(priority_player_id)
+        
+        # Get legal actions for this player given current game state
+        legal_actions = rules_engine.get_legal_actions(game_state, priority_player_id)
+        
+        if not legal_actions:
+            # This shouldn't happen; PASS_PRIORITY should always be legal
+            game_state.log(f"ERROR: No legal actions for {priority_player_id}")
+            return game_state
+        
+        # Agent decides what to do
+        action = await agent.decide_action(game_state, legal_actions)
+        
+        # Notify all agents of action
+        for agent_obj in agents.values():
+            await agent_obj.observe(game_state, action)
+        
+        if action.action_type == ActionType.PASS_PRIORITY:
+            # Player passed priority
+            passed_players.add(priority_player_id)
+            game_state.log(f"{priority_player_id} passes priority")
+            
+            # Check if all players passed
+            if all_players_passed(game_state, passed_players):
+                # All players passed in sequence
+                if stack_is_empty(game_state):
+                    # Stack is empty, priority loop ends
+                    game_state.log("All players passed, stack empty → end of priority loop")
+                    return game_state
+                else:
+                    # Stack has items, resolve top
+                    game_state.log("All players passed, stack non-empty → resolving top of stack")
+                    
+                    # Get and resolve the top of stack
+                    if len(game_state.stack) > 0:
+                        stack_item = game_state.stack[-1]  # Peek at top
+                        game_state.stack.pop()  # Remove from stack
+                        
+                        # Apply resolution effects (moves card to BF or GY)
+                        game_state = rules_engine.resolve_spell(game_state, stack_item)
+                    
+                    # After resolution, reset passed set and give AP priority again
+                    passed_players = set()
+                    game_state.priority_player_index = game_state.active_player_index
+                    continue
+            else:
+                # Not all passed yet, move priority to next player
+                game_state = advance_priority(game_state)
+                continue
+        else:
+            # Player took an action (cast spell, activate ability, etc.)
+            game_state = rules_engine.execute_action(game_state, action)
+            
+            # After action, reset passed set (new action added to stack or board changed)
+            passed_players = set()
+            
+            # Priority goes to next player in APNAP order
+            game_state = advance_priority(game_state)
+            
+            # Check SBAs immediately after action
+            rules_engine.check_state_based_actions(game_state)
+            
+            continue

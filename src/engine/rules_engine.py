@@ -25,6 +25,11 @@ class RulesEngine:
 
         This is the core interface that agents use — adapted from open-mtg's
         ``game.get_moves()`` pattern, extended with priority and instant-speed.
+        
+        Legal actions are restricted by timing:
+        - Sorcery-speed (land play, creature/sorcery cast): only during own main + empty stack
+        - Instant-speed (instants, flash creatures): anytime with priority
+        - Activated mana abilities: anytime (simplified to simple lands for now)
         """
         actions: list[Action] = []
         player = next((p for p in state.players if p.player_id == player_id), None)
@@ -57,20 +62,27 @@ class RulesEngine:
                             )
                         )
 
-            # Cast sorceries and creatures (non-instant)
+            # Cast sorceries and creatures (non-instant, non-flash)
             for card in hand:
-                if not card.is_land() and not card.is_instant():
-                    cost = parse_mana_cost(card.mana_cost or "")
-                    if can_pay(player, cost):
-                        actions.append(
-                            Action(
-                                action_type=ActionType.CAST_SPELL,
-                                player_id=player_id,
-                                card_instance_id=card.instance_id,
-                            )
+                if card.is_land():
+                    continue  # Already handled
+                if card.is_instant():
+                    continue  # Instant-speed only
+                if "flash" in card.oracle_text.lower():
+                    continue  # Flash is instant-speed
+                    
+                cost = parse_mana_cost(card.mana_cost or "")
+                if can_pay(player, cost):
+                    actions.append(
+                        Action(
+                            action_type=ActionType.CAST_SPELL,
+                            player_id=player_id,
+                            card_instance_id=card.instance_id,
                         )
+                    )
 
         # Instant-speed actions: any time you have priority
+        # This includes instants, flash creatures, activated abilities, etc.
         for card in hand:
             if card.is_instant() or "flash" in card.oracle_text.lower():
                 cost = parse_mana_cost(card.mana_cost or "")
@@ -84,6 +96,7 @@ class RulesEngine:
                     )
 
         # Activated abilities of permanents (basic impl: tap for mana)
+        # Mana abilities can be used anytime, but for simplicity we restrict to available mana
         for card in battlefield:
             if card.is_land() and not card.tapped:
                 actions.append(
@@ -150,34 +163,27 @@ class RulesEngine:
             if action.card_instance_id:
                 card = next((c for c in state.cards if c.instance_id == action.card_instance_id), None)
                 if card:
-                    # Pay mana
+                    # Pay mana cost
                     cost = parse_mana_cost(card.mana_cost or "")
                     player = next((p for p in state.players if p.player_id == action.player_id), None)
                     if player:
                         pay_cost(player, cost)
                     
-                    # For Phase 1: creatures go directly to battlefield (not through stack)
-                    if card.is_creature():
-                        state = move_card(
-                            state, action.card_instance_id, Zone.HAND, Zone.BATTLEFIELD,
-                            action.player_id
-                        )
-                        card.summoning_sick = True
-                        card.turn_entered = state.turn_number
-                        state.log(f"{card.name} enters the battlefield")
-                    else:
-                        # Non-creatures go to stack (for later implementation)
-                        stack_item = StackItem(
-                            source_card_id=action.card_instance_id,
-                            controller_id=action.player_id,
-                            is_spell=True,
-                            card_data=card.card_data.copy(),
-                        )
-                        state = move_card(
-                            state, action.card_instance_id, Zone.HAND, Zone.STACK,
-                            action.player_id
-                        )
-                        state = push_to_stack(state, stack_item)
+                    # Move card from hand to stack
+                    state = move_card(
+                        state, action.card_instance_id, Zone.HAND, Zone.STACK,
+                        action.player_id
+                    )
+                    
+                    # Create stack item and push to stack
+                    stack_item = StackItem(
+                        source_card_id=action.card_instance_id,
+                        controller_id=action.player_id,
+                        is_spell=True,
+                        card_data=card.card_data.copy(),
+                    )
+                    state = push_to_stack(state, stack_item)
+                    state.log(f"{card.name} is cast")
             return state
         
         if action.action_type == ActionType.ACTIVATE_ABILITY:
@@ -214,6 +220,39 @@ class RulesEngine:
             return state
         
         # Default: no change
+        return state
+
+    def resolve_spell(self, state: GameState, stack_item) -> GameState:
+        """Resolve a spell from the stack.
+        
+        For creatures, this moves the spell to the battlefield.
+        For other spells, effects are applied (not implemented in Phase 1).
+        """
+        from .zones import move_card
+        from .game_state import Zone
+        
+        source_card_id = stack_item.source_card_id
+        card = next((c for c in state.cards if c.instance_id == source_card_id), None)
+        
+        if not card:
+            return state
+        
+        # Check if this is still in the stack (wasn't fizzled)
+        if card.zone != Zone.STACK:
+            return state
+        
+        # If it's a creature, move to battlefield with summoning sickness
+        if card.is_creature():
+            state = move_card(state, source_card_id, Zone.STACK, Zone.BATTLEFIELD, card.owner_id)
+            card.summoning_sick = True
+            card.turn_entered = state.turn_number
+            state.log(f"{card.name} enters the battlefield")
+        else:
+            # For non-creatures, move to graveyard (they've resolved)
+            # TODO: Implement actual spell resolution effects
+            state = move_card(state, source_card_id, Zone.STACK, Zone.GRAVEYARD, card.owner_id)
+            state.log(f"{card.name} resolves")
+        
         return state
 
     def check_state_based_actions(self, state: GameState) -> list[str]:
