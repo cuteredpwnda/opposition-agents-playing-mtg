@@ -215,8 +215,27 @@ class RulesEngine:
                 defender_id = action.targets[0]
                 if card:
                     from .combat import declare_attackers
+                    from .triggers import check_attack_triggers
+                    
                     declare_attackers(state, {action.card_instance_id: defender_id})
                     card.tapped = True
+                    
+                    # ATTACKS TRIGGERS: Fire "when creature attacks" triggers
+                    attack_triggers = check_attack_triggers(state, card)
+                    
+                    for trigger in attack_triggers:
+                        trigger_stack_item = StackItem(
+                            source_card_id=trigger.source_card_id,
+                            controller_id=trigger.controller_id,
+                            is_spell=False,  # It's an ability
+                            card_data={
+                                "name": f"[Trigger] {trigger.description}",
+                                "type_line": "Ability",
+                            }
+                        )
+                        state.stack.append(trigger_stack_item)
+                        state.log(f"[TRIGGER (ATTACK)] {trigger.description} added to stack")
+                        state.triggered_abilities.append(trigger)
             return state
         
         # Default: no change
@@ -227,10 +246,14 @@ class RulesEngine:
         
         For creatures, this moves the spell to the battlefield.
         For other spells, effects are applied (not implemented in Phase 1).
+        Triggers cast and death abilities as appropriate.
         """
         from .zones import move_card
-        from .game_state import Zone, StackItem
-        from .triggers import check_enters_battlefield_triggers, resolve_trigger
+        from .triggers import (
+            check_enters_battlefield_triggers,
+            check_cast_triggers,
+            resolve_trigger
+        )
         
         source_card_id = stack_item.source_card_id
         card = next((c for c in state.cards if c.instance_id == source_card_id), None)
@@ -242,6 +265,25 @@ class RulesEngine:
         if card.zone != Zone.STACK:
             return state
         
+        # CAST TRIGGERS: Fire "when you cast" triggers from permanents
+        # This happens before the spell resolves
+        controller_id = card.controller_id
+        cast_triggers = check_cast_triggers(state, controller_id, card)
+        
+        for trigger in cast_triggers:
+            trigger_stack_item = StackItem(
+                source_card_id=trigger.source_card_id,
+                controller_id=trigger.controller_id,
+                is_spell=False,  # It's an ability, not a spell
+                card_data={
+                    "name": f"[Trigger] {trigger.description}",
+                    "type_line": "Ability",
+                }
+            )
+            state.stack.append(trigger_stack_item)
+            state.log(f"[TRIGGER (CAST)] {trigger.description} added to stack")
+            state.triggered_abilities.append(trigger)
+        
         # If it's a creature, move to battlefield with summoning sickness
         if card.is_creature():
             state = move_card(state, source_card_id, Zone.STACK, Zone.BATTLEFIELD, card.owner_id)
@@ -249,13 +291,10 @@ class RulesEngine:
             card.turn_entered = state.turn_number
             state.log(f"{card.name} enters the battlefield")
             
-            # CHECK TRIGGERED ABILITIES
-            # Check what ETB triggers should fire from other permanents and this card
+            # ETB TRIGGERS: Check what ETB triggers should fire
             etb_triggers = check_enters_battlefield_triggers(state, card)
             
             for trigger in etb_triggers:
-                # Add trigger to the stack (triggered abilities go on stack)
-                # Create a stack item for this triggered ability
                 trigger_stack_item = StackItem(
                     source_card_id=trigger.source_card_id,
                     controller_id=trigger.controller_id,
@@ -266,7 +305,7 @@ class RulesEngine:
                     }
                 )
                 state.stack.append(trigger_stack_item)
-                state.log(f"[TRIGGER] {trigger.description} added to stack")
+                state.log(f"[TRIGGER (ETB)] {trigger.description} added to stack")
                 
                 # Store the trigger for resolution
                 state.triggered_abilities.append(trigger)
@@ -318,8 +357,10 @@ class RulesEngine:
         """CR 704 — check and apply state-based actions.
 
         Returns list of events that occurred.
+        Also fires death triggers when creatures die.
         """
         from .zones import move_card
+        from .triggers import check_death_triggers
         
         events: list[str] = []
         
@@ -338,13 +379,38 @@ class RulesEngine:
                 continue
             
             toughness = _parse_int(card.toughness)
+            creature_dies = False
+            
             if toughness is not None and card.damage_marked >= toughness:
                 events.append(f"{card.name} dies (lethal damage)")
-                state = move_card(state, card.instance_id, Zone.BATTLEFIELD, Zone.GRAVEYARD, card.owner_id)
-                card.damage_marked = 0
+                creature_dies = True
+                
             elif toughness is not None and toughness <= 0:
                 events.append(f"{card.name} dies (0 toughness)")
+                creature_dies = True
+            
+            # If creature dies, fire death triggers and move to graveyard
+            if creature_dies:
+                # DEATH TRIGGERS: Fire "when creature dies" triggers
+                death_triggers = check_death_triggers(state, card)
+                
+                for trigger in death_triggers:
+                    trigger_stack_item = StackItem(
+                        source_card_id=trigger.source_card_id,
+                        controller_id=trigger.controller_id,
+                        is_spell=False,  # It's an ability
+                        card_data={
+                            "name": f"[Trigger] {trigger.description}",
+                            "type_line": "Ability",
+                        }
+                    )
+                    state.stack.append(trigger_stack_item)
+                    state.log(f"[TRIGGER (DEATH)] {trigger.description} added to stack")
+                    state.triggered_abilities.append(trigger)
+                
+                # Move creature to graveyard
                 state = move_card(state, card.instance_id, Zone.BATTLEFIELD, Zone.GRAVEYARD, card.owner_id)
+                card.damage_marked = 0
 
         # Commander damage check (21+)
         if state.format == "commander":
