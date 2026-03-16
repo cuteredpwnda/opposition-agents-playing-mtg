@@ -42,7 +42,7 @@ def parse_triggers(card: CardInstance) -> list[Trigger]:
             ))
     
     # Whenever this creature attacks
-    if "attack" in oracle and ("whenever" in oracle or card.is_creature()):
+    if "attack" in oracle and ("whenever" in oracle):
         effect = _extract_effect_attack(card.oracle_text)
         if effect:
             triggers.append(Trigger(
@@ -52,8 +52,8 @@ def parse_triggers(card: CardInstance) -> list[Trigger]:
                 description=effect,
             ))
     
-    # When this creature dies
-    if "die" in oracle or "death" in oracle:
+    # When/Whenever this creature dies
+    if ("die" in oracle or "death" in oracle) and ("when" in oracle or "whenever" in oracle):
         effect = _extract_effect_death(card.oracle_text)
         if effect:
             triggers.append(Trigger(
@@ -63,13 +63,24 @@ def parse_triggers(card: CardInstance) -> list[Trigger]:
                 description=effect,
             ))
     
+    # Whenever you cast a spell
+    if "cast" in oracle and ("when" in oracle or "whenever" in oracle):
+        effect = _extract_effect_cast(card.oracle_text)
+        if effect:
+            triggers.append(Trigger(
+                source_card_id=card.instance_id,
+                controller_id=card.controller_id,
+                trigger_type=TriggerType.CAST,
+                description=effect,
+            ))
+    
     # Whenever you gain life
-    if "gain" in oracle and "life" in oracle:
+    if ("gain" in oracle and "life" in oracle) and ("when" in oracle or "whenever" in oracle):
         triggers.append(Trigger(
             source_card_id=card.instance_id,
             controller_id=card.controller_id,
             trigger_type=TriggerType.LIFE_GAIN,
-            description="gain life trigger",
+            description="whenever you gain life",
         ))
     
     return triggers
@@ -121,6 +132,107 @@ def check_enters_battlefield_triggers(state: GameState, entering_card: CardInsta
     return triggered
 
 
+def check_attack_triggers(state: GameState, attacking_card: CardInstance) -> list[Trigger]:
+    """Check which creatures have attack triggers.
+    
+    When a creature attacks, check if it has any "whenever attacks" triggers.
+    """
+    triggered = []
+    
+    # Check the attacking creature itself
+    own_triggers = parse_triggers(attacking_card)
+    attack_triggers = [t for t in own_triggers if t.trigger_type == TriggerType.ATTACKS]
+    triggered.extend(attack_triggers)
+    
+    # Check other permanents for "whenever a creature attacks" triggers
+    for card in state.cards:
+        if card.zone != Zone.BATTLEFIELD:
+            continue
+        if card.instance_id == attacking_card.instance_id:
+            continue
+        
+        if "whenever a creature attack" in card.oracle_text.lower():
+            effect = _extract_effect_attack(card.oracle_text)
+            if not effect:
+                effect = "whenever a creature attacks"
+            triggered.append(Trigger(
+                source_card_id=card.instance_id,
+                controller_id=card.controller_id,
+                trigger_type=TriggerType.ATTACKS,
+                description=effect,
+            ))
+    
+    return triggered
+
+
+def check_death_triggers(state: GameState, dying_card: CardInstance) -> list[Trigger]:
+    """Check which creatures have death triggers.
+    
+    When a creature dies, check if it has any "when dies" triggers,
+    and check other permanents for "whenever a creature dies" triggers.
+    """
+    triggered = []
+    
+    # Check the dying creature itself
+    own_triggers = parse_triggers(dying_card)
+    death_triggers = [t for t in own_triggers if t.trigger_type == TriggerType.CREATURE_DIES]
+    triggered.extend(death_triggers)
+    
+    # Check other permanents for "whenever a creature dies" triggers
+    for card in state.cards:
+        if card.zone != Zone.BATTLEFIELD:
+            continue
+        if card.instance_id == dying_card.instance_id:
+            continue
+        
+        oracle_lower = card.oracle_text.lower()
+        if ("whenever a creature die" in oracle_lower or 
+            "whenever another creature die" in oracle_lower):
+            effect = _extract_effect_death(card.oracle_text)
+            if not effect:
+                effect = "whenever a creature dies"
+            triggered.append(Trigger(
+                source_card_id=card.instance_id,
+                controller_id=card.controller_id,
+                trigger_type=TriggerType.CREATURE_DIES,
+                description=effect,
+            ))
+    
+    return triggered
+
+
+def check_cast_triggers(state: GameState, casting_player_id: str, spell_card: CardInstance) -> list[Trigger]:
+    """Check which permanents have cast triggers.
+    
+    When a spell is cast, check all permanents (controlled by the casting player)
+    for "whenever you cast a spell" triggers.
+    """
+    triggered = []
+    
+    # Check permanents controlled by the casting player
+    for card in state.cards:
+        if card.zone != Zone.BATTLEFIELD:
+            continue
+        if card.controller_id != casting_player_id:
+            continue
+        
+        oracle_lower = card.oracle_text.lower()
+        if "whenever you cast" in oracle_lower:
+            # Also check for spell type restrictions (instant, spell, creature, etc.)
+            effect = _extract_effect_cast(card.oracle_text)
+            if not effect:
+                effect = "whenever you cast a spell"
+            triggered.append(Trigger(
+                source_card_id=card.instance_id,
+                controller_id=card.controller_id,
+                trigger_type=TriggerType.CAST,
+                description=effect,
+            ))
+    
+    return triggered
+
+
+
 def _extract_effect_from_etb(oracle_text: str) -> str:
     """Extract the effect part from an ETB trigger.
     
@@ -136,7 +248,10 @@ def _extract_effect_from_etb(oracle_text: str) -> str:
 
 
 def _extract_effect_attack(oracle_text: str) -> str | None:
-    """Extract attack trigger effect."""
+    """Extract attack trigger effect.
+    
+    E.g., "Whenever ~ attacks, you gain 1 life" → "you gain 1 life"
+    """
     if "whenever" not in oracle_text.lower():
         return None
     
@@ -148,25 +263,57 @@ def _extract_effect_attack(oracle_text: str) -> str | None:
 
 
 def _extract_effect_death(oracle_text: str) -> str | None:
-    """Extract death trigger effect."""
+    """Extract death trigger effect.
+    
+    E.g., "When ~ dies, draw a card" → "draw a card"
+    """
     match = re.search(r"when[^,]*die[^,]*,\s*(.+?)(?:\.|$)", oracle_text, re.IGNORECASE)
+    if match:
+        return match.group(1).strip()
+    
+    # Also check "whenever" format
+    match = re.search(r"whenever[^,]*die[^,]*,\s*(.+?)(?:\.|$)", oracle_text, re.IGNORECASE)
     if match:
         return match.group(1).strip()
     
     return None
 
 
+def _extract_effect_cast(oracle_text: str) -> str | None:
+    """Extract cast trigger effect.
+    
+    E.g., "Whenever you cast a spell, draw a card" → "draw a card"
+    """
+    match = re.search(r"whenever[^,]*cast[^,]*,\s*(.+?)(?:\.|$)", oracle_text, re.IGNORECASE)
+    if match:
+        return match.group(1).strip()
+    
+    # Also check "when" format
+    match = re.search(r"when[^,]*cast[^,]*,\s*(.+?)(?:\.|$)", oracle_text, re.IGNORECASE)
+    if match:
+        return match.group(1).strip()
+    
+    return None
+
+
+
 def resolve_trigger(state: GameState, trigger: Trigger) -> GameState:
     """Resolve a triggered ability's effect.
     
-    Most common effects:
-    - Draw a card
-    - Deal damage
+    Supporting effects:
+    - Draw a card / cards
+    - Deal damage (to opponent or player)
     - Gain life
-    - Create tokens
-    - Destroy/tap a permanent
+    - Create tokens (referenced as "create X tokens")
+    - Destroy / Tap permanents
     
-    For Phase 3, we'll implement the most common ones.
+    Trigger types:
+    - ENTERS_BATTLEFIELD: Creature/permanent enter
+    - ATTACKS: Creature attacks
+    - CREATURE_DIES: Creature dies  
+    - CAST: Spell cast
+    - LIFE_GAIN: Player gains life
+    - COMBAT_DAMAGE: Combat damage dealt
     """
     description = trigger.description.lower()
     controller = next((p for p in state.players if p.player_id == trigger.controller_id), None)
@@ -174,37 +321,75 @@ def resolve_trigger(state: GameState, trigger: Trigger) -> GameState:
     if not controller:
         return state
     
-    # Draw a card
+    opponent = next((p for p in state.players if p.player_id != trigger.controller_id), None)
+    
+    # Draw effect: "draw a card", "draw 2 cards", etc.
     if "draw" in description and "card" in description:
+        match = re.search(r"draw (\d+) cards?", description)
+        count = int(match.group(1)) if match else 1
+        
         library = [c for c in state.cards if c.zone == Zone.LIBRARY and c.owner_id == controller.player_id]
-        if library:
-            from src.engine.zones import move_card
-            card_to_draw = library[0]
-            state = move_card(state, card_to_draw.instance_id, Zone.LIBRARY, Zone.HAND, controller.player_id)
-            state.log(f"Trigger: {controller.name} draws a card")
+        for i in range(count):
+            if library:
+                from src.engine.zones import move_card
+                card_to_draw = library.pop(0)
+                state = move_card(state, card_to_draw.instance_id, Zone.LIBRARY, Zone.HAND, controller.player_id)
+        
+        state.log(f"[Trigger] {controller.name} draws {count} card{'s' if count != 1 else ''}")
     
-    # Gain life
+    # Gain life: "gain 1 life", "gain 5 life", etc.
     if "gain" in description and "life" in description:
-        # Parse amount: "gain 1 life", "gain 5 life", etc.
         match = re.search(r"gain (\d+) life", description)
-        if match:
-            amount = int(match.group(1))
-            controller.life_total += amount
-            state.log(f"Trigger: {controller.name} gained {amount} life")
-        else:
-            # Default to 1 if not specified
-            controller.life_total += 1
-            state.log(f"Trigger: {controller.name} gained 1 life")
+        amount = int(match.group(1)) if match else 1
+        controller.life_total += amount
+        state.log(f"[Trigger] {controller.name} gains {amount} life")
     
-    # Opponent loses life / deal damage
+    # Opponent loses life / Deal damage: "deal 1 damage", "opponent loses 1 life", etc.
     if "deal" in description and "damage" in description:
-        # Simple: "deal 1 damage"
         match = re.search(r"deal (\d+) damage", description)
+        amount = int(match.group(1)) if match else 1
+        if opponent:
+            opponent.life_total -= amount
+            state.log(f"[Trigger] {opponent.name} takes {amount} damage")
+    
+    if "opponent lose" in description and "life" in description:
+        match = re.search(r"lose (\d+) life", description)
+        amount = int(match.group(1)) if match else 1
+        if opponent:
+            opponent.life_total -= amount
+            state.log(f"[Trigger] {opponent.name} loses {amount} life")
+    
+    # Discard effect: "discard a card", "discard 2 cards", etc.
+    if "discard" in description and "card" in description:
+        match = re.search(r"discard (\d+) cards?", description)
+        count = int(match.group(1)) if match else 1
+        
+        hand = [c for c in state.cards if c.zone == Zone.HAND and c.owner_id == controller.player_id]
+        for i in range(count):
+            if hand:
+                from src.engine.zones import move_card
+                # Discard first card in hand
+                card_to_discard = hand.pop(0)
+                state = move_card(state, card_to_discard.instance_id, Zone.HAND, Zone.GRAVEYARD, controller.player_id)
+        
+        state.log(f"[Trigger] {controller.name} discards {count} card{'s' if count != 1 else ''}")
+    
+    # Create tokens: "create a 1/1 token", "create 2 2/2 tokens", etc.
+    if "create" in description and "token" in description:
+        match = re.search(r"create (\d+) ([\d/]+)? ?[\w\s]*token", description, re.IGNORECASE)
         if match:
-            amount = int(match.group(1))
-            opponent = next((p for p in state.players if p.player_id != controller.player_id), None)
-            if opponent:
-                opponent.life_total -= amount
-                state.log(f"Trigger: Opponent takes {amount} damage")
+            count = int(match.group(1)) if match.group(1) else 1
+            power_toughness = match.group(2) if match.group(2) else "1/1"
+            state.log(f"[Trigger] {controller.name} creates {count} {power_toughness} token(s)")
+            # Token creation is simplified for now
+    
+    # Tap target permanent: "tap a creature", "tap target land", etc.
+    if "tap" in description and "target" in description:
+        # Find target permanent on battlefield
+        for card in state.cards:
+            if card.zone == Zone.BATTLEFIELD and card.controller_id != controller.player_id:
+                card.tapped = True
+                state.log(f"[Trigger] {card.name} is tapped")
+                break
     
     return state
