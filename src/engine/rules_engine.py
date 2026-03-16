@@ -15,6 +15,12 @@ from .phases import is_main_phase
 from .stack import is_empty as stack_is_empty
 from .stack import push_to_stack
 from .mana import can_pay, pay_cost, parse_mana_cost
+from .abilities import (
+    parse_abilities,
+    get_legal_activated_abilities,
+    is_mana_ability,
+    resolve_ability
+)
 
 
 class RulesEngine:
@@ -95,15 +101,17 @@ class RulesEngine:
                         )
                     )
 
-        # Activated abilities of permanents (basic impl: tap for mana)
-        # Mana abilities can be used anytime, but for simplicity we restrict to available mana
+        # Activated abilities of permanents
+        # Mana abilities can be used anytime, other abilities require priority
         for card in battlefield:
-            if card.is_land() and not card.tapped:
+            legal_abilities = get_legal_activated_abilities(state, card, player_id)
+            for ability in legal_abilities:
                 actions.append(
                     Action(
                         action_type=ActionType.ACTIVATE_ABILITY,
                         player_id=player_id,
                         card_instance_id=card.instance_id,
+                        metadata={"ability_id": ability.ability_id},
                     )
                 )
 
@@ -189,24 +197,43 @@ class RulesEngine:
         if action.action_type == ActionType.ACTIVATE_ABILITY:
             if action.card_instance_id:
                 card = next((c for c in state.cards if c.instance_id == action.card_instance_id), None)
-                if card and card.is_land():
-                    # Tap for mana
-                    card.tapped = True
-                    player = next((p for p in state.players if p.player_id == action.player_id), None)
-                    if player:
-                        # Basic land produces one mana of appropriate color
-                        if "Plains" in card.name:
-                            player.mana_pool["W"] += 1
-                        elif "Island" in card.name:
-                            player.mana_pool["U"] += 1
-                        elif "Swamp" in card.name:
-                            player.mana_pool["B"] += 1
-                        elif "Mountain" in card.name:
-                            player.mana_pool["R"] += 1
-                        elif "Forest" in card.name:
-                            player.mana_pool["G"] += 1
+                if card:
+                    # Get abilities on this card
+                    abilities = parse_abilities(card)
+                    
+                    # Find the specific ability to activate (if provided in metadata)
+                    ability_to_activate = None
+                    ability_id = action.metadata.get("ability_id") if action.metadata else None
+                    if ability_id:
+                        ability_to_activate = next(
+                            (a for a in abilities if a.ability_id == ability_id),
+                            None
+                        )
+                    else:
+                        # If no specific ability, use first legal one (for legacy compatibility)
+                        legal = get_legal_activated_abilities(state, card, action.player_id)
+                        ability_to_activate = legal[0] if legal else None
+                    
+                    if ability_to_activate:
+                        # Resolve the ability
+                        state = resolve_ability(state, ability_to_activate, action.player_id)
+                        
+                        # Non-mana abilities go on the stack
+                        if not is_mana_ability(ability_to_activate.effect):
+                            stack_item = StackItem(
+                                source_card_id=card.instance_id,
+                                controller_id=action.player_id,
+                                is_spell=False,  # It's an ability
+                                card_data={
+                                    "name": f"[Ability] {card.name}",
+                                    "type_line": "Ability",
+                                }
+                            )
+                            state = push_to_stack(state, stack_item)
+                            state.log(f"{card.name} ability activated")
                         else:
-                            player.mana_pool["C"] += 1
+                            # Mana abilities resolve immediately
+                            state.log(f"{card.name} mana ability activated")
             return state
         
         if action.action_type == ActionType.DECLARE_ATTACKERS:

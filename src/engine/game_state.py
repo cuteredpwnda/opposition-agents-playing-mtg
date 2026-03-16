@@ -101,6 +101,19 @@ class Trigger:
     on_stack: bool = False  # Whether this trigger has been put on stack
 
 
+@dataclass
+class Ability:
+    """An activated ability on a permanent that can be controlled by player."""
+    
+    ability_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    source_card_id: str = ""  # Which card has this ability
+    controller_id: str = ""  # Who controls the ability
+    cost: str = ""  # Mana cost: "{T}", "{2}{U}", "{1}{B}", etc.
+    effect: str = ""  # "Add {R}", "Draw a card", "Deal 1 damage to target", etc.
+    can_use_any_time: bool = False  # True for mana abilities (can use anytime)
+    description: str = ""  # Full ability text for logging
+
+
 # ---------------------------------------------------------------------------
 # Data Models
 # ---------------------------------------------------------------------------
