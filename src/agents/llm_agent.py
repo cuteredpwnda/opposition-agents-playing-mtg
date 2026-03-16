@@ -1,150 +1,225 @@
 """
-LLM-powered MTG agent using LangChain tool-calling.
+Ollama-powered MTG agent for local LLM reasoning.
 
-Reference: mtg-player (MIT) — https://github.com/Leamas2006/mtg-player
-Uses the ReAct tool-calling pattern with LangChain ChatModel.
+Uses Ollama to run open-source models locally (Llama, Mistral, etc.).
+Minimizes API costs and latency by running inference locally.
+
+Fallback to RandomAgent if Ollama is unavailable.
 """
 
 from __future__ import annotations
 
-from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import HumanMessage, SystemMessage
+import httpx
 
 from src.agents.base_agent import MTGAgent
-from src.engine.game_state import Action, GameState
-from src.knowledge.knowledge_graph import MTGKnowledgeGraph
+from src.agents.random_agent import RandomAgent
+from src.engine.game_state import Action, GameState, ActionType
+
+
+OLLAMA_BASE_URL = "http://localhost:11434"
+DEFAULT_MODEL = "mistral"  # Fast, capable open-source model
 
 SYSTEM_PROMPT = """\
-You are an expert Magic: The Gathering player competing in a game.
-You have access to tools for querying the knowledge graph, evaluating
-board positions, checking combat math, and calling the judge.
+You are an expert Magic: The Gathering player. Analyze the game state and choose the best action.
 
-Given the current game state and your legal actions, choose the best play.
-Consider:
-- Your win condition and current game plan
-- Opponent's likely archetype and hand contents
-- Combo availability (check the knowledge graph)
-- Mana efficiency and tempo
-- Information gain vs. immediate value (active inference)
+Key decision factors:
+1. **Mana efficiency** — Can you afford to cast spells?
+2. **Board presence** — What creatures do you have vs opponent?
+3. **Life totals** — Are you on a clock or have time?
+4. **Card advantage** — Can you draw/gain resources?
+5. **Tempo** — What's your turn order relative to threats?
 
-Respond with EXACTLY one action from the legal actions list.
-"""
+You MUST respond with ONLY the option number (0, 1, 2, etc.) of your chosen action.
+Do not explain. Do not repeat. Just the number."""
 
 
-class LLMAgent(MTGAgent):
-    """Agent that uses an LLM with tool-calling to make decisions.
-
-    The LLM receives the game state as context and has access to
-    LangChain tools for KG queries, combat math, and judge calls.
+class OllamaAgent(MTGAgent):
+    """Agent that uses Ollama to run open-source LLMs locally.
+    
+    Polls Ollama at http://localhost:11434 for model inference.
+    Automatically falls back to RandomAgent if Ollama is unavailable.
     """
 
     def __init__(
         self,
         player_id: str,
-        llm: BaseChatModel | None = None,
-        kg: MTGKnowledgeGraph | None = None,
-        tools: list | None = None,
+        name: str = "Ollama Agent",
+        model: str = DEFAULT_MODEL,
+        base_url: str = OLLAMA_BASE_URL,
     ):
-        super().__init__(player_id)
-        # Lazy init to avoid requiring LLM credentials at import time
-        self.llm = llm
-        self.kg = kg
-        self.tools = tools or []
-        self.llm_with_tools = None
-        if self.llm and self.tools:
-            self.llm_with_tools = self.llm.bind_tools(self.tools)
-        elif self.llm:
-            self.llm_with_tools = self.llm
+        super().__init__(player_id, name)
+        self.model = model
+        self.base_url = base_url
+        self.http_client = httpx.Client(timeout=10.0)
+        self._ollama_available = False
+        self._fallback_agent = None
+        
+        # Check if Ollama is available
+        self._check_ollama()
+
+    def _check_ollama(self) -> None:
+        """Check if Ollama is running and the model is available."""
+        try:
+            response = self.http_client.get(f"{self.base_url}/api/tags", timeout=2.0)
+            if response.status_code == 200:
+                data = response.json()
+                models = [m.get("name", "") for m in data.get("models", [])]
+                if any(self.model in m for m in models):
+                    self._ollama_available = True
+                    print(f"[{self.player_id}] Ollama connected. Model: {self.model}")
+                else:
+                    print(f"[{self.player_id}] Ollama available but model {self.model} not loaded.")
+                    print(f"  Available models: {', '.join(models)}")
+        except Exception as e:
+            print(f"[{self.player_id}] Ollama unavailable: {e}")
+        
+        if not self._ollama_available:
+            # Use RandomAgent as fallback
+            self._fallback_agent = RandomAgent(player_id=self.player_id, name=self.name)
+            print(f"[{self.player_id}] Using RandomAgent fallback")
 
     async def decide_action(
         self, game_state: GameState, legal_actions: list[Action]
     ) -> Action:
-        """Choose an action from legal actions."""
-        if not self.llm:
-            # Fallback: pick first action if no LLM available
-            return legal_actions[0] if legal_actions else None
+        """Use Ollama to select the best action."""
+        if not legal_actions:
+            return Action(action_type=ActionType.PASS_PRIORITY, player_id=self.player_id)
         
+        # Use fallback if Ollama isn't available
+        if not self._ollama_available:
+            return await self._fallback_agent.decide_action(game_state, legal_actions)
+        
+        # Build context for Ollama
         context = self._build_context(game_state, legal_actions)
-        messages = [
-            SystemMessage(content=SYSTEM_PROMPT),
-            HumanMessage(content=context),
-        ]
-
+        
+        # Call Ollama
         try:
-            response = await self.llm_with_tools.ainvoke(messages)
-            chosen_index = self._parse_action_index(response, legal_actions)
-            return legal_actions[chosen_index]
+            response = self.http_client.post(
+                f"{self.base_url}/api/generate",
+                json={
+                    "model": self.model,
+                    "prompt": f"{SYSTEM_PROMPT}\n\n{context}",
+                    "stream": False,
+                    "temperature": 0.2,  # Low temperature for consistent answers
+                },
+                timeout=30.0,
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                response_text = data.get("response", "").strip()
+                
+                # Parse the action index
+                chosen_idx = self._parse_action_index(response_text, len(legal_actions))
+                return legal_actions[chosen_idx]
         except Exception as e:
-            # Fallback on error: return first legal action
-            return legal_actions[0] if legal_actions else None
+            import sys
+            print(f"[{self.player_id}] Ollama error: {e}", file=sys.stderr)
+        
+        # Fallback to first playable action on error
+        return self._fallback_action(legal_actions)
 
     def _build_context(
         self, game_state: GameState, legal_actions: list[Action]
     ) -> str:
-        """Format game state and legal actions for the LLM."""
+        """Build a concise game state summary for Ollama."""
         from src.engine.game_state import Zone
         
+        # Find me and opponent
+        me = next((p for p in game_state.players if p.player_id == self.player_id), None)
+        opp = next((p for p in game_state.players if p.player_id != self.player_id), None)
+        
+        if not me or not opp:
+            return "Unable to determine game state"
+        
+        # My battlefield and hand
+        my_hand = [c for c in game_state.cards if c.owner_id == self.player_id and c.zone == Zone.HAND]
+        my_creatures = [c for c in game_state.cards if c.owner_id == self.player_id and c.zone == Zone.BATTLEFIELD and c.is_creature()]
+        my_lands = [c for c in game_state.cards if c.owner_id == self.player_id and c.zone == Zone.BATTLEFIELD and c.is_land()]
+        
+        # Opponent battlefield (hand size hidden)
+        opp_creatures = [c for c in game_state.cards if c.owner_id == opp.player_id and c.zone == Zone.BATTLEFIELD and c.is_creature()]
+        opp_lands = [c for c in game_state.cards if c.owner_id == opp.player_id and c.zone == Zone.BATTLEFIELD and c.is_land()]
+        
         lines = [
-            f"Turn {game_state.turn_number}, Phase: {game_state.phase.value}",
-            f"Active player: {game_state.players[game_state.active_player_index].name}",
-            f"You are: {self.player_id}",
+            f"GAME STATE - Turn {game_state.turn_number}, Phase: {game_state.phase.value}",
+            f"Active Player: {game_state.active_player.name}",
             "",
+            f"YOUR STATE ({self.player_id}):",
+            f"  Life: {me.life_total}",
+            f"  Mana Pool: {me.mana_pool}",
+            f"  Hand ({len(my_hand)} cards): {', '.join(c.name for c in my_hand[:5])}{'...' if len(my_hand) > 5 else ''}",
+            f"  Creatures ({len(my_creatures)}): {', '.join(c.name for c in my_creatures)}",
+            f"  Lands ({len(my_lands)}): {', '.join(c.name for c in my_lands)}",
+            "",
+            f"OPPONENT STATE ({opp.name}):",
+            f"  Life: {opp.life_total}",
+            f"  Creatures ({len(opp_creatures)}): {', '.join(c.name for c in opp_creatures)}",
+            f"  Lands ({len(opp_lands)}): {len(opp_lands)} permanents",
+            "",
+            "YOUR OPTIONS:",
         ]
-
-        # Show each player's state
-        for player in game_state.players:
-            prefix = "(YOU) " if player.player_id == self.player_id else ""
-            lines.append(f"{prefix}Player {player.name}:")
-            lines.append(f"  Life: {player.life_total}")
+        
+        # Group and summarize actions
+        action_summaries = {}
+        for i, action in enumerate(legal_actions):
+            action_type = action.action_type.name
             
-            # Count cards by zone
-            hand = [c for c in game_state.cards if c.zone == Zone.HAND and c.owner_id == player.player_id]
-            bf = [c for c in game_state.cards if c.zone == Zone.BATTLEFIELD and c.owner_id == player.player_id]
-            lines.append(f"  Hand size: {len(hand)}")
-            if bf:
-                lines.append(f"  Battlefield: {', '.join(c.name for c in bf[:5])}")
-                if len(bf) > 5:
-                    lines.append(f"    ... and {len(bf)-5} more")
-
-        # Show own hand
-        hand = [c for c in game_state.cards if c.zone == Zone.HAND and c.owner_id == self.player_id]
-        lines.append(f"\nYour hand ({len(hand)} cards):")
-        for card in hand[:10]:  # Show first 10 cards
-            lines.append(f"  - {card.name} ({card.mana_cost})")
-        if len(hand) > 10:
-            lines.append(f"  ... and {len(hand)-10} more")
-
-        lines.append(f"\nLegal actions ({len(legal_actions)} total):")
-        for i, action in enumerate(legal_actions[:15]):  # Show first 15 actions
-            card_name = ""
+            if action_type not in action_summaries:
+                action_summaries[action_type] = []
+            
+            # Get card name if relevant
+            card = None
             if action.card_instance_id:
                 card = next((c for c in game_state.cards if c.instance_id == action.card_instance_id), None)
-                if card:
-                    card_name = f" {card.name}"
-            lines.append(f"  [{i}] {action.action_type.value}{card_name}")
-        if len(legal_actions) > 15:
-            lines.append(f"  ... and {len(legal_actions)-15} more actions")
-
-        lines.append("\nRespond with the best action index number (e.g., '5').")
+            
+            if action_type == "PASS_PRIORITY":
+                action_summaries[action_type].append((i, "Pass"))
+            elif card:
+                action_summaries[action_type].append((i, f"{action_type}: {card.name}"))
+            else:
+                action_summaries[action_type].append((i, action_type))
+        
+        # Print actions in priority order
+        for atype in ["CAST_SPELL", "DECLARE_ATTACKERS", "PLAY_LAND", "ACTIVATE_ABILITY", "PASS_PRIORITY"]:
+            if atype in action_summaries:
+                for idx, summary in action_summaries[atype]:
+                    lines.append(f"  [{idx}] {summary}")
+        
         return "\n".join(lines)
-        return "\n".join(lines)
 
+    
     @staticmethod
-    def _parse_action_index(response, legal_actions: list[Action]) -> int:
-        """Extract the chosen action index from the LLM response."""
-        # Handle both AIMessage and string responses
-        content = response.content if hasattr(response, 'content') else str(response)
+    def _parse_action_index(response: str, num_actions: int) -> int:
+        """Extract action index from Claude's response."""
+        import re
         
-        # Try to find first integer in response
-        for token in content.split():
-            stripped = token.strip("[]().,")
-            if stripped.isdigit():
-                idx = int(stripped)
-                if 0 <= idx < len(legal_actions):
-                    return idx
+        # Try to find first number in response
+        matches = re.findall(r'\d+', response)
+        for match in matches:
+            idx = int(match)
+            if 0 <= idx < num_actions:
+                return idx
         
-        # Default to first non-pass action if available, else 0
-        for i, action in enumerate(legal_actions):
-            if action.action_type.value != "pass_priority":
-                return i
-        return 0
+        return 0  # Default to first action
+    
+    def _fallback_action(self, legal_actions: list[Action]) -> Action:
+        """Select action when Ollama is unavailable."""
+        # Priority: CAST_SPELL > DECLARE_ATTACKERS > PLAY_LAND > others
+        for atype in [ActionType.CAST_SPELL, ActionType.DECLARE_ATTACKERS, ActionType.PLAY_LAND]:
+            for action in legal_actions:
+                if action.action_type == atype:
+                    return action
+        
+        # Last resort: first non-PASS action
+        for action in legal_actions:
+            if action.action_type != ActionType.PASS_PRIORITY:
+                return action
+        
+        return legal_actions[0] if legal_actions else Action(
+            action_type=ActionType.PASS_PRIORITY, player_id=self.player_id
+        )
+
+
+# Backward compatibility alias
+LLMAgent = OllamaAgent

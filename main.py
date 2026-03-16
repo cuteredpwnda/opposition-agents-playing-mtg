@@ -1,10 +1,14 @@
 """
 Simple MTG game runner for testing.
 
-Run with: python main.py
+Usage:
+  python main.py                  # Random vs Random
+  python main.py --ollama         # Ollama vs Random (requires: ollama run mistral)
+  python main.py --help           # Show options
 """
 
 import asyncio
+import argparse
 import logging
 import sys
 from pathlib import Path
@@ -13,6 +17,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from src.agents.random_agent import RandomAgent
+from src.agents.llm_agent import OllamaAgent
 from src.orchestrator.game_runner import GameRunner, GameConfig
 
 logging.basicConfig(
@@ -84,7 +89,7 @@ def build_simple_deck() -> list[dict]:
     return deck
 
 
-async def main():
+async def main(args):
     """Run a test game."""
     logger.info("=" * 60)
     logger.info("MTG Agent Framework — Phase 1 Test")
@@ -93,8 +98,14 @@ async def main():
     config = GameConfig(format="standard", starting_life=20, max_turns=15)
     runner = GameRunner(config)
     
-    # Create 2 random agents
-    agent1 = RandomAgent(player_id="Alice", name="Random Alice")
+    # Create agents based on arguments
+    if args.ollama:
+        agent1 = OllamaAgent(player_id="Alice", name="Ollama Alice")
+        agent_desc = "Ollama"
+    else:
+        agent1 = RandomAgent(player_id="Alice", name="Random Alice")
+        agent_desc = "Random"
+    
     agent2 = RandomAgent(player_id="Bob", name="Random Bob")
     
     agents = {
@@ -113,7 +124,7 @@ async def main():
     logger.info(f"  Format: {config.format}")
     logger.info(f"  Starting life: {config.starting_life}")
     logger.info(f"  Max turns: {config.max_turns}")
-    logger.info(f"  Players: {', '.join(agents.keys())}")
+    logger.info(f"  Players: {agent_desc} Alice vs Random Bob")
     logger.info(f"  Deck size: {len(deck)} cards per player")
     
     # Run the game
@@ -148,5 +159,13 @@ async def main():
 
 
 if __name__ == "__main__":
-    exit_code = asyncio.run(main())
+    parser = argparse.ArgumentParser(description="MTG Agent Arena")
+    parser.add_argument(
+        "--ollama",
+        action="store_true",
+        help="Use Ollama agent for Alice (requires: ollama run mistral)"
+    )
+    args = parser.parse_args()
+    
+    exit_code = asyncio.run(main(args))
     sys.exit(exit_code)
