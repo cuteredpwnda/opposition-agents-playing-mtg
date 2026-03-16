@@ -10,9 +10,11 @@ References:
 
 from __future__ import annotations
 
-from .game_state import Action, ActionType, GameState, Phase, Zone
+from .game_state import Action, ActionType, GameState, Phase, Zone, StackItem
 from .phases import is_main_phase
 from .stack import is_empty as stack_is_empty
+from .stack import push_to_stack
+from .mana import can_pay, pay_cost, parse_mana_cost
 
 
 class RulesEngine:
@@ -24,8 +26,6 @@ class RulesEngine:
         This is the core interface that agents use — adapted from open-mtg's
         ``game.get_moves()`` pattern, extended with priority and instant-speed.
         """
-        from .mana import can_pay, parse_mana_cost
-        
         actions: list[Action] = []
         player = next((p for p in state.players if p.player_id == player_id), None)
         if not player:
@@ -100,7 +100,6 @@ class RulesEngine:
     def execute_action(self, state: GameState, action: Action) -> GameState:
         """Apply an action, update state, check SBAs, queue triggers."""
         from .zones import move_card
-        from .mana import pay_cost, parse_mana_cost
         
         if action.action_type == ActionType.PASS_PRIORITY:
             # No state change on pass
@@ -137,15 +136,22 @@ class RulesEngine:
                     cost = parse_mana_cost(card.mana_cost or "")
                     player = next((p for p in state.players if p.player_id == action.player_id), None)
                     if player:
-                        player.mana_pool = pay_cost(player.mana_pool, cost)
+                        pay_cost(player, cost)
+                    
+                    # Create a stack item from the card
+                    stack_item = StackItem(
+                        source_card_id=action.card_instance_id,
+                        controller_id=action.player_id,
+                        is_spell=True,
+                        card_data=card.card_data.copy(),
+                    )
                     
                     # Move from hand to stack
-                    from .stack import push_to_stack
                     state = move_card(
                         state, action.card_instance_id, Zone.HAND, Zone.STACK,
                         action.player_id
                     )
-                    state = push_to_stack(state, card, action.player_id)
+                    state = push_to_stack(state, stack_item)
             return state
         
         if action.action_type == ActionType.ACTIVATE_ABILITY:
@@ -182,14 +188,15 @@ class RulesEngine:
         from .zones import move_card
         
         events: list[str] = []
+        
+        # Track which players survive
+        died_this_check = []
 
         # Players at 0 or less life lose
-        surviving_players = list(state.players)
-        for player in list(surviving_players):
+        for player in list(state.players):
             if player.life_total <= 0:
                 events.append(f"{player.name} loses the game (life <= 0)")
-                surviving_players.remove(player)
-                state.players = surviving_players
+                died_this_check.append(player.player_id)
 
         # Creatures with lethal damage or 0 toughness die
         for card in list(state.cards):
@@ -199,22 +206,21 @@ class RulesEngine:
             toughness = _parse_int(card.toughness)
             if toughness is not None and card.damage_marked >= toughness:
                 events.append(f"{card.name} dies (lethal damage)")
-                state = move_card(state, card.instance_id, Zone.BATTLEFIELD, Zone.GRAVEYARD, card.owner)
+                state = move_card(state, card.instance_id, Zone.BATTLEFIELD, Zone.GRAVEYARD, card.owner_id)
                 card.damage_marked = 0
             elif toughness is not None and toughness <= 0:
                 events.append(f"{card.name} dies (0 toughness)")
-                state = move_card(state, card.instance_id, Zone.BATTLEFIELD, Zone.GRAVEYARD, card.owner)
+                state = move_card(state, card.instance_id, Zone.BATTLEFIELD, Zone.GRAVEYARD, card.owner_id)
 
         # Commander damage check (21+)
         if state.format == "commander":
-            for player in list(surviving_players):
+            for player in list(state.players):
+                if player.player_id in died_this_check:
+                    continue
                 for cmd_id, dmg in list(player.commander_damage_received.items()):
                     if dmg >= 21:
-                        events.append(
-                            f"{player.name} loses (21+ commander damage)"
-                        )
-                        surviving_players.remove(player)
-                        state.players = surviving_players
+                        events.append(f"{player.name} loses (21+ commander damage)")
+                        died_this_check.append(player.player_id)
                         break
 
         # Tokens cease to exist when they leave battlefield
@@ -224,12 +230,16 @@ class RulesEngine:
                     state.cards.remove(card)
                     events.append(f"{card.name} token ceases to exist")
 
-        # Game ends if only one player remains
-        if len(surviving_players) == 1:
+        # Remove dead players from the game
+        orig_count = len(state.players)
+        state.players = [p for p in state.players if p.player_id not in died_this_check]
+
+        # Game ends if only one player remains or fewer
+        if len(state.players) == 1:
             state.game_over = True
-            state.winner = surviving_players[0]
-            events.append(f"{surviving_players[0].name} wins the game!")
-        elif len(surviving_players) == 0:
+            state.winner = state.players[0]
+            events.append(f"{state.players[0].name} wins the game!")
+        elif len(state.players) == 0:
             state.game_over = True
             events.append("Draw!")
 

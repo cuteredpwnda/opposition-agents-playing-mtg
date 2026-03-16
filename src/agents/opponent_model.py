@@ -216,9 +216,39 @@ class OpponentModel:
             self.predicted_hand[card_name] = prob_in_hand
 
     def observe_behavior(self, action: Action, game_state: GameState) -> None:
-        """Update model based on play patterns (mana usage, attack lines)."""
+        """Update model based on play patterns (mana usage, attack lines).
+        
+        Infer decision-making style and adjust archetype confidence.
+        """
         self.actions_taken.append(action)
-        # Stub: Could parse action to infer decision-making style
+        
+        # Analyze action patterns to infer playstyle
+        action_type = str(action.action_type).lower() if hasattr(action, 'action_type') else ""
+        
+        # Count action types
+        spell_casts = sum(1 for a in self.actions_taken if "cast" in str(a).lower())
+        attacks = sum(1 for a in self.actions_taken if "attack" in str(a).lower())
+        passes = sum(1 for a in self.actions_taken if "pass" in str(a).lower())
+        
+        # Update archetype probabilities based on playstyle
+        if spell_casts > attacks:
+            # More spells than attacks suggests control or combo
+            if self.archetype_probabilities:
+                for arch in ["control", "combo"]:
+                    if arch in self.archetype_probabilities:
+                        self.archetype_probabilities[arch] *= 1.1  # Boost confidence
+        elif attacks > spell_casts:
+            # More attacks suggests aggro or midrange
+            if self.archetype_probabilities:
+                for arch in ["aggro", "midrange"]:
+                    if arch in self.archetype_probabilities:
+                        self.archetype_probabilities[arch] *= 1.1
+        
+        # Normalize probabilities
+        total = sum(self.archetype_probabilities.values()) or 1.0
+        self.archetype_probabilities = {
+            k: v / total for k, v in self.archetype_probabilities.items()
+        }
 
     async def get_threat_assessment(self) -> ThreatAssessment:
         """What is the opponent threatening?"""
@@ -362,4 +392,52 @@ class OpponentModel:
             draw_prob[card_name] = 1.0 - prob_none
         
         return draw_prob
+
+    def predict_play(self, game_state: GameState) -> dict[str, Any]:
+        """Predict opponent's next action based on learned patterns.
+        
+        Returns probability distribution over likely plays.
+        """
+        if not self.archetype_probabilities:
+            return {"most_likely": "unknown", "confidence": 0.0}
+        
+        # Get most likely archetype
+        likely_archetype = max(
+            self.archetype_probabilities.items(),
+            key=lambda x: x[1]
+        )
+        
+        # Get the average confidence across known archetypes
+        avg_confidence = (
+            sum(self.archetype_probabilities.values()) / 
+            max(len(self.archetype_probabilities), 1)
+        )
+        
+        # Make predictions based on archetype and game state
+        prediction = {
+            "most_likely_archetype": likely_archetype[0],
+            "archetype_confidence": likely_archetype[1],
+            "average_confidence": avg_confidence,
+            "likely_plays": self._infer_likely_plays(likely_archetype[0], game_state),
+            "actions_observed": len(self.actions_taken),
+        }
+        
+        return prediction
+    
+    def _infer_likely_plays(self, archetype: str, game_state: GameState) -> list[str]:
+        """Generate list of likely plays based on archetype and game state."""
+        likely_plays = []
+        
+        if archetype == "aggro":
+            likely_plays = ["attack", "cast creature", "burn spell"]
+        elif archetype == "control":
+            likely_plays = ["cast instant", "counterspell", "draw cards"]
+        elif archetype == "combo":
+            likely_plays = ["tutor spell", "cast combo piece", "protection spell"]
+        elif archetype == "midrange":
+            likely_plays = ["cast creature", "attack", "removal spell"]
+        elif archetype == "ramp":
+            likely_plays = ["cast land ramp", "cast creature", "attack"]
+        
+        return likely_plays
 

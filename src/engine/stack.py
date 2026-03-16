@@ -10,11 +10,12 @@ from __future__ import annotations
 from .game_state import GameState, StackItem
 
 
-def push_to_stack(state: GameState, item: StackItem) -> None:
+def push_to_stack(state: GameState, stack_item: StackItem) -> GameState:
     """Push a spell or ability onto the stack."""
-    state.stack.append(item)
-    card_name = item.card_data.get("name", "an ability")
+    state.stack.append(stack_item)
+    card_name = stack_item.card_data.get("name", "an ability")
     state.log(f"{card_name} added to the stack")
+    return state
 
 
 def resolve_top(state: GameState) -> StackItem | None:

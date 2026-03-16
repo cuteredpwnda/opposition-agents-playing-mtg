@@ -9,9 +9,18 @@ from __future__ import annotations
 from .game_state import CardInstance, GameState, Zone
 
 
-def move_card(state: GameState, card: CardInstance, to_zone: Zone) -> None:
+def move_card(
+    state: GameState, 
+    card_instance_id: str, 
+    from_zone: Zone, 
+    to_zone: Zone,
+    player_id: str
+) -> GameState:
     """Move a card to a new zone, resetting zone-specific state."""
-    from_zone = card.zone
+    card = next((c for c in state.cards if c.instance_id == card_instance_id), None)
+    if card is None:
+        return state
+    
     card.zone = to_zone
 
     # Reset battlefield-specific state when leaving the battlefield
@@ -27,6 +36,7 @@ def move_card(state: GameState, card: CardInstance, to_zone: Zone) -> None:
         card.summoning_sick = True
 
     state.log(f"{card.name} moved from {from_zone.value} to {to_zone.value}")
+    return state
 
 
 def get_cards_in_zone(state: GameState, player_id: str, zone: Zone) -> list[CardInstance]:

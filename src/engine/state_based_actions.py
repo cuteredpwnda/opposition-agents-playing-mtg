@@ -46,8 +46,14 @@ def check_state_based_actions(game_state: GameState) -> GameState:
             game_state.game_over = True
             game_state.winner = next(p for p in game_state.players if p != pid)
             break
-        # Commander damage (21+ combat damage from single commander) → loses (stub)
-        # (would track commander damage per opponent separately)
+        # Commander damage (21+ combat damage from single commander) → loses
+        if not hasattr(pstate, 'commander_damage'):
+            pstate.commander_damage = {}
+        for opponent_id, damage in pstate.commander_damage.items():
+            if damage >= 21:
+                game_state.game_over = True
+                game_state.winner = next(p for p in game_state.players if p != pid)
+                break
 
     # Check draw empties (trying to draw from empty library)
     for zone_key in list(game_state.cards_in_zone.keys()):

@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from src.agents.base_agent import MTGAgent
-from src.engine.game_state import CardInstance, GameState, Phase, PlayerState
+from src.engine.game_state import CardInstance, GameState, Phase, PlayerState, Zone
 from src.engine.rules_engine import RulesEngine
 from src.orchestrator.priority_loop import (
     advance_priority,
@@ -65,13 +65,13 @@ class GameRunner:
         while not game_state.game_over and game_state.turn_number <= self.config.max_turns:
             game_state = await self._play_turn(game_state, agents)
 
-        winner = game_state.winner if game_state.game_over else None
+        winner_name = game_state.winner.player_id if game_state.winner else None
         result = GameResult(
-            winner=winner,
+            winner=winner_name,
             turns=game_state.turn_number,
-            log=game_state.log,
+            log=game_state.game_log,
         )
-        logger.info(f"Game ended: winner={winner}, turns={result.turns}")
+        logger.info(f"Game ended: winner={winner_name}, turns={result.turns}")
         return result
 
     def _setup_game(
@@ -138,20 +138,36 @@ class GameRunner:
         self, game_state: GameState, agents: dict[str, MTGAgent]
     ) -> GameState:
         """Play a single turn (all phases)."""
-        from src.engine.phases import PHASE_ORDER, advance_phase
+        from src.engine.phases import PHASE_ORDER, advance_phase, is_main_phase
         from src.engine.game_state import ActionType
 
-        for phase in PHASE_ORDER:
+        # Actually play through each phase of the turn
+        phase_idx = 0
+        while phase_idx < len(PHASE_ORDER):
+            if game_state.game_over:
+                return game_state
+            
+            phase = PHASE_ORDER[phase_idx]
             game_state.phase = phase
+            game_state.log(f"--- {phase.value.upper()} ---")
 
-            # In main phases, each player gets a chance to cast spells/play lands
-            if phase in [Phase.MAIN_1, Phase.MAIN_2]:
-                # Active player has priority
-                pid = game_state.players[game_state.active_player_index].player_id
+            # In draw step, active player draws
+            if phase == Phase.DRAW:
+                player = game_state.active_player
+                library = [c for c in game_state.cards if c.zone == Zone.LIBRARY and c.owner_id == player.player_id]
+                if library:
+                    card_to_draw = library[0]
+                    from src.engine.zones import move_card
+                    game_state = move_card(game_state, card_to_draw.instance_id, Zone.LIBRARY, Zone.HAND, player.player_id)
+                    player.has_drawn_for_turn = True
+
+            # In main phases, active player can cast spells/play lands
+            if is_main_phase(phase):
+                pid = game_state.active_player.player_id
                 agent = agents[pid]
                 
                 # Player makes decisions until they pass
-                while True:
+                while not game_state.game_over:
                     legal = self.engine.get_legal_actions(game_state, pid)
                     
                     if not legal:
@@ -171,19 +187,19 @@ class GameRunner:
                     game_state = self.engine.execute_action(game_state, action)
                     
                     # Check SBAs immediately
-                    sba_events = self.engine.check_state_based_actions(game_state)
+                    self.engine.check_state_based_actions(game_state)
                     if game_state.game_over:
                         return game_state
             
             # Check SBAs after each phase
             sba_events = self.engine.check_state_based_actions(game_state)
+            if sba_events or game_state.game_over:
+                logger.info(f"SBA after {phase.value}: {sba_events}, game_over={game_state.game_over}")
             if game_state.game_over:
+                logger.info(f"Game over triggered after phase {phase.value}")
                 return game_state
-
-        # Advance to next turn
-        game_state.turn_number += 1
-        game_state.active_player_index = (game_state.active_player_index + 1) % len(game_state.players)
-        game_state.priority_player_index = game_state.active_player_index
-        game_state.phase = Phase.UNTAP
+            
+            # Move to next phase
+            phase_idx += 1
 
         return game_state

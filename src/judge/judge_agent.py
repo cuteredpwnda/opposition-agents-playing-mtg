@@ -133,6 +133,8 @@ class JudgeAgent:
 
     def _parse_ruling(self, text: str) -> Ruling:
         """Parse LLM response into a structured Ruling."""
+        import re
+        
         # Simple extraction — refinable with structured output later
         confidence = "medium"
         for level in ["high", "medium", "low"]:
@@ -140,10 +142,20 @@ class JudgeAgent:
                 confidence = level
                 break
 
+        # Extract CR rule numbers using regex
+        rule_pattern = r'\b(\d{3}(?:\.\d+)?(?:[a-z])?)\b'
+        rule_numbers = list(set(re.findall(rule_pattern, text)))
+        
+        # Extract resolution steps (lines starting with numbers or bullets)
+        resolution_steps = []
+        for line in text.split('\n'):
+            if re.match(r'^\s*[\d*•\-]\s*', line):
+                resolution_steps.append(line.strip())
+
         return Ruling(
             outcome=text[:500],
-            rule_numbers=[],  # TODO: regex extract CR numbers
-            resolution_steps=[],
+            rule_numbers=rule_numbers,
+            resolution_steps=resolution_steps[:5],  # Limit to 5 steps
             confidence=confidence,
             reasoning=text,
         )
@@ -153,6 +165,33 @@ class JudgeAgent:
         """Extract likely card names from a situation description.
 
         Heuristic: card names are typically capitalized multi-word phrases.
+        Uses regex + rule-based matching for robustness.
         """
-        # Stub — proper NER or KG lookup would be more robust
-        return []
+        import re
+        
+        # 1. Extract quoted names (highest confidence)
+        quoted = re.findall(r'["\']([^"\']+)["\']', text)
+        if quoted:
+            return quoted
+        
+        # 2. Extract capitalized noun phrases (looser heuristic)
+        # Look for sequences of capitalized words
+        words = text.split()
+        card_names = []
+        current_phrase = []
+        
+        for word in words:
+            # Remove punctuation for analysis
+            clean_word = re.sub(r'[^a-zA-Z\s]', '', word)
+            
+            if clean_word and clean_word[0].isupper():
+                current_phrase.append(clean_word)
+            else:
+                if current_phrase and len(''.join(current_phrase)) > 3:
+                    potential_card = ' '.join(current_phrase)
+                    if len(potential_card.split()) <= 3:  # Most cards are 1-3 words
+                        card_names.append(potential_card)
+                current_phrase = []
+        
+        # Return unique names, deduplicated, limited to 5
+        return list(dict.fromkeys(card_names))[:5]

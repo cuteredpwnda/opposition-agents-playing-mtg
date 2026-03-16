@@ -14,7 +14,7 @@ from typing import Any
 
 from langgraph.graph import END, StateGraph
 
-from src.engine.game_state import GameState, Phase
+from src.engine.game_state import GameState, Phase, Zone
 from src.engine.phases import advance_phase, is_combat_phase, is_main_phase
 from src.engine.stack import is_empty as stack_is_empty
 
@@ -124,9 +124,27 @@ def untap_step(state: dict) -> dict:
 
 
 def upkeep_step(state: dict) -> dict:
+    """Upkeep step — trigger upkeep abilities and check SBAs."""
     gs: GameState = state["game_state"]
     gs.phase = Phase.UPKEEP
-    # Trigger upkeep abilities — stub
+    
+    # Trigger upkeep abilities from active player's permanents
+    active_player_id = gs.players[gs.active_player_index].player_id
+    upkeep_triggers = []
+    
+    for card in gs.cards:
+        if card.controller_id == active_player_id and card.zone == Zone.BATTLEFIELD:
+            text = card.oracle_text.lower()
+            # Check for "at the beginning of your upkeep"
+            if "upkeep" in text:
+                upkeep_triggers.append(card)
+    
+    # Queue upkeep triggers (in real implementation, would use proper stack/trigger queue)
+    # For now, just log them
+    if upkeep_triggers:
+        trigger_names = [c.card_name for c in upkeep_triggers]
+        gs.log.append(f"Upkeep triggers: {', '.join(trigger_names)}")
+    
     return state
 
 

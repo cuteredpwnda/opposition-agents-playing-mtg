@@ -25,11 +25,6 @@ def can_block_with(attacker: CardInstance, defender: CardInstance) -> bool:
         if not has_keyword(defender, "reach"):
             return False
     
-    # Menace requires 2+ blockers
-    if has_keyword(attacker, "menace"):
-        # Stub: would need to track multiple blockers
-        pass
-    
     # Shadow can't be blocked by non-shadow
     if has_keyword(attacker, "shadow") and not has_keyword(defender, "shadow"):
         return False
@@ -45,6 +40,23 @@ def can_block_with(attacker: CardInstance, defender: CardInstance) -> bool:
             return False
     
     return True
+
+
+def menace_can_be_blocked(
+    attacker: CardInstance, potential_blockers: list[CardInstance]
+) -> bool:
+    """Check if menace creature can be blocked (requires 2+ blockers).
+    
+    Menace means "This creature can't be blocked except by two or more creatures."
+    """
+    if not has_keyword(attacker, "menace"):
+        return True  # Not menace, normal blocking rules apply
+    
+    # Count valid blockers
+    valid_blockers = [b for b in potential_blockers if can_block_with(attacker, b)]
+    
+    # Menace requires 2+ blockers
+    return len(valid_blockers) >= 2
 
 
 def apply_lifelink(

@@ -16,22 +16,33 @@ from src.engine.stack import is_empty as stack_is_empty
 
 def get_priority_order(game_state: GameState) -> list[str]:
     """Return player IDs in APNAP order starting from active player."""
-    player_ids = list(game_state.players.keys())
-    if game_state.active_player not in player_ids:
+    player_ids = [p.player_id for p in game_state.players]
+    active_player_id = game_state.active_player.player_id
+    
+    if active_player_id not in player_ids:
         return player_ids
-    idx = player_ids.index(game_state.active_player)
+    
+    idx = player_ids.index(active_player_id)
     return player_ids[idx:] + player_ids[:idx]
 
 
 def advance_priority(game_state: GameState) -> GameState:
     """Move priority to the next player in APNAP order."""
     order = get_priority_order(game_state)
-    if game_state.priority_player not in order:
-        game_state.priority_player = order[0]
+    current_priority_id = game_state.priority_player.player_id
+    
+    if current_priority_id not in order:
+        game_state.priority_player_index = 0
         return game_state
-    idx = order.index(game_state.priority_player)
+    
+    idx = order.index(current_priority_id)
     next_idx = (idx + 1) % len(order)
-    game_state.priority_player = order[next_idx]
+    next_player_id = order[next_idx]
+    
+    # Find index of next player in players list
+    game_state.priority_player_index = next(
+        i for i, p in enumerate(game_state.players) if p.player_id == next_player_id
+    )
     return game_state
 
 
@@ -39,7 +50,8 @@ def all_players_passed(
     game_state: GameState, passed: set[str]
 ) -> bool:
     """Check if all players have passed priority in order."""
-    return set(game_state.players.keys()) == passed
+    all_player_ids = {p.player_id for p in game_state.players}
+    return all_player_ids == passed
 
 
 def priority_action_result(

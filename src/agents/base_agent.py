@@ -29,8 +29,9 @@ class MTGAgent(abc.ABC):
     Subclasses must implement `decide_action`.
     """
 
-    def __init__(self, player_id: str):
+    def __init__(self, player_id: str, name: str = ""):
         self.player_id = player_id
+        self.name = name or player_id
         self.memory = AgentMemory()
 
     @abc.abstractmethod
@@ -40,11 +41,10 @@ class MTGAgent(abc.ABC):
         """Choose an action from the legal actions given the game state."""
         ...
 
-    def observe(self, game_state: GameState, action: Action) -> None:
+    async def observe(self, game_state: GameState, action: Action) -> None:
         """Observe an action taken (by any player). Override for belief updates."""
         self.memory.game_log.append(
-            f"T{game_state.turn_number} {action.action_type.value}: "
-            f"{action.card.name if action.card else 'pass'}"
+            f"T{game_state.turn_number} {action.action_type.value}"
         )
 
     def reset(self) -> None:

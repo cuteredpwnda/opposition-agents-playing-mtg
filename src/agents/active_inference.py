@@ -102,9 +102,70 @@ class ActiveInferenceModule:
 
         Returns recommendation with color requirements and reason.
         """
-        # Check if we have counterspells or instants that benefit from open mana
-        # This is a heuristic stub — full implementation uses belief distributions
-        return {"hold": False, "reason": "no reactive plays available"}
+        active_player_id = game_state.players[game_state.active_player_index].player_id
+        
+        # Find our instants and reactive spells in hand
+        our_instants = []
+        our_counterspells = []
+        
+        for player in game_state.players:
+            if player.player_id != active_player_id:
+                # This is us (non-active player during opponent's turn)
+                for card_instance in player.hand:
+                    text = card_instance.oracle_text.lower()
+                    if "instant" in card_instance.type_line.lower() or "flash" in text:
+                        our_instants.append(card_instance)
+                        if "counter" in text:
+                            our_counterspells.append(card_instance)
+        
+        # Analyze threat level from opponent
+        opponent = game_state.players[game_state.active_player_index]
+        opponent_threats = [
+            c for c in opponent.battlefield
+            if c.type_line and "creature" in c.type_line.lower()
+        ]
+        opponent_threat_power = sum(int(c.power or 0) for c in opponent_threats)
+        
+        # Decision logic:
+        # 1. If opponent has large threats AND we have removal, hold mana
+        if opponent_threat_power > 5 and any(
+            kw in c.oracle_text.lower()
+            for c in our_instants
+            for kw in ["destroy", "remove", "return", "counter"]
+        ):
+            colors_needed = self._extract_mana_colors(our_instants[0]) if our_instants else []
+            return {
+                "hold": True,
+                "reason": f"Threats ({opponent_threat_power} power), have removal",
+                "colors": colors_needed,
+            }
+        
+        # 2. If opponent about to play significant spell, hold for counterspell
+        if our_counterspells and opponent.mana_pool.total > 3:
+            return {
+                "hold": True,
+                "reason": "Opponent has mana, have counterspells available",
+                "colors": [c for spell in our_counterspells for c in self._extract_mana_colors(spell)],
+            }
+        
+        # 3. Otherwise, safe to tap out
+        return {
+            "hold": False,
+            "reason": "No immediate threats or useful reactive spells",
+            "colors": [],
+        }
+    
+    def _extract_mana_colors(self, card_instance) -> list[str]:
+        """Extract mana colors from a card's mana cost string."""
+        if not card_instance.mana_cost:
+            return []
+        mana_cost_str = card_instance.mana_cost.lower()
+        colors = []
+        color_map = {"w": "white", "u": "blue", "b": "black", "r": "red", "g": "green"}
+        for char in mana_cost_str:
+            if char in color_map and color_map[char] not in colors:
+                colors.append(color_map[char])
+        return colors
 
     # -- Private helpers ---------------------------------------------------
 
