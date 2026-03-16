@@ -114,6 +114,21 @@ class Ability:
     description: str = ""  # Full ability text for logging
 
 
+@dataclass
+class StaticAbility:
+    """A static ability that continuously modifies game state (not activated or triggered)."""
+    
+    static_ability_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    source_card_id: str = ""  # Which card has this static ability
+    controller_id: str = ""  # Who controls the static ability
+    scope: str = ""  # "creatures_you_control", "all_creatures", "artifacts_you_control", etc.
+    effect_type: str = ""  # "power_toughness", "keyword", "protection", "indestructible", etc.
+    power_mod: int = 0  # Power modifier (e.g., +1)
+    toughness_mod: int = 0  # Toughness modifier (e.g., +1)
+    keywords: list[str] = field(default_factory=list)  # Keywords to add (flying, deathtouched, etc.)
+    description: str = ""  # Full ability text for logging
+
+
 # ---------------------------------------------------------------------------
 # Data Models
 # ---------------------------------------------------------------------------
@@ -164,6 +179,9 @@ class CardInstance:
 
     def is_instant(self) -> bool:
         return "Instant" in self.type_line
+
+    def is_artifact(self) -> bool:
+        return "Artifact" in self.type_line
 
     @property
     def power(self) -> Optional[str]:
