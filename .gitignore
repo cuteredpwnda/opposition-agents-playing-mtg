@@ -9,6 +9,13 @@ __pycache__/
 dist/
 build/
 
+# Debug and test output
+debug.py
+debug_output.txt
+game_output.txt
+test_*.txt
+*.log
+
 # Neo4j data (managed by Docker volumes)
 neo4j/data/
 neo4j/logs/
