@@ -198,6 +198,11 @@ class GameRunner:
                     player.has_drawn_for_turn = True
 
             # Combat phases
+            if phase == Phase.COMBAT_BEGIN:
+                # Initialize combat state at the start of combat
+                from src.engine.game_state import CombatState
+                game_state.combat = CombatState()
+            
             if phase == Phase.COMBAT_ATTACKERS:
                 from src.engine.combat import declare_attackers
                 pid = game_state.active_player.player_id
