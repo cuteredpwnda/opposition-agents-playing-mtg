@@ -156,20 +156,28 @@ class RulesEngine:
                     if player:
                         pay_cost(player, cost)
                     
-                    # Create a stack item from the card
-                    stack_item = StackItem(
-                        source_card_id=action.card_instance_id,
-                        controller_id=action.player_id,
-                        is_spell=True,
-                        card_data=card.card_data.copy(),
-                    )
-                    
-                    # Move from hand to stack
-                    state = move_card(
-                        state, action.card_instance_id, Zone.HAND, Zone.STACK,
-                        action.player_id
-                    )
-                    state = push_to_stack(state, stack_item)
+                    # For Phase 1: creatures go directly to battlefield (not through stack)
+                    if card.is_creature():
+                        state = move_card(
+                            state, action.card_instance_id, Zone.HAND, Zone.BATTLEFIELD,
+                            action.player_id
+                        )
+                        card.summoning_sick = True
+                        card.turn_entered = state.turn_number
+                        state.log(f"{card.name} enters the battlefield")
+                    else:
+                        # Non-creatures go to stack (for later implementation)
+                        stack_item = StackItem(
+                            source_card_id=action.card_instance_id,
+                            controller_id=action.player_id,
+                            is_spell=True,
+                            card_data=card.card_data.copy(),
+                        )
+                        state = move_card(
+                            state, action.card_instance_id, Zone.HAND, Zone.STACK,
+                            action.player_id
+                        )
+                        state = push_to_stack(state, stack_item)
             return state
         
         if action.action_type == ActionType.ACTIVATE_ABILITY:

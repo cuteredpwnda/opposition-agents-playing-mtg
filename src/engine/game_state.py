@@ -94,6 +94,7 @@ class CardInstance:
     attached_to: Optional[str] = None
     damage_marked: int = 0
     summoning_sick: bool = True
+    turn_entered: int = 0  # Track which turn creature entered (0 = pre-game)
     face_down: bool = False
 
     @property

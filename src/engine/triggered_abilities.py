@@ -1,72 +1,95 @@
 """
-Triggered abilities — "whenever", "at", "when" effects that queue to the stack.
+Triggered abilities system — "when", "whenever" effects that detect state changes.
 
-Reference: MTG rules 603.
+Design patterns from mtg-python-engine (MIT) https://github.com/wanqizhu/mtg-python-engine
+Reference: MTG rules 603 (Triggered Abilities)
+
+Current Phase 1: Basic ETB (enters the battlefield) triggers.
+Future: Attack triggers, death triggers, turn-begin triggers, etc.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum, auto
 
-from src.engine.game_state import GameState, StackItem
+from src.engine.game_state import GameState, CardInstance, Zone
+
+
+class TriggerEvent(Enum):
+    """Standard trigger events."""
+    ENTERS_BATTLEFIELD = auto()
+    CREATURE_ATTACKS = auto()
+    CREATURE_BLOCKS = auto()
+    CREATURE_DIES = auto()
+    SPELL_CAST = auto()
+    TURN_BEGINS = auto()
+    TURN_ENDS = auto()
+    DAMAGE_DEALT = auto()
 
 
 @dataclass
-class Trigger:
-    """A triggered ability waiting to be put on stack."""
+class TriggerDetail:
+    """A triggered ability on a permanent (e.g. "When ~ enters, draw a card")."""
+    source_card_id: str
+    event: TriggerEvent
+    description: str  # Human-readable: "When ~ enters, draw a card"
+    effect_fn: callable  # Function to execute when triggered
 
-    card_name: str
-    trigger_text: str
-    controller: str
-    targets: list[str]
 
-
-def detect_triggers(prev_state: GameState, new_state: GameState) -> list[Trigger]:
-    """
-    Detect which triggered abilities should fire based on state change.
-    
-    Common triggers:
-    - "When [permanent] enters the battlefield"
-    - "Whenever [action] happens"
-    - "At the end of [phase]"
-    - "At the beginning of [phase]"
-    """
+def detect_enters_battlefield(prev_state: GameState, new_state: GameState) -> list[TriggerDetail]:
+    """Detect creatures/permanents that entered the battlefield this turn."""
     triggers = []
     
-    # ETB triggers (card entered battlefield)
-    for zone_key in new_state.cards_in_zone:
-        pid, zone_name = zone_key
-        if zone_name != "battlefield":
+    # Build set of card IDs that were on BF before
+    old_bf_ids = {c.instance_id for c in prev_state.cards if c.zone == Zone.BATTLEFIELD}
+    new_bf_ids = {c.instance_id for c in new_state.cards if c.zone == Zone.BATTLEFIELD}
+    
+    # Cards that entered = new cards in BF that weren't before
+    entered_ids = new_bf_ids - old_bf_ids
+    
+    for card in new_state.cards:
+        if card.instance_id not in entered_ids:
             continue
-        new_cards = new_state.cards_in_zone[zone_key]
-        old_cards = prev_state.cards_in_zone.get(zone_key, [])
-        old_ids = {c.instance_id for c in old_cards}
         
-        for card in new_cards:
-            if card.instance_id not in old_ids:
-                if "enter the battlefield" in card.oracle_text.lower():
-                    triggers.append(
-                        Trigger(
-                            card_name=card.name,
-                            trigger_text=card.oracle_text,
-                            controller=card.controller,
-                            targets=[],
-                        )
-                    )
+        # Check for ETB abilities (hardcoded for Phase 1)
+        if "Mulldrifter" in card.name:
+            triggers.append(
+                TriggerDetail(
+                    source_card_id=card.instance_id,
+                    event=TriggerEvent.ENTERS_BATTLEFIELD,
+                    description=f"When {card.name} enters the battlefield, draw a card",
+                    effect_fn=lambda gs, cid: _draw_card(gs, cid),
+                )
+            )
     
     return triggers
 
 
-def queue_triggers(game_state: GameState, triggers: list[Trigger]) -> GameState:
-    """Add triggered abilities to the stack in APNAP order."""
+def resolve_triggers(game_state: GameState, triggers: list[TriggerDetail]) -> GameState:
+    """Execute triggered abilities in APNAP order (all triggers at once for Phase 1)."""
     for trigger in triggers:
-        stack_item = StackItem(
-            id=f"trigger_{trigger.card_name}_{len(game_state.stack)}",
-            type="triggered_ability",
-            source_card_name=trigger.card_name,
-            text=trigger.trigger_text,
-            controller=trigger.controller,
-            targets=trigger.targets,
-        )
-        game_state.stack.append(stack_item)
+        game_state.log(f"[TRIGGER] {trigger.description}")
+        game_state = trigger.effect_fn(game_state, trigger.source_card_id)
+    
+    return game_state
+
+
+# Standard effects
+def _draw_card(game_state: GameState, card_instance_id: str) -> GameState:
+    """Draw a card for the owner of source card."""
+    source_card = next(
+        (c for c in game_state.cards if c.instance_id == card_instance_id), None
+    )
+    if not source_card:
+        return game_state
+    
+    library = game_state.library.get(source_card.owner_id, [])
+    if not library:
+        return game_state
+    
+    drawn = library.pop(0)
+    drawn.zone = Zone.HAND
+    game_state.log(f"  → {source_card.owner_id} draws {drawn.name}")
+    
     return game_state
