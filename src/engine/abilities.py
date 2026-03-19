@@ -38,12 +38,14 @@ def parse_abilities(card: CardInstance) -> list[Ability]:
     #   {T}: Add {R}
     #   {2}{U}: Draw a card
     #   {1}{B}, {T}: Create a token
-    pattern = r"\{[^\}]+\}(?:\s*,\s*\{[^\}]+\})*\s*:\s*([^.\n]+)"
+    #   {U}{U}{U}: Draw a card
+    # Cost part: one or more {x}, optionally separated by commas or consecutive
+    pattern = r"(\{[^\}]+\}(?:\s*,\s*\{[^\}]+\}|\{[^\}]+\})*)\s*:\s*([^.\n]+)"
     
     matches = re.finditer(pattern, card.oracle_text)
     for match in matches:
-        cost = extract_cost(match.group(0))
-        effect = match.group(1).strip()
+        cost = match.group(1).strip()
+        effect = match.group(2).strip()
         
         # Determine if this can be used anytime
         # Mana abilities: simple, produce mana, can use anytime
@@ -176,10 +178,11 @@ def extract_mana_cost(cost_text: str) -> list[str]:
     matches = re.findall(r"\{([^\}]+)\}", cost_text)
     result = []
     for match in matches:
+        match_upper = match.upper()
         if match.isdigit():
             result.extend([c for c in match])  # Split digits
-        elif match in "WUBRG":
-            result.append(match)
+        elif match_upper in "WUBRG":
+            result.append(match_upper)
     return result
 
 
