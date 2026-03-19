@@ -642,17 +642,18 @@ def run_meta_tournament():
     """Run multiple meta games and show statistics with LLM-powered agents."""
     print("\n" + "="*70)
     print("STANDARD META TOURNAMENT - March 2026")
-    print("LLM-POWERED AGENTS (Ollama)")
+    print("LLM-POWERED AGENTS (Ollama - Phi Model)")
     print("="*70)
     
-    # Check if Ollama is available
+    # Check if Ollama is available with phi model
     from src.engine.llm_orchestration import OllamaConnector
-    ollama = OllamaConnector()
+    ollama = OllamaConnector(model="phi")  # Small but capable model
     has_llm = ollama.is_available
-    llm_status = f"[OLLAMA ENABLED - {ollama.model}]" if has_llm else "[OLLAMA DISABLED - Using Heuristic Play]"
+    llm_status = f"[OLLAMA ENABLED - phi]" if has_llm else "[OLLAMA DISABLED - Using Heuristic Play]"
     print(f"\nAgent Mode: {llm_status}")
     if has_llm:
         print(f"Ollama URL: {ollama.base_url}")
+        print(f"Model: phi (2.7B parameters - fast & lightweight)")
     print()
     
     # Track matchup results

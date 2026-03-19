@@ -109,14 +109,14 @@ class MTGAgentLLM:
     def __init__(self, 
                  player_id: str,
                  strategy: str = "balanced",
-                 ollama_model: str = "mistral",
+                 ollama_model: str = "phi",
                  knowledge_graph: Optional[MTGKnowledgeGraph] = None):
         """Initialize LLM agent.
         
         Args:
             player_id: This player's ID
             strategy: Play strategy (aggressive, control, combo, balanced)
-            ollama_model: Ollama model to use
+            ollama_model: Ollama model to use (default: phi for speed)
             knowledge_graph: Optional Neo4j KG for context
         """
         self.player_id = player_id

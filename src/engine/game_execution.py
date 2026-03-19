@@ -40,7 +40,8 @@ class AgentGamePlayer:
                  player_id: str,
                  strategy: Strategy = Strategy.AGGRESSIVE,
                  knowledge_graph: Optional[MTGKnowledgeGraph] = None,
-                 use_llm: bool = False):
+                 use_llm: bool = False,
+                 llm_model: str = "phi"):
         """Initialize an agent game player.
         
         Args:
@@ -48,6 +49,7 @@ class AgentGamePlayer:
             strategy: Agent's play strategy
             knowledge_graph: Optional Neo4j KG for advanced queries
             use_llm: If True, use LLM for strategic decisions
+            llm_model: Ollama model to use (default: phi for speed)
         """
         self.player_id = player_id
         self.strategy = strategy
@@ -64,6 +66,7 @@ class AgentGamePlayer:
         self.llm_agent = MTGAgentLLM(
             player_id=player_id,
             strategy=strategy_map.get(strategy, "balanced"),
+            ollama_model=llm_model,
             knowledge_graph=knowledge_graph
         ) if use_llm else None
     
