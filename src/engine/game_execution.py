@@ -16,11 +16,12 @@ from __future__ import annotations
 from typing import Optional
 from enum import Enum
 
-from src.engine.game_state import GameState, Zone, CardInstance
+from src.engine.game_state import GameState, Zone, CardInstance, Action, ActionType
 from src.engine.knowledge_graph import MTGKnowledgeGraph
 from src.engine.agent_strategies import AgentStrategist, Strategy, PlayRecommendation
 from src.engine.llm_orchestration import MTGAgentLLM
 from src.engine.llm_agent import LLMAgent, LLMDecision
+from src.engine.rules_engine import RulesEngine
 
 
 class GamePhaseAction(str, Enum):
@@ -255,17 +256,20 @@ class GameCoordinator:
     def __init__(self, 
                  agent1: AgentGamePlayer,
                  agent2: AgentGamePlayer,
-                 knowledge_graph: Optional[MTGKnowledgeGraph] = None):
+                 knowledge_graph: Optional[MTGKnowledgeGraph] = None,
+                 rules_engine: Optional[RulesEngine] = None):
         """Initialize game coordinator.
         
         Args:
             agent1: First agent player
             agent2: Second agent player
             knowledge_graph: Optional Neo4j KG for game analysis
+            rules_engine: Optional RulesEngine for executing actions
         """
         self.agent1 = agent1
         self.agent2 = agent2
         self.kg = knowledge_graph
+        self.rules_engine = rules_engine or RulesEngine()
         self.game_id = None
         self.play_history = []
     
@@ -309,7 +313,32 @@ class GameCoordinator:
         if agent.llm_agent and agent.llm_agent.llm.is_available:
             decision = agent.llm_agent.decide_main_phase_play(game, opponent_id)
             if decision:
-                actions.append(f"{agent.player_id}: [LLM] {decision.action} - {decision.reasoning}")
+                action_str = f"{agent.player_id}: [LLM] {decision.action} - {decision.reasoning}"
+                actions.append(action_str)
+                
+                # Get hand cards and check what's playable
+                hand_cards = [c for c in game.cards if c.zone == Zone.HAND and c.controller_id == agent.player_id]
+                playable = []
+                if hand_cards:
+                    playable = [c for c in hand_cards if agent.can_play_card(c, game)]
+                
+                # If we have playable cards and LLM doesn't explicitly say "pass"
+                decision_lower = str(decision.action).lower()
+                if playable and not ("pass" in decision_lower):
+                    playable.sort(key=lambda c: c.card_data.get("cmc", 0))
+                    card = playable[0]
+                    try:
+                        # Create and execute action
+                        action = Action(
+                            action_type=ActionType.CAST_SPELL,
+                            player_id=agent.player_id,
+                            card_instance_id=card.instance_id
+                        )
+                        self.rules_engine.execute_action(game, action)
+                        actions[-1] += f" → Played {card.card_data.get('name', 'card')}"
+                    except Exception as e:
+                        print(f"Error playing card: {e}")
+                
                 if self.kg and self.game_id:
                     agent.llm_agent.record_decision_to_kg(self.game_id, decision, game)
                 return actions
@@ -331,6 +360,12 @@ class GameCoordinator:
             if playable:
                 playable.sort(key=lambda c: c.card_data.get("cmc", 0))
                 card = playable[0]
+                action = Action(
+                    action_type=ActionType.CAST_SPELL,
+                    player_id=agent.player_id,
+                    card_instance_id=card.instance_id
+                )
+                self.rules_engine.execute_action(game, action)
                 actions.append(f"{agent.player_id}: Play {card.card_data.get('name', 'card')}")
             else:
                 actions.append(f"{agent.player_id}: Pass")
@@ -351,25 +386,7 @@ class GameCoordinator:
         actions = []
         agent = self.get_active_agent(game)
         
-        # Try LLM first if available
-        if agent.llm_agent and self.game_id:
-            attackers = agent.llm_agent.decide_attack(game, self.game_id)
-            if attackers and len(attackers) > 0:
-                actions.append(f"{agent.player_id}: [LLM] Attacking with {len(attackers)} creatures")
-            else:
-                actions.append(f"{agent.player_id}: [LLM] No attacks")
-            return actions
-        
-        # Fall back to strategist if available
-        if agent.strategist and self.game_id:
-            attackers = agent.decide_attack_targets(game, self.game_id)
-            if attackers:
-                actions.append(f"{agent.player_id}: [KG] Attacking with {len(attackers)} creatures")
-            else:
-                actions.append(f"{agent.player_id}: [KG] No attacks")
-            return actions
-        
-        # Fall back to simple heuristic
+        # Get attacking creatures
         our_creatures = [
             c for c in game.cards
             if c.zone == Zone.BATTLEFIELD
@@ -377,10 +394,44 @@ class GameCoordinator:
             and not c.tapped
         ]
         
-        if our_creatures:
-            actions.append(f"{agent.player_id}: [Heuristic] Attacking with {len(our_creatures)} creatures")
+        attackers_to_declare = []
+        
+        # Try LLM first if available
+        if agent.llm_agent and agent.llm_agent.llm.is_available:
+            # LLM decides which creatures to attack with
+            if our_creatures:
+                # Simple heuristic for now: attack with all untapped creatures
+                attackers_to_declare = our_creatures
+            if attackers_to_declare and len(attackers_to_declare) > 0:
+                actions.append(f"{agent.player_id}: [LLM] Attacking with {len(attackers_to_declare)} creatures")
+            else:
+                actions.append(f"{agent.player_id}: [LLM] No attacks")
+        # Fall back to strategist if available
+        elif agent.strategist and self.game_id:
+            attackers = agent.decide_attack_targets(game, self.game_id)
+            if attackers:
+                actions.append(f"{agent.player_id}: [KG] Attacking with {len(attackers)} creatures")
+            else:
+                actions.append(f"{agent.player_id}: [KG] No attacks")
+            return actions
+        # Fall back to simple heuristic
         else:
-            actions.append(f"{agent.player_id}: [Heuristic] No attacks")
+            if our_creatures:
+                attackers_to_declare = our_creatures
+                actions.append(f"{agent.player_id}: [Heuristic] Attacking with {len(our_creatures)} creatures")
+            else:
+                actions.append(f"{agent.player_id}: [Heuristic] No attacks")
+        
+        # Execute attacks if we have attackers to declare
+        if attackers_to_declare:
+            for creature in attackers_to_declare:
+                action = Action(
+                    action_type=ActionType.DECLARE_ATTACKERS,
+                    player_id=agent.player_id,
+                    card_instance_id=creature.instance_id
+                )
+                self.rules_engine.execute_action(game, action)
+                creature.tapped = True  # Tap attacking creatures
         
         return actions
     

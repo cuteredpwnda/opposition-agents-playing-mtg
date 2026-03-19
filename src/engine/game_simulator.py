@@ -23,8 +23,10 @@ from typing import Optional
 
 from src.engine.game_state import GameState, PlayerState, Zone, Phase, CardInstance
 from src.engine.game_execution import AgentGamePlayer, GameCoordinator
+from src.engine.rules_engine import RulesEngine
 from src.engine.agent_strategies import Strategy
 from src.engine.knowledge_graph import MTGKnowledgeGraph
+from src.engine.game_logger import GameLogger
 
 
 class GameResult(str, Enum):
@@ -75,11 +77,13 @@ class GameSimulator:
         self.agent2 = agent2
         self.kg = knowledge_graph
         self.max_turns = max_turns
-        self.coordinator = GameCoordinator(agent1, agent2, knowledge_graph)
+        self.rules_engine = RulesEngine()
+        self.coordinator = GameCoordinator(agent1, agent2, knowledge_graph, self.rules_engine)
         self.game: Optional[GameState] = None
         self.game_id: Optional[str] = None
         self.turn_history: list[TurnRecord] = []
         self.phase_log: list[str] = []
+        self.logger: Optional[GameLogger] = None
     
     def setup_game(self, game_id: str = None) -> GameState:
         """Initialize a fresh game state.
@@ -93,6 +97,16 @@ class GameSimulator:
         from uuid import uuid4
         
         self.game_id = game_id or str(uuid4())
+        
+        # Initialize logger
+        self.logger = GameLogger(self.game_id, verbose=True)
+        self.logger.info(f"Game started", data={
+            "player1": self.agent1.player_id,
+            "player2": self.agent2.player_id,
+            "strategy1": self.agent1.strategy.value,
+            "strategy2": self.agent2.strategy.value,
+            "max_turns": self.max_turns
+        })
         
         # Create players
         player1 = PlayerState(self.agent1.player_id, f"Agent {self.agent1.strategy.value}")
@@ -115,6 +129,11 @@ class GameSimulator:
         # Initialize KG if available
         if self.kg:
             self.coordinator.setup_game(self.game, self.game_id)
+        
+        self.logger.info(f"Players initialized", data={
+            f"{player1.name}": f"{player1.life_total} HP",
+            f"{player2.name}": f"{player2.life_total} HP"
+        })
         
         self.phase_log.append(f"Game {self.game_id} initialized. {player1.name} ({player1.life_total}hp) vs {player2.name} ({player2.life_total}hp)")
         
@@ -164,6 +183,8 @@ class GameSimulator:
                 if card.zone == Zone.BATTLEFIELD and card.tapped:
                     card.tapped = False
             actions.append("All permanents untapped")
+            if self.logger:
+                self.logger.debug("Permanents untapped", turn=self.game.turn_number, phase=phase.name)
         
         elif phase == Phase.UPKEEP:
             # Check upkeep triggers (placeholder)
@@ -172,19 +193,48 @@ class GameSimulator:
         elif phase == Phase.DRAW:
             # Active player draws a card
             actions.append(f"{self.game.active_player.name} draws a card")
+            if self.logger:
+                self.logger.action(f"Draw a card", player=self.game.active_player.player_id, turn=self.game.turn_number, phase=phase.name)
         
         elif phase == Phase.MAIN_1:
+            # Log hand contents before playing
+            if self.logger and self.game:
+                active_player = self.game.active_player
+                hand_cards = [c for c in self.game.cards if c.zone == Zone.HAND and c.controller_id == active_player.player_id]
+                if hand_cards:
+                    hand_summary = []
+                    for card in hand_cards:
+                        name = card.card_data.get("name", "Unknown")
+                        oracle = card.card_data.get("oracle_text", "")
+                        hand_summary.append(f"{name}: {oracle[:60]}...")
+                    self.logger.debug(f"{active_player.name} hand ({len(hand_cards)} cards)", 
+                                    turn=self.game.turn_number, phase=phase.name, 
+                                    data={"cards": hand_summary})
+                else:
+                    self.logger.debug(f"{active_player.name} hand (empty)", 
+                                    turn=self.game.turn_number, phase=phase.name)
+            
             # Main phase: play cards, abilities
             phase_actions = self.coordinator.execute_main_phase_plays(self.game)
             actions.extend(phase_actions)
+            for action in phase_actions:
+                if self.logger and "[LLM]" in action:
+                    self.logger.decision(action, turn=self.game.turn_number, phase=phase.name)
+                elif self.logger:
+                    self.logger.action(action, turn=self.game.turn_number, phase=phase.name)
         
         elif phase == Phase.COMBAT_BEGIN:
             actions.append("Combat phase begins")
+            if self.logger:
+                self.logger.debug("Combat begins", turn=self.game.turn_number, phase=phase.name)
         
         elif phase == Phase.COMBAT_ATTACKERS:
             # Declare attackers
             phase_actions = self.coordinator.execute_combat_phase(self.game)
             actions.extend(phase_actions)
+            for action in phase_actions:
+                if self.logger:
+                    self.logger.action(action, turn=self.game.turn_number, phase=phase.name)
         
         elif phase == Phase.COMBAT_BLOCKERS:
             # Declare blockers (placeholder)
@@ -198,9 +248,31 @@ class GameSimulator:
             actions.append("Combat phase ends")
         
         elif phase == Phase.MAIN_2:
+            # Log hand contents before second main phase
+            if self.logger and self.game:
+                active_player = self.game.active_player
+                hand_cards = [c for c in self.game.cards if c.zone == Zone.HAND and c.controller_id == active_player.player_id]
+                if hand_cards:
+                    hand_summary = []
+                    for card in hand_cards:
+                        name = card.card_data.get("name", "Unknown")
+                        oracle = card.card_data.get("oracle_text", "")
+                        hand_summary.append(f"{name}: {oracle[:60]}...")
+                    self.logger.debug(f"{active_player.name} hand ({len(hand_cards)} cards)", 
+                                    turn=self.game.turn_number, phase=phase.name, 
+                                    data={"cards": hand_summary})
+                else:
+                    self.logger.debug(f"{active_player.name} hand (empty)", 
+                                    turn=self.game.turn_number, phase=phase.name)
+            
             # Second main phase
             phase_actions = self.coordinator.execute_main_phase_plays(self.game)
             actions.extend(phase_actions)
+            for action in phase_actions:
+                if self.logger and "[LLM]" in action:
+                    self.logger.decision(action, turn=self.game.turn_number, phase=phase.name)
+                elif self.logger:
+                    self.logger.action(action, turn=self.game.turn_number, phase=phase.name)
         
         elif phase == Phase.END_STEP:
             # End-of-turn effects
@@ -276,13 +348,41 @@ class GameSimulator:
         Returns:
             GameResult indicating winner
         """
-        self.setup_game()
+        # Only setup if not already set up
+        if not self.game:
+            self.setup_game()
         
         while True:
             # Check win condition at start of turn
             result = self.check_win_condition()
             if result:
+                # Log game result
+                if self.logger:
+                    if result == GameResult.PLAYER1_WIN:
+                        winner = self.game.players[0].player_id
+                        loser = self.game.players[1].player_id
+                    elif result == GameResult.PLAYER2_WIN:
+                        winner = self.game.players[1].player_id
+                        loser = self.game.players[0].player_id
+                    else:
+                        winner = "Draw"
+                        loser = "Draw"
+                    
+                    self.logger.result(f"Game Over: {result.value}", data={
+                        "winner": winner,
+                        "loser": loser,
+                        "final_turn": self.game.turn_number,
+                        f"{self.game.players[0].player_id}_hp": self.game.players[0].life_total,
+                        f"{self.game.players[1].player_id}_hp": self.game.players[1].life_total
+                    })
                 return result
+            
+            # Log turn start
+            if self.logger:
+                self.logger.info(f"Turn {self.game.turn_number} - {self.game.active_player.name}", turn=self.game.turn_number, data={
+                    f"{self.game.players[0].name}": f"{self.game.players[0].life_total} HP",
+                    f"{self.game.players[1].name}": f"{self.game.players[1].life_total} HP"
+                })
             
             # Execute turn
             self.execute_full_turn()
@@ -292,6 +392,8 @@ class GameSimulator:
             
             # Safety check
             if self.game.turn_number > self.max_turns + 5:
+                if self.logger:
+                    self.logger.result(f"Game exceeded max turns", data={"max_turns": self.max_turns})
                 return GameResult.DRAW
     
     def get_game_summary(self) -> str:
