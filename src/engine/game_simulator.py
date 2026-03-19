@@ -260,6 +260,14 @@ class GameSimulator:
             if win:
                 return all_actions
         
+        # Update knowledge graph after each turn (if available)
+        if self.kg and self.game_id:
+            try:
+                self.kg.build_from_game_state(self.game, self.game_id)
+            except Exception as e:
+                # Silently fail if KG update fails (not critical to gameplay)
+                pass
+        
         return all_actions
     
     def run_game(self) -> GameResult:

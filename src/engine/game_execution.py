@@ -3,9 +3,10 @@ Game Execution Bridge for Agent Strategic Play.
 
 This module connects agents to the game engine, allowing them to:
 1. Observe game state via Neo4j knowledge graph
-2. Evaluate strategic options
+2. Evaluate strategic options using LLM (Ollama)
 3. Execute plays (card plays, attacks, blocks)
 4. React to opponent plays
+5. Populate KG with reasoning chains
 
 This is the execution layer that turns strategic decisions into actual game actions.
 """
@@ -18,6 +19,8 @@ from enum import Enum
 from src.engine.game_state import GameState, Zone, CardInstance
 from src.engine.knowledge_graph import MTGKnowledgeGraph
 from src.engine.agent_strategies import AgentStrategist, Strategy, PlayRecommendation
+from src.engine.llm_orchestration import MTGAgentLLM
+from src.engine.llm_agent import LLMAgent, LLMDecision
 
 
 class GamePhaseAction(str, Enum):
@@ -36,18 +39,33 @@ class AgentGamePlayer:
     def __init__(self, 
                  player_id: str,
                  strategy: Strategy = Strategy.AGGRESSIVE,
-                 knowledge_graph: Optional[MTGKnowledgeGraph] = None):
+                 knowledge_graph: Optional[MTGKnowledgeGraph] = None,
+                 use_llm: bool = False):
         """Initialize an agent game player.
         
         Args:
             player_id: This player's ID
             strategy: Agent's play strategy
             knowledge_graph: Optional Neo4j KG for advanced queries
+            use_llm: If True, use LLM for strategic decisions
         """
         self.player_id = player_id
         self.strategy = strategy
         self.kg = knowledge_graph
         self.strategist = AgentStrategist(knowledge_graph, player_id, strategy) if knowledge_graph else None
+        
+        # Initialize LLM agent for decision-making
+        strategy_map = {
+            Strategy.AGGRESSIVE: "aggressive",
+            Strategy.CONTROL: "control",
+            Strategy.COMBO: "combo",
+            Strategy.REACTIVE: "balanced"
+        }
+        self.llm_agent = MTGAgentLLM(
+            player_id=player_id,
+            strategy=strategy_map.get(strategy, "balanced"),
+            knowledge_graph=knowledge_graph
+        ) if use_llm else None
     
     def get_plays_from_hand(self, game: GameState) -> list[CardInstance]:
         """Get list of cards from hand that can be played.
@@ -282,16 +300,37 @@ class GameCoordinator:
         """
         actions = []
         agent = self.get_active_agent(game)
+        opponent_id = self.agent2.player_id if agent.player_id == self.agent1.player_id else self.agent1.player_id
         
-        if not agent.strategist or not self.game_id:
+        # Try LLM first if available
+        if agent.llm_agent and agent.llm_agent.llm.is_available:
+            decision = agent.llm_agent.decide_main_phase_play(game, opponent_id)
+            if decision:
+                actions.append(f"{agent.player_id}: [LLM] {decision.action} - {decision.reasoning}")
+                if self.kg and self.game_id:
+                    agent.llm_agent.record_decision_to_kg(self.game_id, decision, game)
+                return actions
+        
+        # Fall back to strategist if available
+        if agent.strategist and self.game_id:
+            recommendation = agent.decide_play_action(game, self.game_id)
+            if recommendation:
+                actions.append(f"{agent.player_id}: [KG] {recommendation.action_type} - {recommendation.reasoning}")
+                self.play_history.append(recommendation)
+            else:
+                actions.append(f"{agent.player_id}: [KG] Pass")
             return actions
         
-        # Get strategic recommendations
-        recommendation = agent.decide_play_action(game, self.game_id)
-        
-        if recommendation:
-            actions.append(f"{agent.player_id}: {recommendation.action_type} - {recommendation.reasoning}")
-            self.play_history.append(recommendation)
+        # Fall back to simple heuristic
+        hand_cards = agent.get_plays_from_hand(game)
+        if hand_cards:
+            playable = [c for c in hand_cards if agent.can_play_card(c, game)]
+            if playable:
+                playable.sort(key=lambda c: c.card_data.get("cmc", 0))
+                card = playable[0]
+                actions.append(f"{agent.player_id}: Play {card.card_data.get('name', 'card')}")
+            else:
+                actions.append(f"{agent.player_id}: Pass")
         else:
             actions.append(f"{agent.player_id}: Pass")
         
@@ -309,16 +348,36 @@ class GameCoordinator:
         actions = []
         agent = self.get_active_agent(game)
         
-        if not agent.strategist or not self.game_id:
+        # Try LLM first if available
+        if agent.llm_agent and self.game_id:
+            attackers = agent.llm_agent.decide_attack(game, self.game_id)
+            if attackers and len(attackers) > 0:
+                actions.append(f"{agent.player_id}: [LLM] Attacking with {len(attackers)} creatures")
+            else:
+                actions.append(f"{agent.player_id}: [LLM] No attacks")
             return actions
         
-        # Get attack targets
-        attackers = agent.decide_attack_targets(game, self.game_id)
+        # Fall back to strategist if available
+        if agent.strategist and self.game_id:
+            attackers = agent.decide_attack_targets(game, self.game_id)
+            if attackers:
+                actions.append(f"{agent.player_id}: [KG] Attacking with {len(attackers)} creatures")
+            else:
+                actions.append(f"{agent.player_id}: [KG] No attacks")
+            return actions
         
-        if attackers:
-            actions.append(f"{agent.player_id}: Attacking with {len(attackers)} creatures")
+        # Fall back to simple heuristic
+        our_creatures = [
+            c for c in game.cards
+            if c.zone == Zone.BATTLEFIELD
+            and c.controller_id == agent.player_id
+            and not c.tapped
+        ]
+        
+        if our_creatures:
+            actions.append(f"{agent.player_id}: [Heuristic] Attacking with {len(our_creatures)} creatures")
         else:
-            actions.append(f"{agent.player_id}: No attacks")
+            actions.append(f"{agent.player_id}: [Heuristic] No attacks")
         
         return actions
     
