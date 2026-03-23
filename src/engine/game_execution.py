@@ -310,7 +310,7 @@ class GameCoordinator:
         opponent_id = self.agent2.player_id if agent.player_id == self.agent1.player_id else self.agent1.player_id
         
         # Try LLM first if available
-        if agent.llm_agent and agent.llm_agent.llm.is_available:
+        if hasattr(agent, 'llm_agent') and agent.llm_agent and agent.llm_agent.llm.is_available:
             decision = agent.llm_agent.decide_main_phase_play(game, opponent_id)
             if decision:
                 action_str = f"{agent.player_id}: [LLM] {decision.action} - {decision.reasoning}"
