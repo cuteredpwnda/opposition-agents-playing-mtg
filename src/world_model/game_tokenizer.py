@@ -64,38 +64,54 @@ class GameTokenizer:
     def encode_state(self, game_state: GameState, player_id: str) -> dict[str, np.ndarray]:
         """Encode a full GameState from the perspective of `player_id`.
 
-        Returns a dict of feature arrays ready for the state encoder:
-        - "player_features": (player_feature_dim,) — life, mana, flags
-        - "opponent_features": (player_feature_dim,)
-        - "hand_cards": (max_hand, card_embed_dim) — padded card embeddings
-        - "hand_mask": (max_hand,) — 1 where card exists, 0 for padding
-        - "battlefield_cards": (max_bf, card_embed_dim) — padded
-        - "battlefield_mask": (max_bf,)
-        - "battlefield_state": (max_bf, extra_features) — tapped, power, etc.
-        - "graveyard_cards": (max_gy, card_embed_dim) — padded
-        - "graveyard_mask": (max_gy,)
-        - "stack_features": (max_stack, stack_item_dim) — padded
-        - "phase_encoding": (num_phases,) — one-hot
-        - "turn_features": (4,) — turn number, active player flag, etc.
-        """
-        opponent_id = self._get_opponent_id(game_state, player_id)
+        Supports 2-player (standard) and N-player (Commander) formats.
+        In Commander, opponent features are aggregated across all opponents.
 
-        return {
+        Returns a dict of feature arrays ready for the state encoder.
+        """
+        opponent_ids = self._get_opponent_ids(game_state, player_id)
+        primary_opponent = opponent_ids[0] if opponent_ids else ""
+
+        # Aggregate opponent features: mean across all opponents for N-player
+        if len(opponent_ids) <= 1:
+            opp_features = self._encode_player(game_state, primary_opponent)
+        else:
+            opp_stack = np.stack([self._encode_player(game_state, oid) for oid in opponent_ids])
+            opp_features = opp_stack.mean(axis=0).astype(np.float32)
+
+        # Aggregate opponent battlefields: concatenate first two opponents, pad rest
+        opp_bf_cards = self._encode_zone_cards(game_state, primary_opponent, Zone.BATTLEFIELD, self.config.max_battlefield_size)
+        opp_bf_mask = self._encode_zone_mask(game_state, primary_opponent, Zone.BATTLEFIELD, self.config.max_battlefield_size)
+
+        result = {
             "player_features": self._encode_player(game_state, player_id),
-            "opponent_features": self._encode_player(game_state, opponent_id),
+            "opponent_features": opp_features,
             "hand_cards": self._encode_zone_cards(game_state, player_id, Zone.HAND, self.config.max_hand_size),
             "hand_mask": self._encode_zone_mask(game_state, player_id, Zone.HAND, self.config.max_hand_size),
             "battlefield_cards": self._encode_zone_cards(game_state, player_id, Zone.BATTLEFIELD, self.config.max_battlefield_size),
             "battlefield_mask": self._encode_zone_mask(game_state, player_id, Zone.BATTLEFIELD, self.config.max_battlefield_size),
             "battlefield_state": self._encode_battlefield_extra(game_state, player_id),
-            "opp_battlefield_cards": self._encode_zone_cards(game_state, opponent_id, Zone.BATTLEFIELD, self.config.max_battlefield_size),
-            "opp_battlefield_mask": self._encode_zone_mask(game_state, opponent_id, Zone.BATTLEFIELD, self.config.max_battlefield_size),
+            "opp_battlefield_cards": opp_bf_cards,
+            "opp_battlefield_mask": opp_bf_mask,
             "graveyard_cards": self._encode_zone_cards(game_state, player_id, Zone.GRAVEYARD, self.config.max_graveyard_size),
             "graveyard_mask": self._encode_zone_mask(game_state, player_id, Zone.GRAVEYARD, self.config.max_graveyard_size),
             "stack_features": self._encode_stack(game_state),
             "phase_encoding": self._encode_phase(game_state.phase),
             "turn_features": self._encode_turn(game_state, player_id),
+            "num_players": np.array([len(game_state.players)], dtype=np.float32),
+            "format_commander": np.array([float(game_state.format == "commander")], dtype=np.float32),
         }
+
+        # Commander-specific: encode commander damage received
+        if game_state.format == "commander":
+            player = next((p for p in game_state.players if p.player_id == player_id), None)
+            cmd_dmg = np.zeros(4, dtype=np.float32)  # max 4 opponents
+            if player and hasattr(player, "commander_damage_received"):
+                for i, oid in enumerate(opponent_ids[:4]):
+                    cmd_dmg[i] = player.commander_damage_received.get(oid, 0) / 21.0
+            result["commander_damage"] = cmd_dmg
+
+        return result
 
     def encode_action(self, action: Action) -> np.ndarray:
         """Encode an Action into a fixed-size vector.
@@ -142,12 +158,14 @@ class GameTokenizer:
 
     # -- Private helpers ----------------------------------------------------
 
+    def _get_opponent_ids(self, game_state: GameState, player_id: str) -> list[str]:
+        """Get all opponents' player_ids in seat order."""
+        return [p.player_id for p in game_state.players if p.player_id != player_id]
+
     def _get_opponent_id(self, game_state: GameState, player_id: str) -> str:
-        """Get the opponent's player_id."""
-        for p in game_state.players:
-            if p.player_id != player_id:
-                return p.player_id
-        return ""
+        """Get the primary opponent's player_id (first non-self player)."""
+        opponents = self._get_opponent_ids(game_state, player_id)
+        return opponents[0] if opponents else ""
 
     def _encode_player(self, game_state: GameState, player_id: str) -> np.ndarray:
         """Encode a player's vital stats into a feature vector."""

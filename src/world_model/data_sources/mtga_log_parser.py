@@ -15,10 +15,11 @@ from __future__ import annotations
 import json
 import logging
 import os
-import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator
+
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -159,7 +160,7 @@ class MTGALogParser:
         Yields:
             Trajectory objects (simplified for now)
         """
-        from ..trajectory import Trajectory
+        from ..trajectory import Trajectory, Transition
 
         for i, game_data in enumerate(self.iter_games()):
             traj = Trajectory(
@@ -173,10 +174,24 @@ class MTGALogParser:
                 },
             )
 
-            # TODO: Convert game_data["states"] → Transition objects
-            # This requires mapping MTGA's internal card IDs to Scryfall names,
-            # parsing zone changes, and reconstructing the full game state
-            # at each step.
+            # Convert MTGA game_data into minimal placeholder transitions.
+            # Full conversion requires mapping MTGA internal IDs to structured GameState,
+            # which is beyond this initial parser.
+            action_dim = 136
+            for idx, state_msg in enumerate(game_data.get("states", [])):
+                transition = Transition(
+                    state_features={
+                        "raw_state": np.array([idx], dtype=np.float32),
+                        "payload_length": np.array([len(str(state_msg))], dtype=np.float32),
+                    },
+                    action_encoding=np.zeros(action_dim, dtype=np.float32),
+                    reward=0.0,
+                    done=False,
+                    action_type="MTGA_STATE",
+                    metadata={"state_index": idx},
+                )
+                traj.add(transition)
 
-            if len(game_data.get("states", [])) > 0:
+            if len(traj.transitions) > 0:
+                traj.transitions[-1].done = True
                 yield traj

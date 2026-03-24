@@ -111,7 +111,7 @@ class StateEncoder(nn.Module):
         self.stack_encoder = SetEncoder(c.card_embed_dim + 2, c.hidden_dim // 8)
 
         # Fixed-size feature encoders
-        player_feature_dim = 12  # life, mana(6), hand_count, lib_count, bf_count, land_plays
+        player_feature_dim = 11  # life, mana(6), hand_count, lib_count, bf_count, land_plays
         self.player_encoder = nn.Sequential(
             nn.Linear(player_feature_dim * 2, c.hidden_dim // 4),  # Both players
             nn.ReLU(),
@@ -193,9 +193,16 @@ class StateEncoder(nn.Module):
         phase_turn = torch.cat([features["phase_encoding"], features["turn_features"]], dim=-1)
         phase_enc = self.phase_encoder(phase_turn)
 
-        # Fuse everything
-        fused = torch.cat([hand_enc, bf_enc, opp_bf_enc, gy_enc, stack_enc, player_enc, phase_enc], dim=-1)
-        hidden = self.fusion(fused)
+        # Fuse and return full hidden representation for loss targets
+        hidden = self._fuse_features(
+            hand_enc=hand_enc,
+            bf_enc=bf_enc,
+            opp_bf_enc=opp_bf_enc,
+            gy_enc=gy_enc,
+            stack_enc=stack_enc,
+            player_enc=player_enc,
+            phase_enc=phase_enc,
+        )
 
         # VAE
         mu = self.fc_mu(hidden)
@@ -203,6 +210,20 @@ class StateEncoder(nn.Module):
         z = self._reparameterize(mu, logvar)
 
         return z, mu, logvar
+
+    def _fuse_features(
+        self,
+        hand_enc: torch.Tensor,
+        bf_enc: torch.Tensor,
+        opp_bf_enc: torch.Tensor,
+        gy_enc: torch.Tensor,
+        stack_enc: torch.Tensor,
+        player_enc: torch.Tensor,
+        phase_enc: torch.Tensor,
+    ) -> torch.Tensor:
+        """Fuse encoded components into the shared latent input space."""
+        fused = torch.cat([hand_enc, bf_enc, opp_bf_enc, gy_enc, stack_enc, player_enc, phase_enc], dim=-1)
+        return self.fusion(fused)
 
     def decode(self, z: torch.Tensor) -> torch.Tensor:
         """Decode latent vector back to fused feature space.
@@ -232,11 +253,28 @@ class StateEncoder(nn.Module):
         Returns:
             Dict with "total", "reconstruction", "kl" loss tensors.
         """
-        # Reconstruction target: the fused feature vector (before VAE bottleneck)
-        # In practice, we'd compute the target by running features through the
-        # zone encoders again. For now, stub: use L2 on reconstructed vs target.
-        # TODO: Implement proper reconstruction targets
-        target = torch.zeros_like(reconstructed)  # Placeholder
+        # Reconstruction target: the fused representation prior to final fusion layer
+        # (i.e., concat of per-zone encodings). The decoder output has size fusion_dim
+        # and should reconstruct this vector.
+        with torch.no_grad():
+            hand_enc = self.hand_encoder(features["hand_cards"], features["hand_mask"])
+            bf_cards = torch.cat([features["battlefield_cards"], features["battlefield_state"]], dim=-1)
+            bf_enc = self.battlefield_encoder(bf_cards, features["battlefield_mask"])
+            opp_bf_enc = self.opp_battlefield_encoder(features["opp_battlefield_cards"], features["opp_battlefield_mask"])
+            gy_enc = self.graveyard_encoder(features["graveyard_cards"], features["graveyard_mask"])
+            stack = features["stack_features"]
+            stack_mask = (stack.abs().sum(dim=-1) > 0).float()
+            stack_enc = self.stack_encoder(stack, stack_mask)
+            player_feats = torch.cat([features["player_features"], features["opponent_features"]], dim=-1)
+            player_enc = self.player_encoder(player_feats)
+            phase_turn = torch.cat([features["phase_encoding"], features["turn_features"]], dim=-1)
+            phase_enc = self.phase_encoder(phase_turn)
+
+            target = torch.cat(
+                [hand_enc, bf_enc, opp_bf_enc, gy_enc, stack_enc, player_enc, phase_enc],
+                dim=-1,
+            )
+
         recon_loss = F.mse_loss(reconstructed, target, reduction="mean")
 
         # KL divergence: -0.5 * sum(1 + log(σ²) - μ² - σ²)

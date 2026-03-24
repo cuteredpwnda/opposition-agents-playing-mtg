@@ -114,13 +114,50 @@ class CardEmbeddingModel:
 
         Args:
             trajectories: List of game trajectory objects.
-
-        TODO: Implement skip-gram or CBOW over card co-occurrence contexts.
         """
-        raise NotImplementedError(
-            "Gameplay-based embeddings require trajectory data. "
-            "Use build_from_scryfall() for text-based bootstrap."
-        )
+        if self.config.use_text_bootstrap:
+            self._init_text_encoder()
+
+        # Collect card co-occurrence contexts from trajectory actions.
+        contexts: dict[str, set[str]] = {}
+        for traj in trajectories:
+            for transition in getattr(traj, "transitions", []):
+                card_name = getattr(transition, "card_name", None)
+                if not card_name:
+                    continue
+
+                # Add as seen card
+                contexts.setdefault(card_name, set())
+
+                # Also include action type as weak context proxy
+                action_type = getattr(transition, "action_type", "")
+                if action_type:
+                    contexts[card_name].add(action_type)
+
+                # Include card names in metadata if present
+                metadata_cards = transition.metadata.get("cards", []) if hasattr(transition, "metadata") else []
+                for other in metadata_cards:
+                    if other != card_name:
+                        contexts[card_name].add(other)
+
+        # Build seed embeddings for all cards in context
+        for card_name in contexts.keys():
+            if card_name not in self._embeddings:
+                if self._text_encoder is not None:
+                    self._embeddings[card_name] = self._compute_text_embedding(card_name, oracle_text="")
+                else:
+                    rng = np.random.RandomState(hash(card_name) % (2**31))
+                    self._embeddings[card_name] = rng.randn(self.config.embed_dim).astype(np.float32)
+
+        # A simple context smoothing pass
+        for card_name, neighbors in contexts.items():
+            base = self._embeddings.get(card_name, np.zeros(self.config.embed_dim, dtype=np.float32))
+            neighbor_vecs = [self._embeddings.get(n) for n in neighbors if n in self._embeddings]
+            if neighbor_vecs:
+                neighbor_mean = np.mean(np.stack(neighbor_vecs), axis=0).astype(np.float32)
+                self._embeddings[card_name] = 0.7 * base + 0.3 * neighbor_mean
+
+        logger.info("Built gameplay-aware embeddings for %d cards from trajectories", len(self._embeddings))
 
     def save(self, path: Path | None = None) -> None:
         """Save embeddings to disk."""

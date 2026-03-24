@@ -46,10 +46,16 @@ class GameResult:
 class GameRunner:
     """Runs a complete MTG game between agents."""
 
-    def __init__(self, config: GameConfig | None = None, card_db: CardDatabase | None = None):
+    def __init__(
+        self,
+        config: GameConfig | None = None,
+        card_db: CardDatabase | None = None,
+        self_play_collector: object | None = None,
+    ):
         self.config = config or GameConfig()
         self.card_db = card_db or CardDatabase()
         self.engine = RulesEngine()
+        self.self_play_collector = self_play_collector
 
     async def run_game(
         self,
@@ -80,6 +86,15 @@ class GameRunner:
             game_state = await self._play_turn(game_state, agents)
 
         winner_name = game_state.winner.player_id if game_state.winner else None
+
+        if self.self_play_collector is not None:
+            # Finalize self-play trajectory
+            winner_idx = None
+            if winner_name is not None:
+                player_ids = [p.player_id for p in game_state.players]
+                winner_idx = player_ids.index(winner_name) if winner_name in player_ids else None
+            self.self_play_collector.finish_game(winner=winner_idx, num_turns=game_state.turn_number)
+
         result = GameResult(
             winner=winner_name,
             turns=game_state.turn_number,
@@ -207,7 +222,12 @@ class GameRunner:
             if phase == Phase.COMBAT_ATTACKERS:
                 # Active player declares attackers with stack/priority support
                 game_state.priority_player_index = game_state.active_player_index
-                game_state = await run_priority_loop(game_state, agents, self.engine)
+                game_state = await run_priority_loop(
+                    game_state,
+                    agents,
+                    self.engine,
+                    collector=self.self_play_collector,
+                )
                 
                 if game_state.game_over:
                     return game_state
@@ -216,7 +236,12 @@ class GameRunner:
                 # Defending player declares blockers with stack/priority support
                 defending_player_idx = (game_state.active_player_index + 1) % len(game_state.players)
                 game_state.priority_player_index = defending_player_idx
-                game_state = await run_priority_loop(game_state, agents, self.engine)
+                game_state = await run_priority_loop(
+                    game_state,
+                    agents,
+                    self.engine,
+                    collector=self.self_play_collector,
+                )
                 
                 if game_state.game_over:
                     return game_state
@@ -238,7 +263,12 @@ class GameRunner:
                 game_state.priority_player_index = game_state.active_player_index
                 
                 # Run full priority loop until stack empties and all pass
-                game_state = await run_priority_loop(game_state, agents, self.engine)
+                game_state = await run_priority_loop(
+                    game_state,
+                    agents,
+                    self.engine,
+                    collector=self.self_play_collector,
+                )
                 
                 if game_state.game_over:
                     return game_state

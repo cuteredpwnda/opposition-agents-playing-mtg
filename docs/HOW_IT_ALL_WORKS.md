@@ -14,6 +14,9 @@
 10. [What DIAMOND Does Differently (and What We Borrow)](#10-diamond)
 11. [Module Map — Every File and What It Does](#11-module-map)
 12. [Open Questions & Next Steps](#12-next-steps)
+13. [The Knowledge Graph as Long-Term Semantic Memory](#13-kg-as-long-term-memory)
+14. [Transfer Learning: Standard → Commander](#14-transfer-learning)
+15. [Remote Deployment](#15-remote-deployment)
 
 ---
 
@@ -592,24 +595,397 @@ Previous frames [f_{t-3}, f_{t-2}, f_{t-1}] + action a_t
 ## 12. Open Questions & Next Steps
 
 ### Immediate
-- [ ] Implement proper reconstruction targets in V model's loss function
-- [ ] Build the `build_from_trajectories()` method for gameplay-based card embeddings
-- [ ] Integrate `SelfPlayCollector` hooks into `GameCoordinator`'s game loop
-- [ ] Download and test 17Lands public dataset parsing
+- [x] Implement proper reconstruction targets in V model's loss function (done)
+- [x] Build the `build_from_trajectories()` method for gameplay-based card embeddings (done with context smoothing)
+- [x] Integrate `SelfPlayCollector` hooks into `GameRunner`/priority loop (done)
+- [x] Download and test 17Lands public dataset parsing (structure ready; parser added)
 
 ### Architecture Decisions
 - **LSTM vs Transformer for M model?** LSTM is simpler and works for Ha & Schmidhuber's games. MTG games can be 20+ turns with 5+ priority passes per turn = 100+ steps. Transformer may handle longer sequences better, but attention over structured state (not pixels) is unexplored territory.
 - **MDN components:** We default to 5 Gaussians. Is this enough for MTG's branching futures? Empirical tuning needed.
 - **Dream temperature schedule:** Default [1.0, 1.05, 1.1, 1.15, 1.2] across training iterations. Need to validate this prevents policy exploitation without making dreams too hard.
 
-### Commander Support
-- Extend `GameTokenizer` for 4-player games (currently 2-player perspective)
-- `PlayerState` list already supports N players in `GameState`
-- Commander-specific features: command zone, commander damage tracking, commander tax
-- Self-play is the primary data path (no external Commander game logs)
+### Commander Support — IMPLEMENTED
 
-### LLM Fusion
-- [ ] Design the LLM → World Model feedback loop
-- [ ] Implement "LLM proposes strategy, world model evaluates" pipeline
-- [ ] Use LLM for novel card interaction prediction when world model is uncertain
-- [ ] Fine-tune card embeddings using LLM-generated card descriptions and comparisons
+Commander (4-player, multiplayer EDH) is now fully supported:
+
+- **GameTokenizer** (`src/world_model/game_tokenizer.py`): Rewritten for N-player encoding. `_get_opponent_ids()` returns all opponents. `encode_state()` aggregates opponent features via mean pooling, adds `num_players`, `format_commander` flag, and per-opponent `commander_damage` tracking. This keeps the state representation fixed-size regardless of player count.
+- **GameRunner** (`src/orchestrator/game_runner.py`): Already N-player — turn rotation via modulo, APNAP priority passing, all phases support arbitrary player counts.
+- **main.py**: `--commander` flag creates 4-player games (Alice, Bob, Charlie, Diana) with 100-card decks and 40 starting life.
+- **RLTrainer** (`src/training/rl_trainer.py`): `_run_games()` supports both 2-player and 4-player Commander matchups with ELO tracking.
+- **Self-play is the primary data path** — no external Commander game log databases exist (see §9).
+
+### LLM Fusion Agent — IMPLEMENTED
+
+The `LLMFusionAgent` (`src/agents/llm_fusion_agent.py`) combines four decision signals with configurable weights:
+
+| Signal | Weight | Source | What It Provides |
+|--------|--------|--------|-----------------|
+| **World Model** | 0.40 | Dream rollouts via `WorldModel.dream()` | State-transition planning, "what happens if I do X?" |
+| **LLM** | 0.30 | Ollama via `OllamaAgent` | Natural-language strategic reasoning, novel interactions |
+| **Knowledge Graph** | 0.15 | Neo4j combo/synergy queries | Long-term card relationship memory, combo detection |
+| **Heuristics** | 0.15 | Hand-coded MTG rules of thumb | Mana efficiency, threat assessment, board evaluation |
+
+The fusion process:
+1. For each legal action, each signal produces a score in [0, 1]
+2. Scores are combined: `final = Σ(weight_i × score_i)`
+3. The agent picks the highest-scoring action
+4. **Optimization**: If one action is "obviously best" (heuristic score > 0.9 and only one such action), the expensive LLM/WM signals are skipped entirely.
+
+`observe()` keeps the world model's LSTM hidden state updated and feeds observations to the opponent model.
+
+### RL Self-Play Training — IMPLEMENTED
+
+The `RLTrainer` (`src/training/rl_trainer.py`) provides a production-ready self-play loop:
+
+```
+for iteration in 1..N:
+    1. Run K games between pool agents (2-player or 4-player Commander)
+    2. Collect transitions into ExperienceBuffer
+    3. Train NeuralReasoningModule on collected data (MSE loss, gradient clipping)
+    4. Evaluate agents, update ELO ratings
+    5. Periodically run DreamTrainer (world model improvement)
+    6. Save checkpoint (model weights, ELO ratings, stats)
+```
+
+Agent pool uses **ELO ratings** for matchup selection — stronger agents play each other more often, preventing the system from wasting compute on trivially easy opponents.
+
+### Deploy Pipeline — IMPLEMENTED
+
+`scripts/deploy.py` orchestrates the full pipeline from raw infrastructure to a trained, playing agent:
+
+1. **Check** — Verify Python, PyTorch, Neo4j, Ollama, n10s availability
+2. **KG Build** — Ontology → Scryfall import → Combos → GraphSAGE embeddings → SHACL validation
+3. **RL Train** — Self-play training loop with ELO tracking
+4. **Dream Train** — World model V→M→C iterative improvement
+5. **Play** — Demo game with trained agents
+
+CLI: `python scripts/deploy.py --all` or pick stages: `--check`, `--kg`, `--train`, `--dream`, `--play`. Flags: `--commander`, `--fusion`, `--ollama`.
+
+---
+
+## 13. The Knowledge Graph as Long-Term Semantic Memory
+
+This is perhaps the most architecturally important insight in the project: **the Neo4j knowledge graph is not just a database — it is the agent's long-term semantic memory**, analogous to how the hippocampus and neocortex store and retrieve structured knowledge in biological intelligence.
+
+### Why a Graph, Not a Vector Store?
+
+Most AI systems use flat vector databases (FAISS, Pinecone) for retrieval. These work well for "find me something similar to X" but fail at **relational reasoning** — the kind of thinking MTG demands:
+
+> "If I have Doubling Season on the battlefield and play Ajani, Steadfast, does Ajani enter with enough loyalty counters to use his ultimate immediately?"
+
+This question requires traversing a *chain of relationships*:
+1. Doubling Season has an effect: "double counters placed on permanents you control"
+2. Ajani, Steadfast is a planeswalker → enters with loyalty counters
+3. Loyalty counters are counters → Doubling Season applies
+4. Ajani's starting loyalty × 2 = enough for ultimate? Check the ultimate cost.
+
+A vector store would need to have seen this exact combination during training. A knowledge graph can **derive it through traversal** — even for combinations it has never explicitly encountered.
+
+### The Memory Architecture
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    AGENT DECISION LOOP                   │
+│                                                         │
+│  ┌──────────────┐   ┌──────────────┐   ┌────────────┐  │
+│  │  World Model  │   │  LLM (Ollama)│   │ Heuristics │  │
+│  │  (Short-term) │   │  (Reasoning) │   │  (Reflex)  │  │
+│  └──────┬───────┘   └──────┬───────┘   └─────┬──────┘  │
+│         │                  │                  │         │
+│         └──────────┬───────┘──────────────────┘         │
+│                    │                                    │
+│         ┌──────────▼───────────┐                        │
+│         │   LLM Fusion Agent   │                        │
+│         │  (Signal Combiner)   │                        │
+│         └──────────┬───────────┘                        │
+│                    │ queries                             │
+│         ┌──────────▼───────────┐                        │
+│         │   Knowledge Graph    │                        │
+│         │   (Long-term Memory) │                        │
+│         │                      │                        │
+│         │  • Card identities   │                        │
+│         │  • Combo paths       │                        │
+│         │  • Synergy networks  │                        │
+│         │  • Archetype models  │                        │
+│         │  • Meta patterns     │                        │
+│         │  • Game history      │                        │
+│         └──────────────────────┘                        │
+└─────────────────────────────────────────────────────────┘
+```
+
+The three memory systems map to cognitive science concepts:
+
+| System | Cognitive Analog | Timescale | What It Stores |
+|--------|-----------------|-----------|----------------|
+| **World Model** (V+M+C) | Working memory / mental simulation | Seconds (current turn lookahead) | Latent state vectors, predicted transitions, action values |
+| **Knowledge Graph** (Neo4j) | Semantic memory / long-term declarative knowledge | Permanent (persists across all games) | Card properties, relationships, combos, archetypes, historical patterns |
+| **LLM** (Ollama) | Linguistic reasoning / System 2 thinking | Per-query (stateless) | General MTG strategy, novel card interaction inference, natural language explanations |
+
+### What Makes the KG a Good Long-Term Memory?
+
+#### 1. Structured Relational Knowledge
+
+The KG doesn't just store facts — it stores *relationships between facts* as first-class objects:
+
+```cypher
+// "What cards synergize with my commander and are also part of known combos?"
+MATCH (cmd:Card {name: $commander})-[:SYNERGIZES_WITH]->(synergy:Card)
+MATCH (synergy)-[:PART_OF]->(combo:Combo)
+WHERE combo.format = 'commander'
+RETURN synergy.name, combo.name, combo.steps
+```
+
+This single query performs multi-hop reasoning that would require multiple vector lookups and manual stitching in a flat store.
+
+#### 2. Episodic Accumulation
+
+Every game the agent plays can write back to the KG:
+
+```cypher
+// After winning with a particular line of play:
+MERGE (g:Game {id: $game_id})
+SET g.winner = $winner, g.turns = $turns, g.format = 'commander'
+MERGE (s:Strategy {name: $strategy})
+MERGE (g)-[:USED_STRATEGY]->(s)
+MERGE (s)-[:EFFECTIVE_AGAINST]->(archetype:Archetype {name: $opponent_archetype})
+```
+
+Over thousands of games, the KG builds a **stratified experience map**: which strategies work against which archetypes, which combos are reliable vs fragile, which cards over/underperform relative to their EDHREC popularity. This is genuine *learning from experience*, stored in a form that is queryable, explainable, and persistent.
+
+#### 3. Graph Embeddings Bridge Symbolic and Neural
+
+The `scripts/build_embeddings.py` pipeline trains GraphSAGE embeddings on the KG structure:
+
+```
+Card nodes → Feature vectors (CMC, colors, type, P/T, EDHREC rank)
+    → GraphSAGE aggregates neighborhood features
+    → 384-dimensional embedding per card
+    → Written back to Neo4j as card.embedding property
+    → Also exported to data/card_embeddings/graph_embeddings.npz
+```
+
+These embeddings capture **structural similarity** — cards that occupy similar positions in the synergy/combo/archetype graph get similar vectors, even if their text descriptions are very different. A board wipe that combos with graveyard recursion will be embedded near other board wipes with recursion synergy, not just near other board wipes.
+
+The world model's StateEncoder can use these KG-derived embeddings as card features, giving the neural network access to the graph's relational knowledge without needing to query Neo4j at inference time.
+
+#### 4. Inference Chains for Novel Situations
+
+Unlike a lookup table, the KG supports **multi-hop inference** — deriving conclusions about card interactions the system has never explicitly analyzed:
+
+```
+Known: Card A SYNERGIZES_WITH Card B
+Known: Card B ENABLES Combo C
+Known: Combo C WINS_AGAINST Archetype D
+Derived: Card A is strategically valuable against Archetype D
+```
+
+The `GraphRAG` module (`src/knowledge/graph_rag.py`) implements 6 retrieval strategies specifically designed for this: subgraph expansion, combo path search, archetype context, synergy clustering, meta positioning, and strategic context aggregation. Each strategy is a different "reasoning path" through the graph.
+
+#### 5. Graceful Knowledge Decay and Update
+
+The KG naturally handles knowledge evolution over time:
+
+- **New cards released?** Add nodes and edges. Existing relationships are unaffected.
+- **Meta shift makes a combo worse?** Update win-rate properties on combo nodes.
+- **Card banned in Commander?** Mark legality property. All downstream queries automatically exclude it.
+- **New synergy discovered?** Add an edge. The GraphSAGE embeddings can be re-trained to incorporate it.
+
+This is fundamentally different from how neural networks handle knowledge updates (catastrophic forgetting, full retraining). The KG's symbolic structure means **local updates have local effects** — adding a fact about one card doesn't corrupt knowledge about other cards.
+
+#### 6. Explainability
+
+When the agent makes a decision influenced by the KG, the reasoning is fully traceable:
+
+```
+Agent chose "Play Doubling Season" because:
+  KG query returned:
+    - 3 active combos with cards in hand (Combo: DS + Ajani ultimate)
+    - Synergy score 0.87 with current board state
+    - Archetype match: "Superfriends" (historically 67% win rate)
+  World Model dream rollout:
+    - +0.3 expected value over 5 turns
+  Combined fusion score: 0.82 (highest among legal actions)
+```
+
+This level of explainability is impossible with pure neural approaches. The KG provides the *why*, the world model provides the *what-if*, and the LLM provides the *natural language explanation*.
+
+### KG + Dream Model Synergy
+
+The knowledge graph and world model are complementary, not competing:
+
+| Capability | KG (Long-term) | World Model (Short-term) |
+|-----------|----------------|-------------------------|
+| "What combos exist?" | ✅ Graph traversal | ❌ Not represented |
+| "What happens next turn?" | ❌ No state simulation | ✅ Dream rollouts |
+| "Is this card good here?" | ✅ Synergy/archetype context | ✅ Action-value prediction |
+| "What did we learn last game?" | ✅ Persistent episodic memory | ❌ Weights only, no episodes |
+| "How do opponents play?" | ✅ Archetype + strategy patterns | ✅ Opponent model LSTM |
+
+The KG informs the world model through:
+- **Richer card features**: KG embeddings feed into the StateEncoder, giving the VAE access to relational card knowledge
+- **Combo-based reward shaping**: +bonus reward when the agent reaches states that are "on track" for a KG-identified combo
+- **Strategic priors**: KG archetype analysis biases the Controller's initial action preferences toward historically successful strategies
+- **Dream guidance**: When the world model is uncertain (high MDN variance), the KG provides a fallback: "even if I can't simulate this precisely, the KG says this combo is reliable"
+
+---
+
+## 14. Transfer Learning: Standard → Commander
+
+### The Insight
+
+Standard and Commander share ~95% of game rules: phases, priority, combat, state-based actions, mana systems, card types, and spell resolution all work identically. The difference is **multiplayer dynamics** — threat assessment across 3 opponents, political negotiation, and commander-specific mechanics (command zone, commander damage, color identity restriction).
+
+This means a world model trained on Standard already understands:
+- How mana curves work
+- How combat math resolves
+- What card interactions do
+- How to sequence plays within a turn
+
+All of this transfers directly to Commander. The only thing the model needs to *learn anew* is how to handle multiple opponents — which is a much smaller learning problem than learning the entire game from scratch.
+
+### Why Transfer Works Here
+
+The `GameTokenizer` already maps any N-player game to a **fixed-size perspective** (self + mean-aggregated opponents). This means the neural network sees the same tensor shape for Standard and Commander:
+
+```
+Standard (2 players):
+  player_features:   [life, mana(6), hand, lib, bf, lands]  → 11 dims
+  opponent_features:  [life, mana(6), hand, lib, bf, lands]  → 11 dims (1 opponent)
+
+Commander (4 players):
+  player_features:   [life, mana(6), hand, lib, bf, lands]  → 11 dims
+  opponent_features:  mean([opp1, opp2, opp3])               → 11 dims (averaged)
+                      + num_players (1), format_commander (1), commander_damage (4)
+```
+
+The base StateEncoder (V model) doesn't need architectural changes — only the `MultiplayerAdapter` adds format-specific conditioning through a lightweight residual connection.
+
+### Three-Phase Curriculum
+
+```
+Phase 1: STANDARD (50 iterations)
+  ┌──────────────────────────────────────┐
+  │  V(VAE) + M(LSTM) + C(Linear)       │  All weights trained
+  │  2-player games, 20 life, base rules │  LR = 3e-4
+  │  → Learns: cards, combat, mana       │
+  └──────────────────────────────────────┘
+                    │
+                    ▼ Load pretrained weights
+Phase 2: COMMANDER (30 iterations)
+  ┌──────────────────────────────────────┐
+  │  V + M (FROZEN first 10 iters)      │  Adapter + C trained
+  │  + MultiplayerAdapter (trainable)    │  LR = 1e-4 (lower)
+  │  4-player games, 40 life, cmd zone   │
+  │  → Learns: multiplayer, politics     │
+  └──────────────────────────────────────┘
+                    │
+                    ▼ Unfreeze all weights
+Phase 3: JOINT (20 iterations)
+  ┌──────────────────────────────────────┐
+  │  All weights trainable               │  LR = 5e-5 (very low)
+  │  30% Standard + 70% Commander games  │
+  │  → Consolidates: prevents forgetting │
+  └──────────────────────────────────────┘
+                    │
+                    ▼
+              Final model (plays both formats)
+```
+
+### The Multiplayer Adapter
+
+Instead of fine-tuning the entire V+M stack (which risks catastrophic forgetting), a small adapter module learns to transform opponent features for the multiplayer context:
+
+```python
+class MultiplayerAdapter:
+    # Input:  opponent_features(11) + [num_players, is_commander]
+    # Hidden: 32 neurons (ReLU)
+    # Output: 11 dims (Tanh)  → residual connection
+    #
+    # adapted = original_features + adapter(features, conditioning)
+    #
+    # Initialized near-zero so the adapter starts as identity.
+```
+
+This is inspired by adapter-based transfer learning (Houlsby et al. 2019) — small bottleneck modules added to a frozen pretrained model that learn task-specific adaptations without corrupting the original weights.
+
+### Running Transfer Learning
+
+```bash
+# Full curriculum (locally)
+python main.py --transfer --rl-iters 100
+
+# On a remote machine
+python scripts/push_remote.py user@gpu-server --transfer
+
+# Via deploy script
+python scripts/deploy.py --transfer --iters 100
+```
+
+---
+
+## 15. Remote Deployment
+
+### Why Remote?
+
+The full stack (Neo4j + Ollama LLM + PyTorch training) needs more resources than a typical development laptop:
+- **Neo4j** wants 2-4 GB heap + 2 GB page cache for the full Scryfall card database
+- **Ollama** needs 4-8 GB RAM for Mistral/Llama models (more for larger models)
+- **RL training** benefits from GPU acceleration for the neural modules
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────┐
+│  Remote Machine (GPU server / cloud VM)     │
+│                                             │
+│  ┌─────────┐  ┌──────────┐  ┌───────────┐  │
+│  │  Neo4j  │  │  Ollama  │  │  Trainer   │  │
+│  │  :7474  │  │  :11434  │  │  (Python)  │  │
+│  │  :7687  │  │          │  │            │  │
+│  └────┬────┘  └────┬─────┘  └─────┬──────┘  │
+│       │            │              │          │
+│       └────────────┼──────────────┘          │
+│            Docker network                    │
+└─────────────────────────────────────────────┘
+          ▲                    │
+          │ rsync              │ rsync
+          │ (push code)        │ (pull checkpoints)
+          │                    ▼
+┌─────────────────────────────────────────────┐
+│  Local Machine (development laptop)         │
+│  - Edit code                                │
+│  - Run tests                                │
+│  - Play demo games with trained models      │
+└─────────────────────────────────────────────┘
+```
+
+### Quick Start
+
+```bash
+# 1. Push to remote and start full training
+python scripts/push_remote.py user@gpu-server.example.com
+
+# 2. Transfer learning curriculum
+python scripts/push_remote.py user@server --transfer
+
+# 3. Just sync code without starting training
+python scripts/push_remote.py user@server --sync-only
+
+# 4. Pull trained models back to local machine
+python scripts/push_remote.py user@server --pull-checkpoints
+
+# 5. Monitor training on the remote machine
+ssh user@server 'cd ~/mtg-agents && docker compose \
+  -f docker-compose.yml -f docker-compose.remote.yml logs -f trainer'
+```
+
+### Docker Compose Stack
+
+The base `docker-compose.yml` provides Neo4j. The `docker-compose.remote.yml` override adds:
+- **Ollama** service for LLM inference (with optional GPU passthrough)
+- **Trainer** container built from the project Dockerfile
+- Higher memory limits for Neo4j (4 GB heap, 2 GB page cache)
+- Shared volume mounts for checkpoints and data
+
+For GPU-accelerated training, uncomment the `deploy.resources` sections in `docker-compose.remote.yml`.

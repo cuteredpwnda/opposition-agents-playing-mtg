@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Optional
+import os
 
 try:
     import torch
@@ -208,7 +209,7 @@ class WorldModel(nn.Module):
                 "z": z.detach(),
                 "action_idx": action_idx,
                 "action": action.detach(),
-                "log_prob": log_prob.detach(),
+                "log_prob": log_prob,  # keep gradient path for policy gradient
                 "z_next": z_next.detach(),
                 "reward": reward_pred.detach(),
                 "done_prob": done_prob.detach(),
@@ -295,6 +296,7 @@ class WorldModel(nn.Module):
 
     def save(self, path: str) -> None:
         """Save full model state (V + M + C + config)."""
+        os.makedirs(os.path.dirname(path), exist_ok=True)
         torch.save(
             {
                 "config": self.config,

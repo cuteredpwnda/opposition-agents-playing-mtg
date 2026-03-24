@@ -125,9 +125,37 @@ class SeventeenLandsSource:
 
             # Extract card-level data from columns
             # 17Lands CSV has columns like "deck_<cardname>", "drawn_<cardname>", etc.
-            # TODO: Parse these into per-turn state snapshots
-            # For now, create a single transition with aggregate features
+            # We cannot reconstruct full rule-state sequences from aggregates,
+            # but we can produce a minimal placeholder transition.
+            placeholder_state = {
+                "player_features": np.zeros(12, dtype=np.float32),
+                "opponent_features": np.zeros(12, dtype=np.float32),
+                "hand_cards": np.zeros((self.config.max_hand_size, 128), dtype=np.float32),
+                "hand_mask": np.zeros(self.config.max_hand_size, dtype=np.float32),
+                "battlefield_cards": np.zeros((self.config.max_battlefield_size, 128), dtype=np.float32),
+                "battlefield_mask": np.zeros(self.config.max_battlefield_size, dtype=np.float32),
+                "battlefield_state": np.zeros((self.config.max_battlefield_size, 4), dtype=np.float32),
+                "opp_battlefield_cards": np.zeros((self.config.max_battlefield_size, 128), dtype=np.float32),
+                "opp_battlefield_mask": np.zeros(self.config.max_battlefield_size, dtype=np.float32),
+                "graveyard_cards": np.zeros((self.config.max_graveyard_size, 128), dtype=np.float32),
+                "graveyard_mask": np.zeros(self.config.max_graveyard_size, dtype=np.float32),
+                "stack_features": np.zeros((self.config.max_stack_size, 130), dtype=np.float32),
+                "phase_encoding": np.zeros(12, dtype=np.float32),
+                "turn_features": np.zeros(4, dtype=np.float32),
+            }
 
+            from ..trajectory import Transition
+
+            transition = Transition(
+                state_features=placeholder_state,
+                action_encoding=np.zeros(136, dtype=np.float32),
+                reward=1.0 if won else 0.0,
+                done=True,
+                action_type="AGGREGATE",
+                card_name=None,
+                metadata={"expansion": record.get("expansion", ""), "num_turns": int(record.get("num_turns", 0))},
+            )
+            traj.add(transition)
             yield traj
 
     def get_card_statistics(self) -> dict[str, dict]:

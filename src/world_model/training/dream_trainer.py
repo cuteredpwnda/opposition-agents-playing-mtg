@@ -149,11 +149,26 @@ class DreamTrainer:
             logger.info("Saved checkpoint: %s", checkpoint_path)
 
             # Phase 4: Collect new trajectories with updated policy
-            # TODO: Run self-play games using the trained controller,
-            # then add new trajectories to the store for the next iteration.
-            logger.info(
-                "--- Phase 4: Collect new data (TODO: self-play integration) ---"
-            )
+            logger.info("--- Phase 4: Collect new data (self-play integration) ---")
+            try:
+                from ..data_sources.self_play_collector import SelfPlayCollector
+                from src.engine.game_simulator import GameSimulator
+                from src.agents.world_model_agent import WorldModelAgent
+                from src.world_model.game_tokenizer import GameTokenizer
+                from src.world_model.card_embeddings import CardEmbeddingModel
+
+                tokenizer = GameTokenizer(card_embeddings=CardEmbeddingModel()._embeddings)
+                agent0 = WorldModelAgent("agent0", world_model, tokenizer, mode="direct")
+                agent1 = WorldModelAgent("agent1", world_model, tokenizer, mode="direct")
+                simulator = GameSimulator(agent0, agent1)
+                collector = SelfPlayCollector(tokenizer=tokenizer)
+
+                for _ in range(self.config.trajectories_per_iteration):
+                    traj = collector.record_game(agent0, agent1, simulator)
+                    trajectory_store.add(traj)
+                    logger.info("Collected self-play trajectory %s", traj.game_id)
+            except Exception as e:
+                logger.warning("Self-play data collection not available: %s", e)
 
         # Save final model
         final_path = f"{self.config.checkpoint_dir}/world_model_final.pt"

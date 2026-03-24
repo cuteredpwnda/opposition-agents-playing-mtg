@@ -1,0 +1,193 @@
+import pytest
+import numpy as np
+import torch
+
+from src.engine.game_state import GameState, PlayerState, CardInstance, Zone, Phase, ActionType, Action
+from src.world_model.card_embeddings import CardEmbeddingModel
+from src.world_model.game_tokenizer import GameTokenizer
+from src.world_model.state_encoder import StateEncoder
+from src.world_model.dynamics_model import DynamicsModel
+from src.world_model.controller import Controller
+from src.world_model.world_model import WorldModel
+from src.world_model.trajectory import TrajectoryStore, Trajectory, Transition
+from src.world_model.training.dream_trainer import DreamTrainer, DreamTrainerConfig
+
+
+def _build_minimal_game_state():
+    p1 = PlayerState(player_id="p1", name="Player 1")
+    p2 = PlayerState(player_id="p2", name="Player 2")
+
+    card = CardInstance(
+        card_data={
+            "name": "Lightning Bolt",
+            "oracle_text": "Lightning Bolt deals 3 damage to any target.",
+            "type_line": "Instant",
+            "mana_cost": "{R}",
+            "cmc": 1,
+        },
+        zone=Zone.HAND,
+        owner_id="p1",
+        controller_id="p1",
+        tapped=False,
+        summoning_sick=False,
+    )
+
+    state = GameState(
+        players=[p1, p2],
+        cards=[card],
+        active_player_index=0,
+        priority_player_index=0,
+        phase=Phase.MAIN_1,
+        turn_number=1,
+    )
+
+    return state
+
+
+def test_card_embedding_from_scryfall_and_trajectories():
+    model = CardEmbeddingModel()
+    model.build_from_scryfall([
+        {
+            "name": "Lightning Bolt",
+            "oracle_text": "Lightning Bolt deals 3 damage to any target.",
+            "type_line": "Instant",
+            "mana_cost": "{R}",
+        },
+        {
+            "name": "Counterspell",
+            "oracle_text": "Counter target spell.",
+            "type_line": "Instant",
+            "mana_cost": "{UU}",
+        },
+    ])
+
+    assert "Lightning Bolt" in model.get_all_embeddings()
+    assert model.get_embedding("Counterspell").shape == (model.embed_dim,)
+
+    # Trajectory-based smoothing path should not raise
+    traj = Trajectory(game_id="t1")
+    tx = Transition(
+        state_features={},
+        action_encoding=np.zeros(model.embed_dim, dtype=np.float32),
+        reward=1.0,
+        done=True,
+        action_type="CAST_SPELL",
+        card_name="Lightning Bolt",
+    )
+    traj.add(tx)
+    model.build_from_trajectories([traj])
+    assert model.get_embedding("Lightning Bolt").shape == (model.embed_dim,)
+
+
+def test_game_tokenizer_state_and_action_encoding():
+    state = _build_minimal_game_state()
+    model = CardEmbeddingModel()
+    model.build_from_scryfall([
+        {"name": "Lightning Bolt", "oracle_text": "Lightning Bolt deals 3 damage to any target.", "type_line": "Instant", "mana_cost": "{R}"}
+    ])
+    tokenizer = GameTokenizer(card_embeddings=model.get_all_embeddings())
+
+    features = tokenizer.encode_state(state, player_id="p1")
+    assert "player_features" in features
+    assert features["hand_cards"].shape == (tokenizer.config.max_hand_size, tokenizer.config.card_embed_dim)
+
+    action = Action(action_type=ActionType.CAST_SPELL, player_id="p1", card_instance_id=state.cards[0].instance_id, metadata={"card_name": "Lightning Bolt"})
+    action_enc = tokenizer.encode_action(action)
+    assert action_enc.shape == (tokenizer.compute_action_dim(),)
+
+
+def test_state_encoder_end_to_end():
+    state = _build_minimal_game_state()
+    model = CardEmbeddingModel()
+    model.build_from_scryfall([
+        {"name": "Lightning Bolt", "oracle_text": "Lightning Bolt deals 3 damage to any target.", "type_line": "Instant", "mana_cost": "{R}"}
+    ])
+    tokenizer = GameTokenizer(card_embeddings=model.get_all_embeddings())
+
+    features_np = tokenizer.encode_state(state, player_id="p1")
+    features = {k: torch.from_numpy(v).float().unsqueeze(0) for k, v in features_np.items()}
+
+    encoder = StateEncoder()
+    z, mu, logvar = encoder.encode(features)
+    assert z.shape == (1, encoder.config.latent_dim)
+
+    reconstructed = encoder.decode(z)
+    loss = encoder.loss(features, reconstructed, mu, logvar)
+    assert loss["total"].item() >= 0.0
+
+
+def test_dynamics_and_controller_and_world_dream_cycle():
+    w = WorldModel()
+    z = torch.randn(1, w.encoder.config.latent_dim)
+    hidden = w.dynamics.initial_hidden(batch_size=1)
+    action_enc = torch.zeros(1, w.controller.config.action_dim)
+
+    z2, hidden2, done_prob = w.predict(z, action_enc, hidden, temperature=1.0)
+    assert z2.shape == (1, w.encoder.config.latent_dim)
+    assert 0 <= done_prob.item() <= 1
+
+    # controller with randomized hidden vector
+    h_vec = w.dynamics.get_hidden_state_vector(hidden2)
+    legal = torch.zeros(1, 2, w.controller.config.action_dim)
+    legal[:, 0, :] = action_enc
+    legal[:, 1, :] = torch.randn_like(action_enc)
+    mask = torch.tensor([[1.0, 1.0]])
+
+    idx, log_prob = w.act(z2, h_vec, legal, mask, deterministic=True)
+    assert idx in (0, 1)
+    assert log_prob.shape == (1,)
+
+    # dream search should run and return index
+    best_idx = w.dream_search(z2, hidden2, legal, mask, num_rollouts=1, rollout_depth=3)[0]
+    assert isinstance(best_idx, int)
+
+
+def test_dream_trainer_runs_without_failure(tmp_path):
+    store = TrajectoryStore(storage_dir=str(tmp_path / "trajectories"))
+    controller_config = DreamTrainerConfig().controller_config
+    controller_config.method = "policy_gradient"
+    controller_config.pg_epochs = 1
+    controller_config.pg_batch_size = 2
+
+    trainer = DreamTrainer(
+        DreamTrainerConfig(
+            num_iterations=1,
+            min_trajectories=0,
+            trajectories_per_iteration=1,
+            checkpoint_dir=str(tmp_path / "ckpt"),
+            controller_config=controller_config,
+        )
+    )
+    world_model = WorldModel()
+
+    # Should not raise even with empty store
+    w = trainer.train(store, world_model=world_model)
+    assert isinstance(w, WorldModel)
+
+
+@pytest.mark.asyncio
+async def test_game_runner_collects_selfplay_trajectory(tmp_path):
+    from src.orchestrator.game_runner import GameRunner, GameConfig
+    from src.world_model.data_sources.self_play_collector import SelfPlayCollector
+    from src.agents.random_agent import RandomAgent
+
+    from main import build_simple_deck
+
+    collector = SelfPlayCollector()
+    runner = GameRunner(GameConfig(format="standard", starting_life=10, max_turns=4), self_play_collector=collector)
+
+    agents = {
+        "Alice": RandomAgent(player_id="Alice"),
+        "Bob": RandomAgent(player_id="Bob"),
+    }
+
+    deck = build_simple_deck()
+    decks = {"Alice": deck.copy(), "Bob": deck.copy()}
+
+    result = await runner.run_game(agents, decks)
+    assert result is not None
+    assert len(collector.collected_trajectories) == 1
+    traj = collector.collected_trajectories[0]
+    assert traj.source == "self_play"
+    assert traj.num_turns > 0
+

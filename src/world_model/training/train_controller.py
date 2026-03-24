@@ -87,10 +87,11 @@ def train_controller_cmaes(
     try:
         import cma
     except ImportError:
-        logger.error(
-            "CMA-ES requires the 'cma' package. Install with: pip install cma"
+        logger.warning(
+            "CMA-ES package 'cma' not installed. Falling back to policy gradient. "
+            "Install with: pip install cma for better CMA-ES support."
         )
-        raise
+        return train_controller_pg(world_model, config)
 
     # Initialize CMA-ES
     initial_params = controller.get_flat_params()
@@ -197,7 +198,10 @@ def train_controller_pg(
 
             # REINFORCE loss: -sum(log_prob * return)
             for step, R in zip(traj, returns):
-                total_loss -= step["log_prob"] * R
+                log_prob_tensor = step["log_prob"]
+                if isinstance(log_prob_tensor, torch.Tensor) and log_prob_tensor.dim() > 0:
+                    log_prob_tensor = log_prob_tensor.squeeze()
+                total_loss -= log_prob_tensor * R
 
             total_reward += sum(s["reward"].item() for s in traj)
 

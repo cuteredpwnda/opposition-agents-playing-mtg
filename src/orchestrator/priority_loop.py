@@ -76,8 +76,12 @@ async def run_priority_loop(
     game_state: GameState,
     agents: dict[str, object],
     rules_engine: object,
+    collector: object | None = None,
 ) -> GameState:
     """Execute a full priority loop.
+    
+    Optional `collector` is a SelfPlayCollector (or equivalent) used to record
+    states and actions during self-play.
     
     This is the core MTG action resolution mechanic:
     1. Current priority player acts (cast spell, activate ability, pass)
@@ -111,12 +115,20 @@ async def run_priority_loop(
             game_state.log(f"ERROR: No legal actions for {priority_player_id}")
             return game_state
         
+# Collector sees current state before action
+        if collector is not None:
+            collector.on_state(game_state, game_state.priority_player_index)
+
         # Agent decides what to do
         action = await agent.decide_action(game_state, legal_actions)
-        
+
         # Notify all agents of action
         for agent_obj in agents.values():
             await agent_obj.observe(game_state, action)
+
+        # Collector records action
+        if collector is not None:
+            collector.on_action(action, reward=0.0, done=game_state.game_over)
         
         if action.action_type == ActionType.PASS_PRIORITY:
             # Player passed priority

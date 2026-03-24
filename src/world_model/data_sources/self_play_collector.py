@@ -48,6 +48,8 @@ class SelfPlayCollector:
         self.card_embeddings = card_embeddings
         self._current_transitions: list = []
         self._current_game_id: str = ""
+        self.collected_trajectories: list = []
+        self._warned_no_tokenizer = False
         self._reset()
 
     def _reset(self) -> None:
@@ -60,7 +62,9 @@ class SelfPlayCollector:
         Call this each time the game state changes (before action selection).
         """
         if self.tokenizer is None:
-            logger.warning("No tokenizer configured — cannot encode state")
+            if not self._warned_no_tokenizer:
+                logger.debug("No tokenizer configured — state encoding skipped")
+                self._warned_no_tokenizer = True
             return
 
         features = self.tokenizer.encode_state(game_state, player_id)
@@ -107,16 +111,65 @@ class SelfPlayCollector:
             num_turns=num_turns,
             source="self_play",
         )
+        self.collected_trajectories.append(traj)
         self._reset()
         return traj
 
-    def record_game(self, agent_0, agent_1, game_coordinator) -> None:
-        """Record a complete game between two agents.
+    def record_game(self, agent_0, agent_1, game_simulator) -> None:
+        """Record a complete game between two agents via GameSimulator.
 
-        TODO: Integrate with GameCoordinator's run_game() loop.
-        This requires hooking into the game loop at state transition points.
+        Uses on_state/on_action hooks where possible, and returns Trajectory.
         """
-        raise NotImplementedError(
-            "Full game recording requires GameCoordinator integration. "
-            "Use on_state() / on_action() / finish_game() hooks instead."
-        )
+        from src.engine.game_simulator import GameResult
+        from ..trajectory import Trajectory, Transition
+
+        # Reset collector for a fresh game
+        self._reset()
+
+        # Set up game simulator if needed
+        if hasattr(game_simulator, "setup_game"):
+            game_simulator.setup_game()
+
+        # Start with initial state
+        if hasattr(game_simulator, "game") and game_simulator.game is not None:
+            self.on_state(game_simulator.game, player_id=0)
+
+        # Run the game loop with non-intrusive observation
+        if hasattr(game_simulator, "run_game"):
+            result = game_simulator.run_game()
+        else:
+            # Fallback: execute full turns until win condition
+            result = None
+            while True:
+                game_simulator.execute_full_turn()
+                win = game_simulator.check_win_condition() if hasattr(game_simulator, "check_win_condition") else None
+                if win is not None:
+                    result = win
+                    break
+                game_simulator.advance_turn()
+
+        # Finalize winner index
+        winner = None
+        if result == GameResult.PLAYER1_WIN:
+            winner = 0
+        elif result == GameResult.PLAYER2_WIN:
+            winner = 1
+        elif result == GameResult.DRAW:
+            winner = None
+
+        # Build a trivial end-state transition if none recorded
+        if not self._current_transitions and hasattr(game_simulator, "game") and game_simulator.game is not None:
+            state_features = self.tokenizer.encode_state(game_simulator.game, 0) if self.tokenizer else {}
+            action_encoding = np.zeros(136, dtype=np.float32)
+            transition = Transition(
+                state_features=state_features,
+                action_encoding=action_encoding,
+                reward=1.0 if winner == 0 else 0.0,
+                done=True,
+                action_type="GAME_END",
+                card_name=None,
+            )
+            self._current_transitions.append(transition)
+
+        trajectory = self.finish_game(winner=winner, num_turns=getattr(game_simulator, "game", None).turn_number if hasattr(game_simulator, "game") and game_simulator.game is not None else 0)
+        return trajectory

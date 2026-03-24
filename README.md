@@ -65,6 +65,11 @@ For machine learning features (optional):
 pip install -r requirements-ml.txt
 ```
 
+Alternatively, with Hatch extras (matches `pyproject.toml`):
+```bash
+pip install -e .[ml]
+```
+
 5. Configure environment:
 ```bash
 cp .env.example .env
