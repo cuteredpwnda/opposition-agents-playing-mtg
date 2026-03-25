@@ -11,7 +11,7 @@ together in realistic game scenarios. These tests verify:
 """
 
 import pytest
-from src.engine.game_state import GameState, Zone, CardInstance, PlayerState, Phase, ActionType, Action
+from src.engine.game_state import GameState, Zone, CardInstance, PlayerState, Phase, ActionType, Action, Ability
 from src.engine.static_abilities import get_effective_power_toughness
 
 
@@ -217,6 +217,74 @@ def test_static_ability_plus_triggered_plus_activated():
     assert power == 2, f"Other creature should have +1 power from lord, got {power}"
     assert toughness == 2, f"Other creature should still have 2 toughness"
     
+    # Test 2: Activated ability is available
+
+
+def test_top_card_knowledge_tracking():
+    """Test that reveal-top-library knowledge is modeled on CardInstance."""
+    game = create_ability_test_game()
+    alice = game.players[0]
+
+    # Set up a simple library for Alice
+    top_card = CardInstance(
+        instance_id="alice_lib_top",
+        card_data={"name": "Mystic Forge", "type_line": "Artifact", "oracle_text": "", "set": "TEST"},
+        zone=Zone.LIBRARY,
+        owner_id="Alice",
+        controller_id="Alice",
+    )
+    game.cards.insert(0, top_card)
+
+    # Simulate an ability that reveals top card to Alice
+    dummy_source = CardInstance(
+        instance_id="dummy_source",
+        card_data={"name": "Tutor Source", "type_line": "Artifact", "oracle_text": "", "set": "TEST"},
+        zone=Zone.BATTLEFIELD,
+        owner_id="Alice",
+        controller_id="Alice",
+    )
+    game.cards.append(dummy_source)
+
+    ability = Ability(
+        source_card_id="dummy_source", controller_id="Alice", cost="{0}",
+        effect="Reveal the top card of your library", can_use_any_time=False,
+        description="Reveal top library card"
+    )
+
+    from src.engine.abilities import resolve_ability
+
+    game = resolve_ability(game, ability, "Alice")
+    assert "Alice" in top_card.known_to, "Alice should know the top card after reveal ability"
+
+
+    # Cross-check GameState helper
+    assert game.card_is_known(top_card.instance_id, "Alice")
+
+
+    # War-test: Bob does not know it yet
+    assert not game.card_is_known(top_card.instance_id, "Bob")
+
+
+    # More complex: mark as known for Bob (simulating shared reveal)
+    game.mark_card_known(top_card.instance_id, "Bob")
+    assert game.card_is_known(top_card.instance_id, "Bob")
+
+
+    # Ensure unknown card remains unknown
+    another_card = CardInstance(
+        instance_id="alice_lib_next",
+        card_data={"name": "Island", "type_line": "Land", "oracle_text": "", "set": "TEST"},
+        zone=Zone.LIBRARY,
+        owner_id="Alice",
+        controller_id="Alice",
+    )
+    game.cards.append(another_card)
+    assert not game.card_is_known(another_card.instance_id, "Bob")
+
+
+    # End of test
+
+
     # Test 2: Activated ability is available
     from src.engine.abilities import get_legal_activated_abilities
     legal = get_legal_activated_abilities(game, complex_creature, "Alice")

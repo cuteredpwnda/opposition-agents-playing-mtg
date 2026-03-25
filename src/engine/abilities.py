@@ -238,6 +238,22 @@ def resolve_ability(state: GameState, ability: Ability, player_id: str) -> GameS
             elif mana_upper == "C":
                 player.mana_pool["C"] += 1
                 state.log(f"[Ability] {player.name} adds colorless mana")
+
+    # Reveal top card of library effects
+    if "reveal the top card of your library" in effect:
+        library_cards = [c for c in state.cards if c.zone == Zone.LIBRARY and c.owner_id == player_id]
+        if library_cards:
+            top_card = library_cards[0]
+            state.mark_card_known(top_card.instance_id, player_id)
+            state.log(f"[Ability] {player.name} reveals top library card: {top_card.name}")
+
+    if "search your library" in effect and "enchanted" not in effect:
+        # Tutor-like effect: after searching, the chosen card becomes known
+        # (This is basic modeling; more complex handling may be needed)
+        state.log(f"[Ability] {player.name} performs a library search (knowledge state updated if card is selected)")
+
+    # Continue with other effect parsing below
+
     
     # Draw card
     if "draw" in effect and "card" in effect:

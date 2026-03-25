@@ -150,6 +150,7 @@ class CardInstance:
     summoning_sick: bool = True
     turn_entered: int = 0  # Track which turn creature entered (0 = pre-game)
     face_down: bool = False
+    known_to: set[str] = field(default_factory=set)  # Which players know the identity of this card
 
     @property
     def name(self) -> str:
@@ -294,6 +295,18 @@ class GameState:
         return [
             c for c in self.cards if c.zone == zone and c.controller_id == player_id
         ]
+
+    def mark_card_known(self, card_instance_id: str, player_id: str) -> None:
+        """Mark a specific card instance as known to a player."""
+        card = next((c for c in self.cards if c.instance_id == card_instance_id), None)
+        if not card:
+            return
+        card.known_to.add(player_id)
+
+    def card_is_known(self, card_instance_id: str, player_id: str) -> bool:
+        """Check if a player knows a given card instance."""
+        card = next((c for c in self.cards if c.instance_id == card_instance_id), None)
+        return bool(card and player_id in card.known_to)
 
     def log(self, message: str) -> None:
         self.game_log.append(message)

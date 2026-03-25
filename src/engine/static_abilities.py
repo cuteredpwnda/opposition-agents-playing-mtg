@@ -110,7 +110,8 @@ def _parse_static_ability_line(card: CardInstance, line: str) -> StaticAbility |
         )
     
     # Pattern: "All creatures have flying"
-    match = re.search(rf"(?:all\s+)?(?:permanents|creatures|artifacts)\s+(?:have|get)\s+({"|".join(keywords_to_match)})", lower_line)
+    pattern = r"(?:all\s+)?(?:permanents|creatures|artifacts)\s+(?:have|get)\s+(" + "|".join(keywords_to_match) + ")"
+    match = re.search(pattern, lower_line)
     if match:
         keyword = match.group(1)
         return StaticAbility(
