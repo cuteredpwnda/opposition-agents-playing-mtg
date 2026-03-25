@@ -218,6 +218,15 @@ def test_static_ability_plus_triggered_plus_activated():
     assert toughness == 2, f"Other creature should still have 2 toughness"
     
     # Test 2: Activated ability is available
+    from src.engine.abilities import get_legal_activated_abilities
+    legal = get_legal_activated_abilities(game, complex_creature, "Alice")
+    
+    # Should have draw ability (not the static/triggered abilities)
+    has_draw = any("draw" in a.effect.lower() for a in legal)
+    assert has_draw, "Should have draw ability available"
+    
+    # Test 3: Creature has triggered ability in oracle text
+    assert "attack" in complex_creature.oracle_text.lower(), "Should have attack trigger in oracle"
 
 
 def test_top_card_knowledge_tracking():
@@ -283,18 +292,6 @@ def test_top_card_knowledge_tracking():
 
 
     # End of test
-
-
-    # Test 2: Activated ability is available
-    from src.engine.abilities import get_legal_activated_abilities
-    legal = get_legal_activated_abilities(game, complex_creature, "Alice")
-    
-    # Should have draw ability (not the static/triggered abilities)
-    has_draw = any("draw" in a.effect.lower() for a in legal)
-    assert has_draw, "Should have draw ability available"
-    
-    # Test 3: Creature has triggered ability in oracle text
-    assert "attack" in complex_creature.oracle_text.lower(), "Should have attack trigger in oracle"
 
 
 def test_multiple_lords_stacking_in_combat():
