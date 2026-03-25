@@ -9,8 +9,10 @@ This project builds an agentic framework where multiple AI agents compete in Mag
 - **Game Engine**: Full Comprehensive Rules (CR) implementation with state-based actions, triggers, and replacement effects
 - **Knowledge Graph**: Neo4j + n10s (OWL ontology import) + APOC (graph algorithms) for card knowledge, combo detection, and strategic reasoning
 - **Agent Architecture**: LangChain-based LLM agents, random agents, neural reasoning modules, and active inference for decision-making under uncertainty
-- **Training**: AlphaZero-inspired self-play with neural networks, reward shaping, and hierarchical strategy learning
-- **Integration**: Scryfall API for card data, Commander Spellbook for combo analysis, rules vectorstore for RAG-based judge decisions
+- **Training**: AlphaZero-style self-play plus V+M+C world model dream training, JEPA (LeWM) latent prediction, reward shaping, and transfer learning (Standard $\to$ Commander)
+- **Knowledge Graph**: Neo4j card/combo/archetype ontology + GraphSAGE embeddings + RAG query strategies
+- **JEPA Integration**: Dual-input state+KG JEPA predictor (2-loss MSE+KL), surprise scoring, and hybrid MDN-LSTM + JEPA planning
+- **Integration**: Scryfall API for card data, Commander Spellbook combos, rules vectorstore judge, Ollama LLM for agent reasoning
 
 ## Documentation
 
