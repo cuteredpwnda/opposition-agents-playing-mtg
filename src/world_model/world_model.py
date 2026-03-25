@@ -24,16 +24,22 @@ except ImportError:
 
 from .controller import Controller, ControllerConfig
 from .dynamics_model import DynamicsModel, DynamicsModelConfig
+from .jepa_predictor import JEPAPredictor, JEPAPredictorConfig
 from .state_encoder import StateEncoder, StateEncoderConfig
 
 
 @dataclass
 class WorldModelConfig:
-    """Top-level configuration combining V + M + C."""
+    """Top-level configuration combining V + M + C + optional JEPA predictor."""
 
     encoder: StateEncoderConfig = None      # type: ignore[assignment]
     dynamics: DynamicsModelConfig = None     # type: ignore[assignment]
     controller: ControllerConfig = None      # type: ignore[assignment]
+    # JEPA predictor config.  Set use_jepa=True to enable the JEPA training path.
+    # When enabled, JEPAPredictor is used alongside (not replacing) the MDN-LSTM
+    # to provide the LeWM-style prediction + KL loss during training.
+    jepa: JEPAPredictorConfig = None         # type: ignore[assignment]
+    use_jepa: bool = False
     dream_steps: int = 50       # Max steps per dream rollout
     dream_temperature: float = 1.15  # τ > 1 for harder dreams
     num_dream_rollouts: int = 8  # Parallel rollouts for dream search
@@ -46,6 +52,11 @@ class WorldModelConfig:
             self.dynamics = DynamicsModelConfig()
         if self.controller is None:
             self.controller = ControllerConfig()
+        if self.jepa is None:
+            self.jepa = JEPAPredictorConfig(
+                latent_dim=self.encoder.latent_dim,
+                action_dim=self.dynamics.action_dim,
+            )
 
 
 class WorldModel(nn.Module):
@@ -81,21 +92,31 @@ class WorldModel(nn.Module):
         self.encoder = StateEncoder(self.config.encoder)
         self.dynamics = DynamicsModel(self.config.dynamics)
         self.controller = Controller(self.config.controller)
+        # Optional JEPA predictor — the "M" in LeWM style.
+        # None when use_jepa=False so existing code paths are unaffected.
+        self.jepa_predictor: Optional[JEPAPredictor] = (
+            JEPAPredictor(self.config.jepa) if self.config.use_jepa else None
+        )
 
     # -- Encoding -----------------------------------------------------------
 
     def encode(
-        self, features: dict[str, torch.Tensor]
+        self,
+        features: dict[str, torch.Tensor],
+        kg_embedding: Optional[torch.Tensor] = None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Encode tokenized game state into latent space.
 
         Args:
-            features: Dict of batched tensors from GameTokenizer
+            features:     Dict of batched tensors from GameTokenizer.
+            kg_embedding: Optional (batch, kg_embed_dim) context vector from
+                          KGContextEncoder.  Fused before the VAE bottleneck
+                          when StateEncoderConfig.kg_embed_dim > 0.
 
         Returns:
             z, mu, logvar from the state encoder (V)
         """
-        return self.encoder.encode(features)
+        return self.encoder.encode(features, kg_embedding=kg_embedding)
 
     # -- Prediction ---------------------------------------------------------
 
@@ -291,6 +312,88 @@ class WorldModel(nn.Module):
 
         best_idx = action_scores.argmax().item()
         return best_idx, action_scores
+
+    # -- JEPA training ------------------------------------------------------
+
+    def jepa_training_step(
+        self,
+        features_t: dict[str, torch.Tensor],
+        action_t: torch.Tensor,
+        features_next: dict[str, torch.Tensor],
+        kg_embedding_t: Optional[torch.Tensor] = None,
+        kg_embedding_next: Optional[torch.Tensor] = None,
+    ) -> dict[str, torch.Tensor]:
+        """Full dual-input JEPA training step for one (s_t, a_t, s_{t+1}) transition.
+
+        Workflow
+        --------
+        1. Encode s_t  (+ optional KG context) → z_t, mu_t, logvar_t
+        2. Encode s_{t+1} (+ optional KG context) → z_{t+1}  (stop-grad target)
+        3. JEPA predictor: ẑ_{t+1} = predictor(z_t, a_t)
+        4. Loss = MSE(ẑ_{t+1}, sg(z_{t+1})) + β * KL(N(mu_t, logvar_t) || N(0,I))
+
+        Args:
+            features_t:       Tokenized game state at time t.
+            action_t:         Encoded action taken at time t (B, action_dim).
+            features_next:    Tokenized game state at time t+1.
+            kg_embedding_t:   Optional KG context for s_t.
+            kg_embedding_next: Optional KG context for s_{t+1}.
+
+        Returns:
+            dict with keys ``"total"``, ``"prediction"``, ``"kl"``.  Backprop
+            on ``losses["total"]``.
+
+        Raises:
+            RuntimeError: when the model was built with ``use_jepa=False``.
+        """
+        if self.jepa_predictor is None:
+            raise RuntimeError(
+                "JEPA predictor is not enabled. "
+                "Set WorldModelConfig(use_jepa=True) when constructing WorldModel."
+            )
+
+        # Encode current state (gradient flows through here)
+        z_t, mu_t, logvar_t = self.encoder.encode(features_t, kg_embedding=kg_embedding_t)
+
+        # Encode next state — this is the JEPA target (stop-grad applied in jepa_loss)
+        with torch.no_grad():
+            z_next, _, _ = self.encoder.encode(features_next, kg_embedding=kg_embedding_next)
+
+        # Predict next embedding
+        z_hat_next = self.jepa_predictor(z_t, action_t)
+
+        # Compute loss
+        return self.jepa_predictor.jepa_loss(z_hat_next, z_next, mu_t, logvar_t)
+
+    def surprise_score(
+        self,
+        features_t: dict[str, torch.Tensor],
+        action_t: torch.Tensor,
+        features_next: dict[str, torch.Tensor],
+        kg_embedding_t: Optional[torch.Tensor] = None,
+        kg_embedding_next: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        """Per-sample surprise score = MSE(ẑ_{t+1}, z_{t+1}).
+
+        High values indicate the world model did not expect this transition.
+        Use as a signal to fall back on KG-based action selection or flag
+        the episode for human review.
+
+        Args:
+            See :meth:`jepa_training_step` — same signature.
+
+        Returns:
+            surprise: (B,) tensor — per-sample MSE in latent space.
+        """
+        if self.jepa_predictor is None:
+            raise RuntimeError("surprise_score requires use_jepa=True.")
+
+        with torch.no_grad():
+            z_t, _, _ = self.encoder.encode(features_t, kg_embedding=kg_embedding_t)
+            z_next, _, _ = self.encoder.encode(features_next, kg_embedding=kg_embedding_next)
+            z_hat_next = self.jepa_predictor(z_t, action_t)
+
+        return self.jepa_predictor.surprise_score(z_hat_next, z_next)
 
     # -- Persistence --------------------------------------------------------
 

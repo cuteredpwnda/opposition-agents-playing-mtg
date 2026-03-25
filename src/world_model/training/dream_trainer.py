@@ -30,6 +30,7 @@ from ..world_model import WorldModel, WorldModelConfig
 from .train_controller import ControllerTrainingConfig, train_controller_cmaes, train_controller_pg
 from .train_dynamics import DynamicsTrainingConfig, train_dynamics
 from .train_encoder import EncoderTrainingConfig, train_encoder
+from .train_jepa import JEPATrainingConfig, train_jepa
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,7 @@ class DreamTrainerConfig:
     encoder_config: EncoderTrainingConfig = None  # type: ignore[assignment]
     dynamics_config: DynamicsTrainingConfig = None  # type: ignore[assignment]
     controller_config: ControllerTrainingConfig = None  # type: ignore[assignment]
+    jepa_config: JEPATrainingConfig = None  # type: ignore[assignment]
 
     # Pipeline settings
     num_iterations: int = 5         # Full V→M→C training cycles
@@ -57,6 +59,8 @@ class DreamTrainerConfig:
             self.dynamics_config = DynamicsTrainingConfig()
         if self.controller_config is None:
             self.controller_config = ControllerTrainingConfig()
+        if self.jepa_config is None:
+            self.jepa_config = JEPATrainingConfig()
         if self.dream_temperature_schedule is None:
             # Gradually increase dream difficulty
             self.dream_temperature_schedule = [1.0, 1.05, 1.1, 1.15, 1.2]
@@ -123,6 +127,17 @@ class DreamTrainer:
                 self.config.encoder_config,
             )
 
+            # Phase 1b (optional): JEPA joint encoder+predictor training
+            if world_model.jepa_predictor is not None:
+                logger.info("--- Phase 1b: Training JEPA Predictor (V+P) ---")
+                kg_encoder = self._get_kg_encoder(world_model)
+                world_model = train_jepa(
+                    world_model,
+                    trajectory_store,
+                    self.config.jepa_config,
+                    kg_encoder=kg_encoder,
+                )
+
             # Phase 2: Train Dynamics Model (M)
             logger.info("--- Phase 2: Training Dynamics Model (M) ---")
             world_model.dynamics = train_dynamics(
@@ -176,3 +191,24 @@ class DreamTrainer:
         logger.info("Training complete! Final model saved: %s", final_path)
 
         return world_model
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    def _get_kg_encoder(self, world_model: WorldModel):
+        """Build a KGContextEncoder if the encoder supports KG fusion."""
+        if world_model.encoder.config.kg_embed_dim <= 0:
+            return None
+        try:
+            from ..card_embeddings import CardEmbeddingModel
+            from ..kg_encoder import KGContextEncoder, KGContextEncoderConfig
+
+            card_model = CardEmbeddingModel()
+            cfg = KGContextEncoderConfig(
+                kg_embed_dim=world_model.encoder.config.kg_embed_dim,
+            )
+            return KGContextEncoder(card_model, cfg)
+        except Exception as e:
+            logger.warning("Could not build KGContextEncoder: %s", e)
+            return None

@@ -25,7 +25,7 @@ services:
       NEO4J_server_memory_heap_max__size: 4G
       NEO4J_server_memory_pagecache_size: 2G
 
-  # Ollama LLM server — pull models as needed
+  # Ollama LLM server — pull models as needed (GPU enabled)
   ollama:
     image: ollama/ollama:latest
     container_name: mtg-ollama
@@ -33,14 +33,13 @@ services:
       - "11434:11434"
     volumes:
       - ollama_data:/root/.ollama
-    # GPU passthrough (uncomment for NVIDIA GPU):
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: all
-    #           capabilities: [gpu]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
       interval: 15s
@@ -48,7 +47,7 @@ services:
       retries: 5
     restart: unless-stopped
 
-  # Training container — runs the full pipeline
+  # Training container — runs the full JEPA + KG pipeline
   trainer:
     build:
       context: .
@@ -68,17 +67,44 @@ services:
       - ./checkpoints:/app/checkpoints
       - ./logs:/app/logs
       - ./data:/app/data
-    # GPU passthrough (uncomment for NVIDIA GPU):
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: all
-    #           capabilities: [gpu]
-    # Default: run full pipeline
-    # Override with: docker compose run trainer --train --commander
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    # Default: run full JEPA pipeline
+    # Override with: docker compose run trainer python scripts/train_pipeline.py --stage 5
     command: ["--all", "--commander"]
+
+  # JEPA-specific training entrypoint — alternative to default deploy.py
+  jepa-trainer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mtg-jepa-trainer
+    depends_on:
+      neo4j:
+        condition: service_healthy
+    environment:
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: mtgpassword
+      OLLAMA_HOST: http://ollama:11434
+    volumes:
+      - ./checkpoints:/app/checkpoints
+      - ./logs:/app/logs
+      - ./data:/app/data
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    entrypoint: ["python", "scripts/train_pipeline.py"]
+    command: []
 
 volumes:
   ollama_data:

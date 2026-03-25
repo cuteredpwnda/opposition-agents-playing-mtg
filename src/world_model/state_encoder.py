@@ -15,6 +15,7 @@ Reference: Ha & Schmidhuber (2018), Section "VAE (V) Model"
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Optional
 
 try:
     import torch
@@ -40,6 +41,9 @@ class StateEncoderConfig:
     max_graveyard_size: int = 20
     dropout: float = 0.1
     kl_weight: float = 0.001     # KL divergence weight (β-VAE)
+    # Dual-input JEPA: set > 0 to fuse KG context before the bottleneck.
+    # Must match KGContextEncoderConfig.kg_embed_dim.
+    kg_embed_dim: int = 0
 
 
 class SetEncoder(nn.Module):
@@ -133,6 +137,18 @@ class StateEncoder(nn.Module):
             + c.hidden_dim // 8  # phase/turn
         )
 
+        # Optional KG context projection.
+        # When kg_embed_dim > 0, a strategic context vector from KGContextEncoder
+        # is projected and *added* to the fused game-state features before the
+        # VAE bottleneck.  This is the dual-input path for JEPA.
+        if c.kg_embed_dim > 0:
+            self.kg_proj = nn.Sequential(
+                nn.Linear(c.kg_embed_dim, c.hidden_dim),
+                nn.ReLU(),
+            )
+        else:
+            self.kg_proj = None
+
         # Fusion → latent
         self.fusion = nn.Sequential(
             nn.Linear(fusion_dim, c.hidden_dim),
@@ -155,12 +171,20 @@ class StateEncoder(nn.Module):
             nn.Linear(c.hidden_dim, fusion_dim),  # Reconstruct fused features
         )
 
-    def encode(self, features: dict[str, torch.Tensor]) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def encode(
+        self,
+        features: dict[str, torch.Tensor],
+        kg_embedding: "Optional[torch.Tensor]" = None,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Encode tokenized game state features into latent space.
 
         Args:
             features: Dict of tensors from GameTokenizer.encode_state(),
                       converted to torch tensors and batched.
+            kg_embedding: Optional (batch, kg_embed_dim) context vector from
+                          KGContextEncoder.  When supplied the KG signal is
+                          fused with game-state features before the VAE
+                          bottleneck (dual-input JEPA path).
 
         Returns:
             z: (batch, latent_dim) — sampled latent vector
@@ -202,6 +226,7 @@ class StateEncoder(nn.Module):
             stack_enc=stack_enc,
             player_enc=player_enc,
             phase_enc=phase_enc,
+            kg_embedding=kg_embedding,
         )
 
         # VAE
@@ -220,10 +245,21 @@ class StateEncoder(nn.Module):
         stack_enc: torch.Tensor,
         player_enc: torch.Tensor,
         phase_enc: torch.Tensor,
+        kg_embedding: "Optional[torch.Tensor]" = None,
     ) -> torch.Tensor:
-        """Fuse encoded components into the shared latent input space."""
+        """Fuse encoded components into the shared latent input space.
+
+        When *kg_embedding* is provided and the encoder was built with
+        ``kg_embed_dim > 0``, the KG context is projected and element-wise
+        added to the game-state hidden vector before the VAE bottleneck.
+        This is a residual-style fusion: the game-state path dominates and
+        the KG path contributes an additive correction signal.
+        """
         fused = torch.cat([hand_enc, bf_enc, opp_bf_enc, gy_enc, stack_enc, player_enc, phase_enc], dim=-1)
-        return self.fusion(fused)
+        hidden = self.fusion(fused)
+        if self.kg_proj is not None and kg_embedding is not None:
+            hidden = hidden + self.kg_proj(kg_embedding)
+        return hidden
 
     def decode(self, z: torch.Tensor) -> torch.Tensor:
         """Decode latent vector back to fused feature space.

@@ -34,6 +34,17 @@ models/*.pth
 .vscode/
 .idea/
 
+# LaTeX outputs
+*.aux
+*.log
+*.nav
+*.snm
+*.toc
+*.out
+*.vrb
+*.fdb_latexmk
+*.fls
+
 # OS
 Thumbs.db
 .DS_Store

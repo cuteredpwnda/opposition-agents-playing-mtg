@@ -16,9 +16,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Python dependencies (cached layer)
-COPY requirements.txt requirements-ml.txt pyproject.toml ./
+COPY requirements.txt requirements-ml.txt requirements-ontology.txt pyproject.toml ./
 RUN pip install --no-cache-dir -r requirements.txt && \
-    pip install --no-cache-dir -r requirements-ml.txt
+    pip install --no-cache-dir -r requirements-ml.txt && \
+    pip install --no-cache-dir -r requirements-ontology.txt || true
 
 # Copy source code
 COPY src/ src/
