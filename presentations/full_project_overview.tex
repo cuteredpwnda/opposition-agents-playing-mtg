@@ -1534,21 +1534,23 @@ while not state.game_over:
   \end{center}
   \vspace{0.3cm}
   \begin{center}
-  \begin{tikzpicture}[
-      every node/.style={font=\small},
-      row/.style={draw, thick, rounded corners, text width=12cm,
-                  align=left, minimum height=0.8cm, inner sep=5pt},
-    ]
-    \node[row, fill=lgray] at (0, 2.2)
-      {\textbf{Traditional RL:} learns from scratch $\to$ millions of games $\to$ brittle to new cards};
-    \node[row, fill=lgray] at (0, 1.1)
-      {\textbf{LLM agent:} symbolic reasoning $\to$ can't plan ahead $\to$ slow $\to$ expensive};
-    \node[row, fill=mtgblue!10] at (0, 0)
-      {\textbf{World Model:} dreams fast $\to$ learns from play $\to$ limited by training distribution};
-    \node[row, fill=mtggreen!15] at (0, -1.3)
-      {\textbf{Ours:} dreams 48$\times$ faster $\bullet$ KG-structured latent space
-       $\bullet$ zero-shot via KG $\bullet$ self-correcting $\bullet$ explainable};
-  \end{tikzpicture}
+  \scalebox{0.8}{%
+    \begin{tikzpicture}[
+        every node/.style={font=\small},
+        row/.style={draw, thick, rounded corners, text width=12cm,
+                    align=left, minimum height=0.8cm, inner sep=5pt},
+      ]
+      \node[row, fill=lgray] at (0, 2.2)
+        {\textbf{Traditional RL:} learns from scratch $\to$ millions of games $\to$ brittle to new cards};
+      \node[row, fill=lgray] at (0, 1.1)
+        {\textbf{LLM agent:} symbolic reasoning $\to$ can't plan ahead $\to$ slow $\to$ expensive};
+      \node[row, fill=mtgblue!10] at (0, 0)
+        {\textbf{World Model:} dreams fast $\to$ learns from play $\to$ limited by training distribution};
+      \node[row, fill=mtggreen!15] at (0, -1.3)
+        {\textbf{Ours:} dreams 48$\times$ faster $\bullet$ KG-structured latent space
+         $\bullet$ zero-shot via KG $\bullet$ self-correcting $\bullet$ explainable};
+    \end{tikzpicture}
+  }
   \end{center}
   \vspace{0.3cm}
   \begin{center}
