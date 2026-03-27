@@ -75,6 +75,16 @@ def resolve_combat_damage(state: GameState) -> None:
             defender = next((p for p in state.players if p.player_id == defender_id), None)
             if defender:
                 defender.life_total -= atk_power
+
+                # Commander damage tracking in Commander format
+                if state.format == "commander":
+                    if not hasattr(defender, "commander_damage_received"):
+                        defender.commander_damage_received = {}
+
+                    if attacker.zone == Zone.COMMAND_ZONE or attacker.card_data.get("is_commander", False):
+                        defender.commander_damage_received.setdefault(attacker.controller_id, 0)
+                        defender.commander_damage_received[attacker.controller_id] += atk_power
+
                 state.log(f"{attacker.name} deals {atk_power} damage to {defender.name}")
         else:
             # Blocked — assign damage to blockers in order, blockers hit back

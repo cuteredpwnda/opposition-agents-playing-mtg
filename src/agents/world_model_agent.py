@@ -24,7 +24,7 @@ except ImportError:
     raise ImportError("WorldModelAgent requires PyTorch and NumPy.")
 
 from src.agents.base_agent import MTGAgent
-from src.engine.game_state import Action, GameState
+from src.engine.game_state import Action, GameState, Zone
 from src.world_model.card_embeddings import CardEmbeddingModel
 from src.world_model.game_tokenizer import GameTokenizer
 from src.world_model.world_model import WorldModel
@@ -57,6 +57,7 @@ class WorldModelAgent(MTGAgent):
         player_id: str,
         world_model: WorldModel,
         tokenizer: GameTokenizer,
+        kg_encoder: KGContextEncoder | None = None,
         name: str = "WorldModelAgent",
         mode: str = "direct",           # "direct" or "dream_search"
         dream_rollouts: int = 8,
@@ -67,6 +68,7 @@ class WorldModelAgent(MTGAgent):
         super().__init__(player_id=player_id, name=name)
         self.world_model = world_model.to(device)
         self.tokenizer = tokenizer
+        self.kg_encoder = kg_encoder
         self.mode = mode
         self.dream_rollouts = dream_rollouts
         self.dream_depth = dream_depth
@@ -142,14 +144,20 @@ class WorldModelAgent(MTGAgent):
         player_idx = self._get_player_index(game_state)
         features = self.tokenizer.encode_state(game_state, player_idx)
 
+        # KG context embedding (if available)
+        kg_embedding = None
+        if self.kg_encoder is not None:
+            visible_ids = self._get_visible_card_names(game_state, player_idx)
+            kg_embedding = self.kg_encoder(visible_ids, device=self.device)
+
         # Convert to batched tensors
         feature_tensors = {
             k: torch.from_numpy(v).float().unsqueeze(0).to(self.device)
             for k, v in features.items()
         }
 
-        # Encode
-        z, _, _ = self.world_model.encode(feature_tensors)
+        # Encode with optional KG context
+        z, _, _ = self.world_model.encode(feature_tensors, kg_embedding=kg_embedding)
         self._last_z = z
 
         # Initialize hidden state if needed
@@ -223,3 +231,22 @@ class WorldModelAgent(MTGAgent):
             if player.name == self.player_id:
                 return i
         return 0  # Default to player 0
+
+    def _get_visible_card_names(self, game_state: GameState, player_index: int) -> list[list[str]]:
+        """Collect all visible card names for KG context encoder."""
+        player_id = game_state.players[player_index].player_id
+        names = []
+
+        # Own hand + battlefield
+        own_hand = [c.name for c in game_state.cards if c.owner_id == player_id and c.zone == Zone.HAND]
+        own_bf = [c.name for c in game_state.cards if c.owner_id == player_id and c.zone == Zone.BATTLEFIELD]
+
+        # Opponent battlefield for all other players
+        opp_bf = [c.name for c in game_state.cards if c.owner_id != player_id and c.zone == Zone.BATTLEFIELD]
+
+        names.append(own_hand[: self.tokenizer.config.max_hand_size])
+        names.append(own_bf[: self.tokenizer.config.max_battlefield_size])
+        names.append(opp_bf[: self.tokenizer.config.max_battlefield_size])
+
+        return names
+

@@ -23,6 +23,35 @@ from .abilities import (
 )
 
 
+def _get_color_identity(card):
+    if not card:
+        return set()
+    ci = card.card_data.get("color_identity") or card.card_data.get("colors") or []
+    if isinstance(ci, str):
+        return set(ci.upper())
+    return set(ci)
+
+
+def _commander_color_identity(state: GameState, player_id: str) -> set:
+    if state.format != "commander":
+        return set()
+    commander_id = getattr(state, "commanders", {}).get(player_id, None)
+    if commander_id is None:
+        return set()
+    commander_card = next((c for c in state.cards if c.instance_id == commander_id), None)
+    return _get_color_identity(commander_card)
+
+
+def _check_color_identity(state: GameState, player_id: str, card) -> bool:
+    if state.format != "commander":
+        return True
+    commander_ci = _commander_color_identity(state, player_id)
+    if not commander_ci:
+        return True
+    card_ci = _get_color_identity(card)
+    return card_ci.issubset(commander_ci)
+
+
 class RulesEngine:
     """Validates and executes game actions according to MTG Comprehensive Rules."""
 
@@ -119,20 +148,19 @@ class RulesEngine:
         from .game_state import Phase
         if state.phase == Phase.COMBAT_ATTACKERS and state.players[state.active_player_index].player_id == player_id:
             # During declare attackers, generate options for attacking creatures
-            # For now, simple approach: each untapped creature can attack
+            # In commander/multiplayer, allow attacking any non-self opponent
+            opponents = [p.player_id for p in state.players if p.player_id != player_id]
             for card in battlefield:
                 if card.is_creature() and not card.tapped and not card.summoning_sick:
-                    # For simplicity, creatures attack the defending player (next player in turn order)
-                    defender_idx = (state.active_player_index + 1) % len(state.players)
-                    defender_id = state.players[defender_idx].player_id
-                    actions.append(
-                        Action(
-                            action_type=ActionType.DECLARE_ATTACKERS,
-                            player_id=player_id,
-                            card_instance_id=card.instance_id,
-                            targets=[defender_id],
+                    for defender_id in opponents:
+                        actions.append(
+                            Action(
+                                action_type=ActionType.DECLARE_ATTACKERS,
+                                player_id=player_id,
+                                card_instance_id=card.instance_id,
+                                targets=[defender_id],
+                            )
                         )
-                    )
 
         return actions
 

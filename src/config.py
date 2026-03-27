@@ -1,6 +1,19 @@
 """Environment config — loaded from .env or environment variables."""
 
-from pydantic_settings import BaseSettings
+try:
+    from pydantic_settings import BaseSettings
+except ImportError:
+    try:
+        from pydantic import BaseSettings
+    except ImportError:
+        class BaseSettings:
+            """Minimal fallback BaseSettings for environments without pydantic."""
+
+            def __init__(self, **kwargs):
+                for k, v in kwargs.items():
+                    setattr(self, k, v)
+
+        # With fallback BaseSettings, Settings class defaults work as plain dataclass.
 
 
 class Settings(BaseSettings):

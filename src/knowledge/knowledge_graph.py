@@ -213,6 +213,31 @@ class MTGKnowledgeGraph:
         }
 
     # -----------------------------------------------------------------------
+    # Auto-enrichment support (from self-play)
+    # -----------------------------------------------------------------------
+
+    async def add_synergy(self, card_a: str, card_b: str, weight: float = 1.0) -> None:
+        """Add or boost a SYNERGIZES_WITH relationship between two cards."""
+        query = """
+        MERGE (a:Card {cardName: $card_a})
+        MERGE (b:Card {cardName: $card_b})
+        MERGE (a)-[r:SYNERGIZES_WITH]-(b)
+        ON CREATE SET r.strength = $weight
+        ON MATCH SET r.strength = coalesce(r.strength, 0.0) + $weight
+        """
+        await self._run_query(query, card_a=card_a, card_b=card_b, weight=weight)
+
+    async def update_card_stats(self, card_name: str, won: bool) -> None:
+        """Update win/loss statistics for a card."""
+        query = """
+        MERGE (c:Card {cardName: $card_name})
+        SET c.gamesPlayed = coalesce(c.gamesPlayed, 0) + 1,
+            c.gamesWon = coalesce(c.gamesWon, 0) + CASE WHEN $won THEN 1 ELSE 0 END,
+            c.winRate = toFloat(coalesce(c.gamesWon, 0)) / coalesce(c.gamesPlayed, 1)
+        """
+        await self._run_query(query, card_name=card_name, won=won)
+
+    # -----------------------------------------------------------------------
     # Internal
     # -----------------------------------------------------------------------
 

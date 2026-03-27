@@ -151,6 +151,19 @@ class GameRunner:
             library_cards = [c for c in all_cards if c.owner_id == pid]
             random.shuffle(library_cards)
 
+            # Commander: keep the first commander in command zone
+            if self.config.format == "commander" and library_cards:
+                commander_card = library_cards.pop(0)
+                commander_card.zone = Zone.COMMAND_ZONE
+                # assign to game state commanders map
+                # will be set after game_state is created
+                # use player_id for map lookup
+                # store temporary mapping in player object later
+                # (GameState.commanders is set after GameState instantiation)
+                # We'll finalize after game_state, but for now we can use state assigned below.
+                # We'll use game_state.commanders by updating after state initialization.
+                commander_holder = commander_card
+
             # Draw opening hand of 7
             hand_size = 0
             for card in library_cards:
@@ -170,6 +183,16 @@ class GameRunner:
             players=players,
             cards=all_cards,
         )
+
+        # Commander post-setup: mark each player's commander mapping
+        if self.config.format == "commander":
+            game_state.commanders = {
+                p.player_id: next(
+                    (c.instance_id for c in all_cards if c.owner_id == p.player_id and c.zone == Zone.COMMAND_ZONE),
+                    "",
+                )
+                for p in players
+            }
 
         return game_state
 

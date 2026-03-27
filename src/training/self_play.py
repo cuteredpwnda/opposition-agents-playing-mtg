@@ -11,6 +11,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
+from src.training.deck_utils import create_mock_deck
 from src.training.experience_buffer import Experience, ExperienceBuffer
 from src.training.rewards import RewardFunction
 
@@ -97,8 +98,8 @@ class SelfPlayTrainer:
 
                 # Create mock decks (simplified)
                 decks = {
-                    "player_1": self._create_mock_deck(),
-                    "player_2": self._create_mock_deck(),
+                    "player_1": create_mock_deck(),
+                    "player_2": create_mock_deck(),
                 }
 
                 # Run game
@@ -121,70 +122,53 @@ class SelfPlayTrainer:
                     experiences.append(exp)
 
                 logger.info(f"Self-play game {game_num+1}: winner={winner_id}, turns={result.turns}")
+
+                try:
+                    await self._enrich_kg_from_game(result, decks)
+                except Exception as e:
+                    logger.warning(f"KG enrichment failed for game {game_num}: {e}")
             except Exception as e:
                 logger.error(f"Error in self-play game {game_num}: {e}")
                 continue
 
         return experiences
 
-    def _create_mock_deck(self) -> list[dict[str, any]]:
-        """Create a simplified mock deck for testing.
-        
-        In production, would load real decklists from Scryfall API
-        or local deck files (Moxfield, Tappedout, etc.).
-        """
-        from src.integrations.scryfall import ScryfallClient
-        import asyncio
-        
+    async def _enrich_kg_from_game(self, result, decks) -> None:
+        """Update knowledge graph with self-play game outcomes."""
+        if not result.winner:
+            return
+
+        winner_id = result.winner
+        loser_id = next((p for p in decks.keys() if p != winner_id), None)
+
         try:
-            # Try to fetch real cards from Scryfall
-            async def get_real_cards():
-                async with ScryfallClient() as client:
-                    # Get some basic MTG cards
-                    cards = []
-                    basic_cards = ["Mountain", "Goblin Guide", "Lightning Bolt"]
-                    for card_name in basic_cards:
-                        try:
-                            card = await client.get_card_by_name(card_name)
-                            for _ in range(4):
-                                cards.append({
-                                    "name": card.get("name", card_name),
-                                    "type_line": card.get("type_line", "Land"),
-                                    "mana_cost": card.get("mana_cost", ""),
-                                    "cmc": card.get("cmc", 0),
-                                    "oracle_text": card.get("oracle_text", ""),
-                                    "power": card.get("power", None),
-                                    "toughness": card.get("toughness", None),
-                                })
-                            if len(cards) >= 60:
-                                break
-                        except Exception:
-                            continue
-                    return cards[:60] if cards else None
-            
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            real_cards = loop.run_until_complete(get_real_cards())
-            loop.close()
-            
-            if real_cards and len(real_cards) >= 60:
-                return real_cards
-        except Exception as e:
-            logger.warning(f"Could not load real cards from Scryfall: {e}, using mock")
-        
-        # Fallback: mock deck
-        return [
-            {
-                "name": f"Card_{i}",
-                "type_line": "Creature" if i % 3 == 0 else "Sorcery" if i % 3 == 1 else "Land",
-                "mana_cost": "{1}" if i % 2 == 0 else "{2}",
-                "cmc": 1 if i % 2 == 0 else 2,
-                "oracle_text": "Does something",
-                "power": "2" if i % 3 == 0 else None,
-                "toughness": "2" if i % 3 == 0 else None,
-            }
-            for i in range(60)
-        ]
+            from src.knowledge.knowledge_graph import MTGKnowledgeGraph
+
+            kg = MTGKnowledgeGraph()
+            winner_cards = [card["name"] for card in decks[winner_id] if "name" in card]
+            loser_cards = [card["name"] for card in decks[loser_id] if "name" in card] if loser_id else []
+
+            # Add syntactic synergy edges for cards present together in winner deck
+            unique_winner_cards = list(dict.fromkeys(winner_cards))
+            for i, card_a in enumerate(unique_winner_cards):
+                for card_b in unique_winner_cards[i + 1 : i + 4]:
+                    await kg.add_synergy(card_a, card_b, weight=1.0)
+
+            # Update win rate stats
+            for card in set(unique_winner_cards):
+                await kg.update_card_stats(card, won=True)
+
+            for card in set(loser_cards):
+                await kg.update_card_stats(card, won=False)
+
+        except Exception:
+            raise
+        finally:
+            try:
+                await kg.close()
+            except Exception:
+                pass
+
 
     async def evaluate(self, num_games: int) -> float:
         """Evaluate current agent vs. baseline (random agent).
@@ -209,8 +193,8 @@ class SelfPlayTrainer:
                     
                     # Create decks
                     decks = {
-                        "player_1": self._create_mock_deck(),
-                        "player_2": self._create_mock_deck(),
+                        "player_1": create_mock_deck(),
+                        "player_2": create_mock_deck(),
                     }
                     
                     # Run game

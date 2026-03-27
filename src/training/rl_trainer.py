@@ -146,6 +146,39 @@ class RLTrainer:
         except Exception:
             logger.info("Ollama agent not available — skipping")
 
+        # Register Active Inference + Opponent Model agent
+        try:
+            from src.agents.active_inference_agent import ActiveInferenceAgent
+            self.pool.register(
+                "active_inference",
+                lambda player_id: ActiveInferenceAgent(player_id=player_id),
+                elo=1250.0,
+            )
+        except Exception as e:
+            logger.info("ActiveInferenceAgent not available: %s", e)
+
+        # Register LLM Fusion agent (with opponent model) if available
+        try:
+            from src.agents.llm_fusion_agent import LLMFusionAgent
+            self.pool.register(
+                "llm_fusion",
+                lambda player_id: LLMFusionAgent(player_id=player_id, opponent_model=None),
+                elo=1300.0,
+            )
+        except Exception as e:
+            logger.info("LLMFusionAgent not available: %s", e)
+
+        # Register Neural Reasoner agent if available
+        try:
+            from src.agents.neural_reasoner_agent import NeuralReasonerAgent
+            self.pool.register(
+                "neural_reasoner",
+                lambda player_id: NeuralReasonerAgent(player_id=player_id),
+                elo=1350.0,
+            )
+        except Exception as e:
+            logger.info("NeuralReasonerAgent not available: %s", e)
+
         # Set up trajectory store for world model
         if self.config.collect_trajectories:
             from src.world_model.trajectory import TrajectoryStore

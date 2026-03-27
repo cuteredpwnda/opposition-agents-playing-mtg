@@ -329,7 +329,7 @@ def stage_6_dream_training(
     logger.info("=== Stage 6: Dream Training (%d iterations) ===", num_iterations)
 
     from src.world_model.training.dream_trainer import DreamTrainer, DreamTrainerConfig
-from src.world_model.training.train_schmidhuber import SchmidhuberTrainingConfig, train_schmidhuber
+    from src.world_model.training.train_schmidhuber import SchmidhuberTrainingConfig, train_schmidhuber
 
     dream_cfg = DreamTrainerConfig(num_iterations=num_iterations)
     trainer = DreamTrainer(dream_cfg)
@@ -358,8 +358,24 @@ async def stage_7_eval_game(world_model: "WorldModel | None" = None) -> None:
                 from src.world_model.game_tokenizer import GameTokenizer
 
                 tokenizer = GameTokenizer(card_embeddings=CardEmbeddingModel()._embeddings)
+
+                kg_encoder = None
+                try:
+                    from src.world_model.kg_encoder import KGContextEncoder, KGContextEncoderConfig
+
+                    kg_cfg = KGContextEncoderConfig(
+                        kg_embed_dim=world_model.encoder.config.kg_embed_dim
+                    )
+                    kg_encoder = KGContextEncoder(CardEmbeddingModel(), kg_cfg)
+                except Exception as e:
+                    logger.warning("KG encoder unavailable for evaluation: %s", e)
+
                 agents["player_0"] = WorldModelAgent(
-                    "player_0", world_model, tokenizer, mode="direct",
+                    "player_0",
+                    world_model,
+                    tokenizer,
+                    kg_encoder=kg_encoder,
+                    mode="direct",
                 )
                 logger.info("Player 0: WorldModelAgent (JEPA)")
             except Exception as e:
@@ -507,11 +523,9 @@ def main() -> None:
                         help="Disable knowledge graph (single-input JEPA)")
     parser.add_argument("--kg-embed-dim", type=int, default=128,
                         help="KG embedding dimension")
-    parser.add_argument("--wm-engine", type=str, choices=["built_in", "stable"],
+    parser.add_argument("--wm-engine", type=str, choices=["built_in", "stable", "schmidhuber"],
                         default="built_in",
                         help="World model training engine to use")
-
-                        help="KG context embedding dimension")
 
     # Trajectory collection
     parser.add_argument("--num-games", type=int, default=200,

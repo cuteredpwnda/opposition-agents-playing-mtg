@@ -118,6 +118,9 @@ async def main(args):
     
     # Create agents
     def make_agent(player_id: str, agent_type: str):
+        if agent_type == "human":
+            from src.agents.human_agent import HumanAgent
+            return HumanAgent(player_id=player_id, name=f"Human {player_id}")
         if agent_type == "ollama":
             return OllamaAgent(player_id=player_id, name=f"Ollama {player_id}")
         if agent_type == "fusion":
@@ -128,8 +131,12 @@ async def main(args):
                 logger.warning("LLM-Fusion agent unavailable, falling back to Random")
         return RandomAgent(player_id=player_id, name=f"Random {player_id}")
 
-    # First player uses requested agent type, rest are random
-    first_type = "fusion" if args.fusion else ("ollama" if args.ollama else "random")
+    # First player uses requested agent type, rest are random unless commander with human
+    if args.human:
+        first_type = "human"
+    else:
+        first_type = "fusion" if args.fusion else ("ollama" if args.ollama else "random")
+
     agents = {}
     for i, name in enumerate(player_names):
         atype = first_type if i == 0 else "random"
@@ -218,6 +225,11 @@ if __name__ == "__main__":
         "--commander",
         action="store_true",
         help="4-player Commander format"
+    )
+    parser.add_argument(
+        "--human",
+        action="store_true",
+        help="Let human play first seat (interactive)"
     )
     parser.add_argument(
         "--rl-train",

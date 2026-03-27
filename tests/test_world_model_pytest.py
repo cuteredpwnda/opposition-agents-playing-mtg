@@ -222,6 +222,44 @@ def test_schmidhuber_worldmodel_adapter_trainable(tmp_path):
     assert model is not None
 
 
+def test_world_model_agent_kg_context_encode():
+    from src.agents.world_model_agent import WorldModelAgent
+    from src.world_model.kg_encoder import KGContextEncoder, KGContextEncoderConfig
+    from src.world_model.card_embeddings import CardEmbeddingModel
+    from src.world_model.world_model import WorldModel, WorldModelConfig
+    from src.world_model.game_tokenizer import GameTokenizer
+    from src.engine.game_state import GameState, PlayerState, CardInstance, Zone, Phase
+
+    card_model = CardEmbeddingModel()
+    kg_enc = KGContextEncoder(card_model, KGContextEncoderConfig())
+    wm_cfg = WorldModelConfig(use_jepa=True)
+    wm = WorldModel(wm_cfg)
+    tokenizer = GameTokenizer(card_embeddings=card_model._embeddings)
+
+    agent = WorldModelAgent(
+        player_id="p1",
+        world_model=wm,
+        tokenizer=tokenizer,
+        kg_encoder=kg_enc,
+    )
+
+    # dummy state
+    gs = GameState(
+        players=[PlayerState(player_id="p1", name="p1"), PlayerState(player_id="p2", name="p2")],
+        cards=[
+            CardInstance(card_data={"name":"Mountain","type_line":"Land","oracle_text":"{T}: Add {R}.","cmc":0}, zone=Zone.BATTLEFIELD, owner_id="p1", controller_id="p1"),
+        ],
+        active_player_index=0,
+        priority_player_index=0,
+        phase=Phase.MAIN_1,
+        turn_number=1,
+    )
+
+    z, h = agent._encode_state(gs)
+    assert z.shape[1] == wm.encoder.config.latent_dim
+    assert h.shape[1] == wm.dynamics.config.hidden_dim
+
+
 @pytest.mark.asyncio
 async def test_game_runner_collects_selfplay_trajectory(tmp_path):
     from src.orchestrator.game_runner import GameRunner, GameConfig

@@ -289,6 +289,7 @@ class GameState:
     game_log: list[str]
     game_over: bool
     winner: Optional[str]
+    commanders: dict[str, str]  # player_id -> commander card instance id
 
     def __init__(
         self,
@@ -321,6 +322,7 @@ class GameState:
         self.game_log = game_log or []
         self.game_over = game_over
         self.winner = winner
+        self.commanders = {}
 
         if isinstance(self.players, dict):
             self.players = list(self.players.values())
@@ -340,14 +342,6 @@ class GameState:
             )
         else:
             self.priority_player_index = priority_player_index
-
-    @property
-    def active_player(self) -> PlayerState:
-        return self.players[self.active_player_index]
-
-    @property
-    def priority_player(self) -> PlayerState:
-        return self.players[self.priority_player_index]
 
     @property
     def active_player(self) -> PlayerState:
