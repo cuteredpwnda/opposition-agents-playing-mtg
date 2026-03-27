@@ -220,18 +220,29 @@ class RulesEngine:
             if action.card_instance_id:
                 card = next((c for c in state.cards if c.instance_id == action.card_instance_id), None)
                 if card:
-                    # Pay mana cost
-                    cost = parse_mana_cost(card.mana_cost or "")
                     player = next((p for p in state.players if p.player_id == action.player_id), None)
-                    if player:
-                        pay_cost(player, cost)
-                    
-                    # Move card from hand to stack
+                    if player is None:
+                        return state
+
+                    if not _check_color_identity(state, action.player_id, card):
+                        return state
+
+                    cost = _get_effective_cost(state, player, card)
+                    if not can_pay(player, cost):
+                        return state
+
+                    pay_cost(player, cost)
+
+                    # Commander tax is applied when casting from command zone
+                    if state.format == "commander" and card.zone == Zone.COMMAND_ZONE:
+                        player.commander_tax += 1
+
+                    # Move card from current zone to stack
                     state = move_card(
-                        state, action.card_instance_id, Zone.HAND, Zone.STACK,
+                        state, action.card_instance_id, card.zone, Zone.STACK,
                         action.player_id
                     )
-                    
+
                     # Create stack item and push to stack
                     stack_item = StackItem(
                         source_card_id=action.card_instance_id,
