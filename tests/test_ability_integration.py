@@ -165,6 +165,40 @@ def test_activated_ability_mana_generation():
     assert land.tapped, "Land should be tapped after use"
 
 
+def test_rules_engine_execute_activate_ability_uses_mana_ability():
+    """Test RulesEngine.execute_action for ACTIVATE_ABILITY with mana ability."""
+    game = create_ability_test_game()
+    alice = game.players[0]
+
+    land = CardInstance(
+        instance_id="mana_land",
+        card_data={
+            "name": "Mountain",
+            "type_line": "Basic Land — Mountain",
+            "oracle_text": "{T}: Add {R}.",
+            "set": "TEST",
+        },
+        zone=Zone.BATTLEFIELD,
+        owner_id="Alice",
+        controller_id="Alice",
+        tapped=False,
+    )
+    game.cards.append(land)
+
+    from src.engine.rules_engine import RulesEngine
+    engine = RulesEngine()
+
+    legal_actions = engine.get_legal_actions(game, "Alice")
+    activate_actions = [a for a in legal_actions if a.action_type == ActionType.ACTIVATE_ABILITY]
+    assert activate_actions, "Should have an activate ability action"
+
+    action = activate_actions[0]
+    game = engine.execute_action(game, action)
+
+    assert alice.mana_pool["R"] == 1, "Alice should have gained red mana"
+    assert land.tapped, "Land should be tapped after activation"
+
+
 def test_static_ability_plus_triggered_plus_activated():
     """Test card with all three ability types (complex lord/utility creature)."""
     game = create_ability_test_game()

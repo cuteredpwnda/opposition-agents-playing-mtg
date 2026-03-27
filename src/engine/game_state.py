@@ -218,8 +218,8 @@ class CardInstance:
 class PlayerState:
     """State of a single player in the game."""
 
-    player_id: str
-    name: str
+    player_id: str = ""
+    name: str = ""
     life_total: int = 20  # 40 for Commander
     mana_pool: dict[str, int] = field(
         default_factory=lambda: {"W": 0, "U": 0, "B": 0, "R": 0, "G": 0, "C": 0}
@@ -237,10 +237,17 @@ class Action:
     """A game action chosen by a player."""
 
     action_type: ActionType
-    player_id: str
+    player_id: str = ""
+    player: str = ""
     card_instance_id: Optional[str] = None
     targets: list[str] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self):
+        if self.player_id and not self.player:
+            self.player = self.player_id
+        if self.player and not self.player_id:
+            self.player_id = self.player
 
 
 @dataclass
@@ -282,6 +289,21 @@ class GameState:
     game_log: list[str] = field(default_factory=list)
     game_over: bool = False
     winner: Optional[str] = None
+    active_player_id: Optional[str] = None
+    priority_player_id: Optional[str] = None
+
+    def __post_init__(self):
+        # Accept legacy player dicts
+        if isinstance(self.players, dict):
+            self.players = list(self.players.values())
+
+        if self.active_player_id is not None:
+            idx = next((i for i, p in enumerate(self.players) if p.player_id == self.active_player_id), 0)
+            self.active_player_index = idx
+
+        if self.priority_player_id is not None:
+            idx = next((i for i, p in enumerate(self.players) if p.player_id == self.priority_player_id), 0)
+            self.priority_player_index = idx
 
     @property
     def active_player(self) -> PlayerState:

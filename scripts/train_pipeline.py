@@ -429,13 +429,33 @@ async def run_pipeline(args: argparse.Namespace) -> None:
     # --- Stage 5 ---
     world_model = None
     if start <= 5:
-        world_model = stage_5_train_jepa(
-            store,
-            use_kg=not args.no_kg,
-            kg_embed_dim=args.kg_embed_dim,
-            jepa_beta=args.jepa_beta,
-            num_epochs=args.jepa_epochs,
-        )
+        if args.wm_engine == "stable":
+            from scripts.train_stable_worldmodel import main as stable_train_main
+            import sys
+
+            # simple entrypoint with command-line style args
+            sys.argv = [sys.argv[0],
+                        "--trajectories", str(store.storage_dir),
+                        "--hdf5", "data/trajectories/world_model_train.h5",
+                        "--epochs", str(args.jepa_epochs),
+                        "--batch-size", str(args.jepa_batch_size),
+                        "--device", "cuda" if hasattr(args, "cuda") and args.cuda else "cpu"]
+            stable_train_main()
+            # load an optional wrapper from stable output, if exists
+            try:
+                from src.world_model.stable_worldmodel_adapter import StableWorldModelAdapter
+                world_model = StableWorldModelAdapter.load("checkpoints/stable_worldmodel.pt")
+            except Exception as e:
+                logger.warning("Could not load stable-worldmodel adapter artifact: %s", e)
+                world_model = None
+        else:
+            world_model = stage_5_train_jepa(
+                store,
+                use_kg=not args.no_kg,
+                kg_embed_dim=args.kg_embed_dim,
+                jepa_beta=args.jepa_beta,
+                num_epochs=args.jepa_epochs,
+            )
 
     # --- Stage 6 ---
     if start <= 6 and not args.skip_dream:
@@ -468,6 +488,11 @@ def main() -> None:
     parser.add_argument("--no-kg", action="store_true",
                         help="Disable knowledge graph (single-input JEPA)")
     parser.add_argument("--kg-embed-dim", type=int, default=128,
+                        help="KG embedding dimension")
+    parser.add_argument("--wm-engine", type=str, choices=["built_in", "stable"],
+                        default="built_in",
+                        help="World model training engine to use")
+
                         help="KG context embedding dimension")
 
     # Trajectory collection
@@ -481,6 +506,10 @@ def main() -> None:
                         help="JEPA KL regularizer weight (the ONE hyperparameter)")
     parser.add_argument("--jepa-epochs", type=int, default=80,
                         help="JEPA training epochs")
+    parser.add_argument("--jepa-batch-size", type=int, default=64,
+                        help="JEPA training batch size")
+    parser.add_argument("--cuda", action="store_true",
+                        help="Use CUDA for stable-worldmodel training if available")
 
     # Dream training
     parser.add_argument("--dream-iters", type=int, default=3,

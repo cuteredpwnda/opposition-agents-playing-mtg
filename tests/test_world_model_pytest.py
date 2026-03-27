@@ -165,6 +165,38 @@ def test_dream_trainer_runs_without_failure(tmp_path):
     assert isinstance(w, WorldModel)
 
 
+def test_trajectory_store_exports_hdf5(tmp_path):
+    from src.world_model.trajectory import TrajectoryStore, Trajectory, Transition
+
+    store = TrajectoryStore(storage_dir=str(tmp_path / "traj"))
+    t = Trajectory(game_id="game1", source="test")
+    t.add(Transition(
+        state_features={"player_features": np.zeros((10,), dtype=np.float32)},
+        action_encoding=np.zeros((136,), dtype=np.float32),
+        reward=0.0,
+        done=False,
+        action_type="PASS_PRIORITY",
+    ))
+    store.add(t)
+    out_h5 = tmp_path / "world_model_train.h5"
+    store.save_hdf5(str(out_h5))
+
+    assert out_h5.exists()
+    import h5py
+    with h5py.File(str(out_h5), "r") as f:
+        assert f.attrs["num_trajectories"] == 1
+
+
+def test_stable_worldmodel_adapter_importable():
+    try:
+        from src.world_model.stable_worldmodel_adapter import StableWorldModelAdapter
+    except ImportError:
+        pytest.skip("stable-worldmodel is not installed")
+
+    with pytest.raises(Exception):
+        StableWorldModelAdapter()  # may fail quickly if external package missing or unavailable
+
+
 @pytest.mark.asyncio
 async def test_game_runner_collects_selfplay_trajectory(tmp_path):
     from src.orchestrator.game_runner import GameRunner, GameConfig

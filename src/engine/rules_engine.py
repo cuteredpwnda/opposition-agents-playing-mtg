@@ -200,7 +200,7 @@ class RulesEngine:
                 if card:
                     # Get abilities on this card
                     abilities = parse_abilities(card)
-                    
+
                     # Find the specific ability to activate (if provided in metadata)
                     ability_to_activate = None
                     ability_id = action.metadata.get("ability_id") if action.metadata else None
@@ -209,6 +209,12 @@ class RulesEngine:
                             (a for a in abilities if a.ability_id == ability_id),
                             None
                         )
+                        if ability_to_activate is None:
+                            legal = get_legal_activated_abilities(state, card, action.player_id)
+                            ability_to_activate = next(
+                                (a for a in legal if a.ability_id == ability_id),
+                                None
+                            )
                     else:
                         # If no specific ability, use first legal one (for legacy compatibility)
                         legal = get_legal_activated_abilities(state, card, action.player_id)

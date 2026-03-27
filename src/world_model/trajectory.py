@@ -175,3 +175,32 @@ class TrajectoryStore:
                 i += 1
 
             self.add(traj)
+
+    def save_hdf5(self, output_path: str) -> None:
+        """Export trajectories into HDF5 for external world-model trainers."""
+        try:
+            import h5py
+        except ImportError as e:
+            raise ImportError("h5py is required to save HDF5 trajectories") from e
+
+        with h5py.File(output_path, "w") as h5f:
+            h5f.attrs["num_trajectories"] = len(self.trajectories)
+            for t_idx, traj in enumerate(self.trajectories):
+                g_traj = h5f.create_group(str(t_idx))
+                g_traj.attrs["game_id"] = traj.game_id
+                g_traj.attrs["winner"] = traj.winner if traj.winner is not None else -1
+                g_traj.attrs["num_turns"] = traj.num_turns
+                g_traj.attrs["source"] = traj.source
+
+                for step_idx, transition in enumerate(traj.transitions):
+                    g_step = g_traj.create_group(str(step_idx))
+                    state_grp = g_step.create_group("state")
+                    for feat_name, feat_arr in transition.state_features.items():
+                        state_grp.create_dataset(feat_name, data=feat_arr, compression="gzip")
+
+                    g_step.create_dataset("action", data=transition.action_encoding, compression="gzip")
+                    g_step.attrs["reward"] = transition.reward
+                    g_step.attrs["done"] = bool(transition.done)
+                    g_step.attrs["action_type"] = transition.action_type
+                    g_step.attrs["card_name"] = transition.card_name if transition.card_name is not None else ""
+                    g_step.attrs["metadata"] = json.dumps(transition.metadata)

@@ -50,8 +50,11 @@ def parse_abilities(card: CardInstance) -> list[Ability]:
         # Determine if this can be used anytime
         # Mana abilities: simple, produce mana, can use anytime
         can_use_anytime = is_mana_ability(effect)
-        
+
+        # Consistent deterministic ability ID so lookups match across parse runs
+        ability_key = f"{card.instance_id}:{cost}:{effect}"
         abilities.append(Ability(
+            ability_id=ability_key,
             source_card_id=card.instance_id,
             controller_id=card.controller_id,
             cost=cost,
