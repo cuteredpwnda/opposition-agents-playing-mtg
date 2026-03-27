@@ -52,6 +52,14 @@ def _check_color_identity(state: GameState, player_id: str, card) -> bool:
     return card_ci.issubset(commander_ci)
 
 
+def _get_effective_cost(state: GameState, player: "PlayerState", card) -> dict[str, int]:
+    cost = parse_mana_cost(card.mana_cost or "")
+    # Commander tax: +2 generic for each previous time commander was cast from command zone
+    if state.format == "commander" and card.zone == Zone.COMMAND_ZONE:
+        cost["generic"] = cost.get("generic", 0) + (player.commander_tax * 2)
+    return cost
+
+
 class RulesEngine:
     """Validates and executes game actions according to MTG Comprehensive Rules."""
 
@@ -88,7 +96,7 @@ class RulesEngine:
             # Play a land (once per turn)
             if player.land_plays_remaining > 0:
                 for card in hand:
-                    if card.is_land():
+                    if card.is_land() and _check_color_identity(state, player_id, card):
                         actions.append(
                             Action(
                                 action_type=ActionType.PLAY_LAND,
@@ -98,15 +106,21 @@ class RulesEngine:
                         )
 
             # Cast sorceries and creatures (non-instant, non-flash)
-            for card in hand:
+            castable_cards = [
+                c for c in state.cards
+                if c.owner_id == player_id and c.zone in (Zone.HAND, Zone.COMMAND_ZONE)
+            ]
+            for card in castable_cards:
                 if card.is_land():
-                    continue  # Already handled
+                    continue  # Land is handled separately
                 if card.is_instant():
                     continue  # Instant-speed only
                 if "flash" in card.oracle_text.lower():
                     continue  # Flash is instant-speed
-                    
-                cost = parse_mana_cost(card.mana_cost or "")
+                if not _check_color_identity(state, player_id, card):
+                    continue
+
+                cost = _get_effective_cost(state, player, card)
                 if can_pay(player, cost):
                     actions.append(
                         Action(
@@ -118,9 +132,16 @@ class RulesEngine:
 
         # Instant-speed actions: any time you have priority
         # This includes instants, flash creatures, activated abilities, etc.
-        for card in hand:
+        castable_cards = [
+            c for c in state.cards
+            if c.owner_id == player_id and c.zone in (Zone.HAND, Zone.COMMAND_ZONE)
+        ]
+        for card in castable_cards:
             if card.is_instant() or "flash" in card.oracle_text.lower():
-                cost = parse_mana_cost(card.mana_cost or "")
+                if not _check_color_identity(state, player_id, card):
+                    continue
+
+                cost = _get_effective_cost(state, player, card)
                 if can_pay(player, cost):
                     actions.append(
                         Action(
