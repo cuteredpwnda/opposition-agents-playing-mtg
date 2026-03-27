@@ -197,6 +197,31 @@ def test_stable_worldmodel_adapter_importable():
         StableWorldModelAdapter()  # may fail quickly if external package missing or unavailable
 
 
+def test_schmidhuber_worldmodel_adapter_trainable(tmp_path):
+    from src.world_model.training.train_schmidhuber import SchmidhuberTrainingConfig, train_schmidhuber
+    from src.world_model.trajectory import TrajectoryStore, Trajectory, Transition
+
+    store = TrajectoryStore(storage_dir=str(tmp_path / "traj"))
+    trx = Transition(
+        state_features={"latent": np.zeros((256,), dtype=np.float32)},
+        action_encoding=np.zeros((136,), dtype=np.float32),
+        reward=0.0,
+        done=False,
+        action_type="PASS_PRIORITY",
+    )
+    t = Trajectory(game_id="t1", source="test")
+    t.add(trx)
+    t2 = Trajectory(game_id="t2", source="test")
+    t2.add(trx)
+    store.add(t)
+    store.add(t2)
+
+    config = SchmidhuberTrainingConfig(epochs=1, batch_size=1, device="cpu")
+    model = train_schmidhuber(store, config)
+
+    assert model is not None
+
+
 @pytest.mark.asyncio
 async def test_game_runner_collects_selfplay_trajectory(tmp_path):
     from src.orchestrator.game_runner import GameRunner, GameConfig

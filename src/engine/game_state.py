@@ -271,39 +271,83 @@ class CombatState:
     damage_assignment_order: dict[str, list[str]] = field(default_factory=dict)
 
 
-@dataclass
+@dataclass(init=False)
 class GameState:
     """Complete state of a game — the single source of truth."""
 
-    game_id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    format: str = "standard"  # "standard" | "commander"
-    turn_number: int = 0
-    active_player_index: int = 0
-    priority_player_index: int = 0
-    phase: Phase = Phase.UNTAP
-    players: list[PlayerState] = field(default_factory=list)
-    cards: list[CardInstance] = field(default_factory=list)
-    stack: list[StackItem] = field(default_factory=list)
-    triggered_abilities: list[Trigger] = field(default_factory=list)  # Pending triggers
-    combat: Optional[CombatState] = None
-    game_log: list[str] = field(default_factory=list)
-    game_over: bool = False
-    winner: Optional[str] = None
-    active_player_id: Optional[str] = None
-    priority_player_id: Optional[str] = None
+    game_id: str
+    format: str
+    turn_number: int
+    active_player_index: int
+    priority_player_index: int
+    phase: Phase
+    players: list[PlayerState]
+    cards: list[CardInstance]
+    stack: list[StackItem]
+    triggered_abilities: list[Trigger]
+    combat: Optional[CombatState]
+    game_log: list[str]
+    game_over: bool
+    winner: Optional[str]
 
-    def __post_init__(self):
-        # Accept legacy player dicts
+    def __init__(
+        self,
+        game_id: str = None,
+        format: str = "standard",
+        turn_number: int = 0,
+        active_player_index: int = 0,
+        priority_player_index: int = 0,
+        phase: Phase = Phase.UNTAP,
+        players=None,
+        cards=None,
+        stack=None,
+        triggered_abilities=None,
+        combat=None,
+        game_log=None,
+        game_over: bool = False,
+        winner: Optional[str] = None,
+        active_player: Optional[str] = None,
+        priority_player: Optional[str] = None,
+    ):
+        self.game_id = game_id or str(uuid.uuid4())
+        self.format = format
+        self.turn_number = turn_number
+        self.phase = phase
+        self.players = players or []
+        self.cards = cards or []
+        self.stack = stack or []
+        self.triggered_abilities = triggered_abilities or []
+        self.combat = combat
+        self.game_log = game_log or []
+        self.game_over = game_over
+        self.winner = winner
+
         if isinstance(self.players, dict):
             self.players = list(self.players.values())
 
-        if self.active_player_id is not None:
-            idx = next((i for i, p in enumerate(self.players) if p.player_id == self.active_player_id), 0)
-            self.active_player_index = idx
+        if active_player is not None:
+            self.active_player_index = next(
+                (i for i, p in enumerate(self.players) if p.player_id == active_player),
+                0,
+            )
+        else:
+            self.active_player_index = active_player_index
 
-        if self.priority_player_id is not None:
-            idx = next((i for i, p in enumerate(self.players) if p.player_id == self.priority_player_id), 0)
-            self.priority_player_index = idx
+        if priority_player is not None:
+            self.priority_player_index = next(
+                (i for i, p in enumerate(self.players) if p.player_id == priority_player),
+                0,
+            )
+        else:
+            self.priority_player_index = priority_player_index
+
+    @property
+    def active_player(self) -> PlayerState:
+        return self.players[self.active_player_index]
+
+    @property
+    def priority_player(self) -> PlayerState:
+        return self.players[self.priority_player_index]
 
     @property
     def active_player(self) -> PlayerState:

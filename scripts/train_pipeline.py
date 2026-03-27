@@ -329,6 +329,7 @@ def stage_6_dream_training(
     logger.info("=== Stage 6: Dream Training (%d iterations) ===", num_iterations)
 
     from src.world_model.training.dream_trainer import DreamTrainer, DreamTrainerConfig
+from src.world_model.training.train_schmidhuber import SchmidhuberTrainingConfig, train_schmidhuber
 
     dream_cfg = DreamTrainerConfig(num_iterations=num_iterations)
     trainer = DreamTrainer(dream_cfg)
@@ -433,21 +434,38 @@ async def run_pipeline(args: argparse.Namespace) -> None:
             from scripts.train_stable_worldmodel import main as stable_train_main
             import sys
 
-            # simple entrypoint with command-line style args
-            sys.argv = [sys.argv[0],
-                        "--trajectories", str(store.storage_dir),
-                        "--hdf5", "data/trajectories/world_model_train.h5",
-                        "--epochs", str(args.jepa_epochs),
-                        "--batch-size", str(args.jepa_batch_size),
-                        "--device", "cuda" if hasattr(args, "cuda") and args.cuda else "cpu"]
+            sys.argv = [
+                sys.argv[0],
+                "--trajectories",
+                str(store.storage_dir),
+                "--hdf5",
+                "data/trajectories/world_model_train.h5",
+                "--epochs",
+                str(args.jepa_epochs),
+                "--batch-size",
+                str(args.jepa_batch_size),
+                "--device",
+                "cuda" if args.cuda else "cpu",
+            ]
             stable_train_main()
-            # load an optional wrapper from stable output, if exists
             try:
                 from src.world_model.stable_worldmodel_adapter import StableWorldModelAdapter
+
                 world_model = StableWorldModelAdapter.load("checkpoints/stable_worldmodel.pt")
             except Exception as e:
                 logger.warning("Could not load stable-worldmodel adapter artifact: %s", e)
                 world_model = None
+
+        elif args.wm_engine == "schmidhuber":
+            from src.world_model.schmidhuber_worldmodel_adapter import SchmidhuberWorldModelAdapter
+
+            schm_cfg = SchmidhuberTrainingConfig(
+                epochs=args.jepa_epochs,
+                batch_size=args.jepa_batch_size,
+                device="cuda" if args.cuda else "cpu",
+            )
+            world_model = train_schmidhuber(store, schm_cfg)
+
         else:
             world_model = stage_5_train_jepa(
                 store,

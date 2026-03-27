@@ -28,6 +28,7 @@ from src.engine.game_state import Action, GameState
 from src.world_model.card_embeddings import CardEmbeddingModel
 from src.world_model.game_tokenizer import GameTokenizer
 from src.world_model.world_model import WorldModel
+from src.world_model.kg_encoder import KGContextEncoder
 
 logger = logging.getLogger(__name__)
 
