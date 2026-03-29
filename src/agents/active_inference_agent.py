@@ -68,7 +68,40 @@ class ActiveInferenceAgent(MTGAgent):
 
         # Rank actions by expected free energy (low is good)
         ranked = self.ai_module.rank_actions(legal_actions, game_state)
-        chosen_action = ranked[0][0] if ranked else await self.fallback.decide_action(game_state, legal_actions)
+
+        # Use opponent model to influence action selection in Commander/multiplayer
+        if self.opponent_model is not None and ranked:
+            try:
+                threat = await self.opponent_model.get_threat_assessment()
+                if threat.probability_has_counterspell > 0.5:
+                    # If opponent likely has counterspell, postpone non-urgent spells
+                    ranked = [r for r in ranked if r[0].action_type != ActionType.CAST_SPELL or r[0].card_instance_id is None]
+                    if not ranked:
+                        ranked = self.ai_module.rank_actions(legal_actions, game_state)
+            except Exception:
+                pass
+
+        # If we have multiple attacker choices, prioritize the highest-threat target
+        declare_actions = [a for a in (r[0] for r in ranked) if a.action_type == ActionType.DECLARE_ATTACKERS]
+        if declare_actions:
+            scored = []
+            for a in declare_actions:
+                if not a.targets:
+                    continue
+                scored.append((a, self._score_attack_target(game_state, a.targets[0])))
+
+            if scored:
+                chosen_action = max(scored, key=lambda x: x[1])[0]
+            else:
+                chosen_action = ranked[0][0] if ranked else await self.fallback.decide_action(game_state, legal_actions)
+        else:
+            chosen_action = ranked[0][0] if ranked else await self.fallback.decide_action(game_state, legal_actions)
+
+        # Attach meta debug info for analysis/policy tracing
+        chosen_action.metadata["decision_mode"] = "active_inference"
+        chosen_action.metadata["expected_free_energy"] = ranked[0][1] if ranked else None
+        if chosen_action.action_type == ActionType.DECLARE_ATTACKERS and chosen_action.targets:
+            chosen_action.metadata["target_score"] = self._score_attack_target(game_state, chosen_action.targets[0])
 
         logger.debug(
             "ActiveInferenceAgent chose %s with G=%s",
@@ -78,6 +111,25 @@ class ActiveInferenceAgent(MTGAgent):
 
         return chosen_action
 
+    def _score_attack_target(self, game_state: GameState, target_id: str) -> float:
+        target = next((p for p in game_state.players if p.player_id == target_id), None)
+        if target is None:
+            return 0.0
+
+        base = max(0, 40 - target.life_total)
+        commander_dmg = 0
+        if hasattr(target, "commander_damage_received"):
+            commander_dmg = sum(target.commander_damage_received.values())
+
+        # Avoid tanking player with highest life when not needed
+        score = base + commander_dmg * 2
+
+        # Penalize knockout player if already about to lose to commander damage (e.g., to avoid gratitude alliances)
+        if commander_dmg >= 21:
+            score *= 0.8
+
+        return score
+
     async def observe(self, game_state: GameState, action: Action) -> None:
         await super().observe(game_state, action)
 
@@ -85,6 +137,7 @@ class ActiveInferenceAgent(MTGAgent):
         if self.opponent_model is not None and action.player_id != self.player_id:
             self.opponent_model.observe_behavior(action, game_state)
             self.opponent_model.observe_card_played(action.card_instance_id or "")
+            self.opponent_model.observe_game_state(game_state)
 
         # Update active inference beliefs
         if self.ai_module is not None:

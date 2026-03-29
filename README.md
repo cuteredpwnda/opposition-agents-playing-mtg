@@ -232,6 +232,7 @@ The rules engine implements a subset of the Comprehensive Rules (CR):
 
 - **Priority loop** (`orchestrator.priority_loop.run_priority_loop`): APNAP order plus infinite-loop guard
   - `max_iterations=1000` abort safety to avoid hung self-play
+  - Supports CONCEDE as an early termination action
 
 - **Triggers** (`triggered_abilities.py`): Detects and queues triggered abilities
   - Enters-the-battlefield triggers

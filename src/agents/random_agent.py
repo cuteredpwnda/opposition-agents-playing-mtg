@@ -31,19 +31,32 @@ class RandomAgent(MTGAgent):
                 weight = 10  # Strongly prefer casting creatures/spells
             elif action.action_type == ActionType.DECLARE_ATTACKERS:
                 weight = 8   # High priority for attacking
+
+                # Promote attacking low-life or high-commander-damage opponents
+                if action.targets:
+                    target_id = action.targets[0]
+                    weight += self._score_attack_target(game_state, target_id)
+
             elif action.action_type == ActionType.PLAY_LAND:
                 weight = 5   # Prefer playing lands
             elif action.action_type == ActionType.ACTIVATE_ABILITY:
                 weight = 4   # Tap lands for mana (increased priority)
             elif action.action_type == ActionType.PASS_PRIORITY:
                 weight = 1   # Pass is last resort
+            elif action.action_type == ActionType.CONCEDE:
+                weight = 0   # Avoid conceding unless forced
             else:
                 weight = 1
             
             weighted.extend([action] * weight)
         
         chosen = random.choice(weighted)
-        
+
+        # Log action score data
+        if chosen.action_type == ActionType.DECLARE_ATTACKERS and chosen.targets:
+            chosen.metadata["decision_mode"] = "random_weighted"
+            chosen.metadata["target_score"] = self._score_attack_target(game_state, chosen.targets[0])
+
         return chosen
     
     def get_heuristic_score(self, game_state: GameState) -> float:
@@ -77,3 +90,16 @@ class RandomAgent(MTGAgent):
         board_advantage = (my_creatures - opp_creatures) * 3
         
         return float(life_diff + board_advantage)
+
+    def _score_attack_target(self, game_state: GameState, target_id: str) -> float:
+        target = next((p for p in game_state.players if p.player_id == target_id), None)
+        if target is None:
+            return 0.0
+
+        score = max(0, 40 - target.life_total)
+        commander_dmg = 0
+        if hasattr(target, "commander_damage_received"):
+            commander_dmg = sum(target.commander_damage_received.values())
+
+        score += commander_dmg * 2
+        return float(score)

@@ -85,6 +85,11 @@ class GameRunner:
         while not game_state.game_over and game_state.turn_number <= self.config.max_turns:
             game_state = await self._play_turn(game_state, agents)
 
+        # Max-turn guard for non-terminal games
+        if not game_state.game_over:
+            game_state.game_over = True
+            game_state.log("Game drawn: max turn limit reached")
+
         winner_name = game_state.winner.player_id if game_state.winner else None
 
         if self.self_play_collector is not None:

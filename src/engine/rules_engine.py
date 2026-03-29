@@ -110,7 +110,8 @@ class RulesEngine:
         # Always can pass priority
         actions.append(Action(action_type=ActionType.PASS_PRIORITY, player_id=player_id))
 
-        # NOTE: CONCEDE is not offered as a legal action for agents (they should stay in game)
+        # Offer concede as a legal action for early termination / debug modes
+        actions.append(Action(action_type=ActionType.CONCEDE, player_id=player_id))
 
         hand = [c for c in state.cards if c.zone == Zone.HAND and c.owner_id == player_id]
         battlefield = [c for c in state.cards if c.zone == Zone.BATTLEFIELD and c.owner_id == player_id]
@@ -251,6 +252,8 @@ class RulesEngine:
         
         if action.action_type == ActionType.PASS_PRIORITY:
             # No state change on pass
+            if action.metadata:
+                state.log(f"{action.player_id} pass metadata: {action.metadata}")
             return state
         
         if action.action_type == ActionType.CONCEDE:
@@ -277,6 +280,8 @@ class RulesEngine:
             return state
         
         if action.action_type == ActionType.CAST_SPELL:
+            if action.metadata:
+                state.log(f"{action.player_id} cast metadata: {action.metadata}")
             if action.card_instance_id:
                 card = next((c for c in state.cards if c.instance_id == action.card_instance_id), None)
                 if card:
