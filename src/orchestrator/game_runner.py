@@ -40,6 +40,7 @@ class GameResult:
 
     winner: str | None
     turns: int
+    game_over: bool = False
     log: list[str] = field(default_factory=list)
 
 
@@ -103,6 +104,7 @@ class GameRunner:
         result = GameResult(
             winner=winner_name,
             turns=game_state.turn_number,
+            game_over=game_state.game_over,
             log=game_state.game_log,
         )
         logger.info(f"Game ended: winner={winner_name}, turns={result.turns}")

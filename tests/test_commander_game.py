@@ -3,6 +3,7 @@ import pytest
 from src.orchestrator.game_runner import GameRunner, GameConfig
 from src.agents.random_agent import RandomAgent
 from src.training.deck_utils import create_mock_deck
+from src.engine.game_state import GameState
 
 
 @pytest.mark.asyncio
@@ -147,6 +148,7 @@ def test_commander_color_identity_and_tax():
 def test_commander_damage_and_return_to_command_zone():
     from src.engine.combat import resolve_combat_damage
     from src.engine.rules_engine import RulesEngine
+    from src.engine.game_state import PlayerState, CardInstance, Phase, Zone
 
     player1 = PlayerState(player_id="P1", name="P1", life_total=40)
     player2 = PlayerState(player_id="P2", name="P2", life_total=40)

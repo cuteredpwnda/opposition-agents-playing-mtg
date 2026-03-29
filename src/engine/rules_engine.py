@@ -570,6 +570,7 @@ class RulesEngine:
                 if state.format == "commander" and card.instance_id == getattr(state, "commanders", {}).get(card.owner_id):
                     state = move_card(state, card.instance_id, Zone.BATTLEFIELD, Zone.COMMAND_ZONE, card.owner_id)
                     state.log(f"{card.name} returns to the command zone")
+                    events.append(f"{card.name} returns to the command zone")
                 else:
                     state = move_card(state, card.instance_id, Zone.BATTLEFIELD, Zone.GRAVEYARD, card.owner_id)
 
