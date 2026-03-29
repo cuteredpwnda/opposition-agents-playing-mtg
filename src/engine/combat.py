@@ -81,7 +81,11 @@ def resolve_combat_damage(state: GameState) -> None:
                     if not hasattr(defender, "commander_damage_received"):
                         defender.commander_damage_received = {}
 
-                    if attacker.zone == Zone.COMMAND_ZONE or attacker.card_data.get("is_commander", False):
+                    is_commander_attacker = (
+                        attacker.instance_id == state.commanders.get(attacker.controller_id)
+                        or attacker.card_data.get("is_commander", False)
+                    )
+                    if is_commander_attacker:
                         defender.commander_damage_received.setdefault(attacker.controller_id, 0)
                         defender.commander_damage_received[attacker.controller_id] += atk_power
 

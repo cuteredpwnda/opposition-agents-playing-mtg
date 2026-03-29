@@ -143,3 +143,60 @@ def test_commander_color_identity_and_tax():
     cast_actions2 = [a for a in actions2 if a.action_type == ActionType.CAST_SPELL]
     assert not any(a.card_instance_id == "cmd1" for a in cast_actions2)
 
+
+def test_commander_damage_and_return_to_command_zone():
+    from src.engine.combat import resolve_combat_damage
+    from src.engine.rules_engine import RulesEngine
+
+    player1 = PlayerState(player_id="P1", name="P1", life_total=40)
+    player2 = PlayerState(player_id="P2", name="P2", life_total=40)
+
+    commander_card = CardInstance(
+        instance_id="cmd1",
+        card_data={
+            "name": "Rubinia Soulsinger",
+            "type_line": "Legendary Creature — Human Wizard",
+            "mana_cost": "{R}",
+            "power": "1",
+            "toughness": "1",
+            "color_identity": ["R"],
+            "is_commander": True,
+        },
+        zone=Zone.BATTLEFIELD,
+        owner_id="P1",
+        controller_id="P1",
+        tapped=False,
+        damage_marked=0,
+    )
+
+    game_state = GameState(
+        format="commander",
+        turn_number=1,
+        active_player_index=0,
+        priority_player_index=0,
+        phase=Phase.COMBAT_DAMAGE,
+        players=[player1, player2],
+        cards=[commander_card],
+        stack=[],
+        triggered_abilities=[],
+        combat=None,
+        game_log=[],
+    )
+    game_state.commanders = {"P1": "cmd1"}
+
+    # Declare attacker and resolve damage
+    game_state.combat = None
+    from src.engine.combat import CombatState
+    game_state.combat = CombatState()
+    game_state.combat.attackers["cmd1"] = "P2"
+
+    resolve_combat_damage(game_state)
+    assert player2.commander_damage_received.get("P1", 0) == 1
+
+    # Kill commander and verify it returns to commander zone
+    commander_card.damage_marked = 1
+    engine = RulesEngine()
+    events = engine.check_state_based_actions(game_state)
+    assert any("returns to the command zone" in e for e in events)
+    assert commander_card.zone == Zone.COMMAND_ZONE
+

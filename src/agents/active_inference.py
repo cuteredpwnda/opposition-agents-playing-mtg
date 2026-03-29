@@ -103,30 +103,31 @@ class ActiveInferenceModule:
         Returns recommendation with color requirements and reason.
         """
         active_player_id = game_state.players[game_state.active_player_index].player_id
-        
-        # Find our instants and reactive spells in hand
+
+        # Find our instants and reactive spells in hand (non-active players)
         our_instants = []
         our_counterspells = []
-        
-        for player in game_state.players:
-            if player.player_id != active_player_id:
-                # This is us (non-active player during opponent's turn)
-                for card_instance in player.hand:
-                    text = card_instance.oracle_text.lower()
-                    if "instant" in card_instance.type_line.lower() or "flash" in text:
-                        our_instants.append(card_instance)
-                        if "counter" in text:
-                            our_counterspells.append(card_instance)
-        
-        # Analyze threat level from opponent
-        opponent = game_state.players[game_state.active_player_index]
-        opponent_threats = [
-            c for c in opponent.battlefield
-            if c.type_line and "creature" in c.type_line.lower()
+
+        our_hand_cards = [
+            c for c in game_state.cards
+            if c.controller_id == active_player_id and c.zone == "hand"
         ]
-        opponent_threat_power = sum(int(c.power or 0) for c in opponent_threats)
-        
-        # Decision logic:
+
+        for card_instance in our_hand_cards:
+            text = card_instance.oracle_text.lower()
+            if "instant" in card_instance.type_line.lower() or "flash" in text:
+                our_instants.append(card_instance)
+                if "counter" in text:
+                    our_counterspells.append(card_instance)
+
+        # Analyze threat level from opponent (active player is opponent to non-active)
+        opponent_id = active_player_id
+        opponent_battlefield = [
+            c for c in game_state.cards
+            if c.controller_id == opponent_id and c.zone == "battlefield" and c.is_creature()
+        ]
+        opponent_threat_power = sum(int(c.power or 0) for c in opponent_battlefield)
+
         # 1. If opponent has large threats AND we have removal, hold mana
         if opponent_threat_power > 5 and any(
             kw in c.oracle_text.lower()
@@ -139,9 +140,11 @@ class ActiveInferenceModule:
                 "reason": f"Threats ({opponent_threat_power} power), have removal",
                 "colors": colors_needed,
             }
-        
+
         # 2. If opponent about to play significant spell, hold for counterspell
-        if our_counterspells and opponent.mana_pool.total > 3:
+        opponent = game_state.players[game_state.active_player_index]
+        opponent_mana_total = sum(opponent.mana_pool.values())
+        if our_counterspells and opponent_mana_total > 3:
             return {
                 "hold": True,
                 "reason": "Opponent has mana, have counterspells available",

@@ -154,8 +154,8 @@ class GameRunner:
             # Commander: keep the first commander in command zone
             if self.config.format == "commander" and library_cards:
                 commander_card = library_cards.pop(0)
-                commander_card.zone = Zone.COMMAND_ZONE
-                # assign to game state commanders map
+                commander_card.zone = Zone.COMMAND_ZONE                # Mark the commander card instance explicitly
+                commander_card.card_data["is_commander"] = True                # assign to game state commanders map
                 # will be set after game_state is created
                 # use player_id for map lookup
                 # store temporary mapping in player object later

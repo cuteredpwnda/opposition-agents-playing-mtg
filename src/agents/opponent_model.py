@@ -122,7 +122,12 @@ class OpponentModel:
         
         # Update card tracking if we have full decklist
         if card_name in self.card_info:
-            self.card_info[card_name].copies_seen += 1
+            info = self.card_info[card_name]
+            info.copies_seen += 1
+            info.copies_remaining = max(
+                0,
+                info.copies_in_deck - info.copies_seen - info.copies_drawn,
+            )
             self._update_card_probabilities()
         
         # Infer archetype from cards seen
@@ -141,7 +146,12 @@ class OpponentModel:
         
         if card_name in self.card_info:
             # If we haven't seen it in open zone yet, it's likely being cast from hand
-            self.card_info[card_name].copies_drawn += 1
+            info = self.card_info[card_name]
+            info.copies_drawn += 1
+            info.copies_remaining = max(
+                0,
+                info.copies_in_deck - info.copies_seen - info.copies_drawn,
+            )
             self._update_card_probabilities()
 
     def observe_game_state(self, game_state: GameState) -> None:
@@ -149,29 +159,24 @@ class OpponentModel:
         Update opponent model from current game state.
         Observes: opponent hand size, library size, graveyard, exile, battlefield.
         """
-        opponent = game_state.players.get(self.opponent_id)
-        if not opponent:
-            return
-        
-        # Update observable counts
-        self.cards_in_hand_count = len(opponent.hand)
-        self.cards_in_library_count = len(opponent.library)
-        
+        # Compute observable zone counts from GameState cards
+        self.cards_in_hand_count = len(
+            [c for c in game_state.cards if c.controller_id == self.opponent_id and c.zone == "hand"]
+        )
+        self.cards_in_library_count = len(
+            [c for c in game_state.cards if c.controller_id == self.opponent_id and c.zone == "library"]
+        )
+
         # Process visible cards from open zones
-        for card_instance in opponent.graveyard:
-            card_name = card_instance.card_name
-            if card_name not in self.cards_seen_in_open_zones:
-                self.observe_card(card_name, zone="graveyard")
-        
-        for card_instance in opponent.exile:
-            card_name = card_instance.card_name
-            if card_name not in self.cards_seen_in_open_zones:
-                self.observe_card(card_name, zone="exile")
-        
-        for card_instance in opponent.battlefield:
-            card_name = card_instance.card_name
-            if card_name not in self.cards_seen_in_open_zones:
-                self.observe_card(card_name, zone="battlefield")
+        for zone_name in ["graveyard", "exile", "battlefield"]:
+            for card_instance in [
+                c for c in game_state.cards
+                if c.controller_id == self.opponent_id and c.zone == zone_name
+            ]:
+                card_name = card_instance.card_data.get("name", "Unknown")
+                if card_name not in self.cards_seen_in_open_zones:
+                    self.observe_card(card_name, zone=zone_name)
+
 
     def _update_card_probabilities(self) -> None:
         """

@@ -26,19 +26,36 @@ def get_priority_order(game_state: GameState) -> list[str]:
     return player_ids[idx:] + player_ids[:idx]
 
 
+def _sync_priority_player(game_state: GameState) -> None:
+    """Ensure priority player is valid when players are removed mid-game."""
+    if not game_state.players:
+        game_state.priority_player_index = 0
+        return
+
+    if game_state.priority_player_index < 0 or game_state.priority_player_index >= len(game_state.players):
+        game_state.priority_player_index = 0
+        return
+
+    current = game_state.players[game_state.priority_player_index].player_id
+    if current not in [p.player_id for p in game_state.players]:
+        game_state.priority_player_index = 0
+
+
 def advance_priority(game_state: GameState) -> GameState:
     """Move priority to the next player in APNAP order."""
+    _sync_priority_player(game_state)
+
     order = get_priority_order(game_state)
     current_priority_id = game_state.priority_player.player_id
-    
+
     if current_priority_id not in order:
         game_state.priority_player_index = 0
         return game_state
-    
+
     idx = order.index(current_priority_id)
     next_idx = (idx + 1) % len(order)
     next_player_id = order[next_idx]
-    
+
     # Find index of next player in players list
     game_state.priority_player_index = next(
         i for i, p in enumerate(game_state.players) if p.player_id == next_player_id
@@ -99,10 +116,19 @@ async def run_priority_loop(
     """
     passed_players: set[str] = set()
     
+    loop_iterations = 0
+    max_iterations = 1000
+
     while True:
+        loop_iterations += 1
+        if loop_iterations > max_iterations:
+            game_state.game_over = True
+            game_state.log("Priority loop aborted: exceeded max iterations")
+            return game_state
+
         if game_state.game_over:
             return game_state
-        
+
         # Get current priority player
         priority_player_id = game_state.priority_player.player_id
         agent = agents.get(priority_player_id)

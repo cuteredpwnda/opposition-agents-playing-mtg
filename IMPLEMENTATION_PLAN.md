@@ -529,15 +529,16 @@ The full V+M+C world model with JEPA predictor and KG context fusion is implemen
 **Goal:** 4-player Commander games.
 
 - [x] Command zone, commander tax, commander damage tracking
-- [ ] Color identity restrictions on casting
+- [x] Color identity restrictions on casting
 - [x] APNAP priority loop (data structures support N players)
-- [ ] Multiplayer combat (choose which player to attack)
+- [x] Multiplayer combat (attack target selection support)
 - [ ] Threat assessment across N opponents
 - [ ] Political dynamics (threat leader detection, temporary alliances)
 - [x] `TransferLearning` module: Standard → Commander with MultiplayerAdapter
 - [x] Test 4-agent Commander games end-to-end
 - [ ] Moxfield/Archidekt real decklist importing
 
+**Current work:** Added priority-loop safe-guard for infinite-pass / no-progress edge case (e.g., heavy simulated random play).
 ---
 
 ### Phase F: Human Player & UI

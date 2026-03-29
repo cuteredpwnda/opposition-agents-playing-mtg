@@ -224,6 +224,15 @@ The rules engine implements a subset of the Comprehensive Rules (CR):
   - Tokens cease to exist when leaving battlefield
   - Game termination (when 1 player remains)
   
+- **Commander Rules** (commander format only)
+  - command zone for initial commander placement and returns on death
+  - commander tax (+2 each extra cast from command zone)
+  - color identity restrictions for all owned cards
+  - multiplayer attack target selection and APNAP priority implemented
+
+- **Priority loop** (`orchestrator.priority_loop.run_priority_loop`): APNAP order plus infinite-loop guard
+  - `max_iterations=1000` abort safety to avoid hung self-play
+
 - **Triggers** (`triggered_abilities.py`): Detects and queues triggered abilities
   - Enters-the-battlefield triggers
   - "Whenever" triggers (attack, damage, discard, etc.)

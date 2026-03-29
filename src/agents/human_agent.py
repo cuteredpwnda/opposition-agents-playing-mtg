@@ -18,7 +18,10 @@ class HumanAgent(MTGAgent):
         print(f"You are player {self.player_id}")
         print("\nLegal actions:")
         for i, a in enumerate(legal_actions):
-            card_name = a.card.name if a.card else ""
+            card_name = ""
+            if a.card_instance_id:
+                card = next((c for c in game_state.cards if c.instance_id == a.card_instance_id), None)
+                card_name = card.name if card else ""
             print(f"  [{i}] {a.action_type.value} {card_name}")
         while True:
             raw = input("Choose action index: ").strip()

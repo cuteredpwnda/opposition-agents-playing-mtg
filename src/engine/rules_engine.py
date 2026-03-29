@@ -63,6 +63,34 @@ def _get_effective_cost(state: GameState, player: "PlayerState", card) -> dict[s
 class RulesEngine:
     """Validates and executes game actions according to MTG Comprehensive Rules."""
 
+    def _card_color_identity(self, card: CardInstance) -> set[str]:
+        identity = set(card.card_data.get("color_identity", []))
+        if not identity:
+            for c in card.card_data.get("colors", []):
+                identity.add(c)
+        return identity
+
+    def _is_legal_for_commander(self, state: GameState, player_id: str, card: CardInstance) -> bool:
+        if state.format != "commander":
+            return True
+
+        commanders = getattr(state, "commanders", {}) or {}
+        commander_id = commanders.get(player_id)
+        if not commander_id:
+            return True
+
+        commander_card = next((c for c in state.cards if c.instance_id == commander_id), None)
+        if not commander_card:
+            return True
+
+        cmd_identity = self._card_color_identity(commander_card)
+        card_identity = self._card_color_identity(card)
+        if not card_identity:
+            return True
+
+        # Commander color identity is inclusive: card must be subset
+        return card_identity.issubset(cmd_identity)
+
     def get_legal_actions(self, state: GameState, player_id: str) -> list[Action]:
         """Return all legal actions for a player given current state and priority.
 
@@ -86,6 +114,34 @@ class RulesEngine:
 
         hand = [c for c in state.cards if c.zone == Zone.HAND and c.owner_id == player_id]
         battlefield = [c for c in state.cards if c.zone == Zone.BATTLEFIELD and c.owner_id == player_id]
+        command_zone = [c for c in state.cards if c.zone == Zone.COMMAND_ZONE and c.owner_id == player_id]
+
+        def commander_color_identity() -> set[str]:
+            if state.format != "commander":
+                return set()
+            commander_id = getattr(state, "commanders", {}).get(player_id, "")
+            commander_card = next((c for c in state.cards if c.instance_id == commander_id), None)
+            if commander_card is None:
+                return set()
+            return set(commander_card.card_data.get("color_identity", []))
+
+        def legal_for_commander(card):
+            if state.format != "commander":
+                return True
+            card_id = set(card.card_data.get("color_identity", []))
+            if not card_id:
+                return True
+            cmd_id = commander_color_identity()
+            return card_id.issubset(cmd_id)
+
+        def cost_with_commander_tax(card_cost):
+            if state.format != "commander":
+                return card_cost
+            # commander tax building may be in player state
+            if player.commander_tax > 0:
+                card_cost = dict(card_cost)
+                card_cost["generic"] = card_cost.get("generic", 0) + player.commander_tax
+            return card_cost
 
         # Sorcery-speed actions: only during own main phase with empty stack
         if (
@@ -96,7 +152,7 @@ class RulesEngine:
             # Play a land (once per turn)
             if player.land_plays_remaining > 0:
                 for card in hand:
-                    if card.is_land() and _check_color_identity(state, player_id, card):
+                    if card.is_land() and _check_color_identity(state, player_id, card) and self._is_legal_for_commander(state, player_id, card):
                         actions.append(
                             Action(
                                 action_type=ActionType.PLAY_LAND,
@@ -119,6 +175,8 @@ class RulesEngine:
                     continue  # Flash is instant-speed
                 if not _check_color_identity(state, player_id, card):
                     continue
+                if not self._is_legal_for_commander(state, player_id, card):
+                    continue
 
                 cost = _get_effective_cost(state, player, card)
                 if can_pay(player, cost):
@@ -139,6 +197,8 @@ class RulesEngine:
         for card in castable_cards:
             if card.is_instant() or "flash" in card.oracle_text.lower():
                 if not _check_color_identity(state, player_id, card):
+                    continue
+                if not self._is_legal_for_commander(state, player_id, card):
                     continue
 
                 cost = _get_effective_cost(state, player, card)
@@ -501,8 +561,13 @@ class RulesEngine:
                     state.log(f"[TRIGGER (DEATH)] {trigger.description} added to stack")
                     state.triggered_abilities.append(trigger)
                 
-                # Move creature to graveyard
-                state = move_card(state, card.instance_id, Zone.BATTLEFIELD, Zone.GRAVEYARD, card.owner_id)
+                # Commander goes to command zone; others go to graveyard
+                if state.format == "commander" and card.instance_id == getattr(state, "commanders", {}).get(card.owner_id):
+                    state = move_card(state, card.instance_id, Zone.BATTLEFIELD, Zone.COMMAND_ZONE, card.owner_id)
+                    state.log(f"{card.name} returns to the command zone")
+                else:
+                    state = move_card(state, card.instance_id, Zone.BATTLEFIELD, Zone.GRAVEYARD, card.owner_id)
+
                 card.damage_marked = 0
 
         # Commander damage check (21+)

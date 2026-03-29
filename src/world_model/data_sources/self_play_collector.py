@@ -55,6 +55,7 @@ class SelfPlayCollector:
     def _reset(self) -> None:
         self._current_transitions = []
         self._current_game_id = str(uuid.uuid4())[:8]
+        self._pending_features = None
 
     def on_state(self, game_state: GameState, player_id: int) -> None:
         """Record a game state observation.
@@ -85,13 +86,17 @@ class SelfPlayCollector:
         if self.tokenizer is not None:
             action_encoding = self.tokenizer.encode_action(action)
 
+        card_name = None
+        if hasattr(action, "card_instance_id") and action.card_instance_id:
+            card_name = action.card_instance_id
+
         transition = Transition(
             state_features=self._pending_features,
             action_encoding=action_encoding,
             reward=reward,
             done=done,
             action_type=action.action_type.name if hasattr(action.action_type, "name") else str(action.action_type),
-            card_name=action.card.name if action.card else None,
+            card_name=card_name,
         )
         self._current_transitions.append(transition)
         self._pending_features = None
