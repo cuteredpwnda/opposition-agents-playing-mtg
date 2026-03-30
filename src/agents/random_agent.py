@@ -35,7 +35,7 @@ class RandomAgent(MTGAgent):
                 # Promote attacking low-life or high-commander-damage opponents
                 if action.targets:
                     target_id = action.targets[0]
-                    weight += self._score_attack_target(game_state, target_id)
+                    weight += self._safe_int_score(self._score_attack_target(game_state, target_id))
 
             elif action.action_type == ActionType.PLAY_LAND:
                 weight = 5   # Prefer playing lands
@@ -103,3 +103,7 @@ class RandomAgent(MTGAgent):
 
         score += commander_dmg * 2
         return float(score)
+
+    @staticmethod
+    def _safe_int_score(value: float) -> int:
+        return max(0, int(value))
