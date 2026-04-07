@@ -17,7 +17,7 @@ from src.engine.game_state import Action, GameState, ActionType
 
 
 OLLAMA_BASE_URL = "http://localhost:11434"
-DEFAULT_MODEL = "mistral"  # Fast, capable open-source model
+DEFAULT_MODEL = "gemma4:2b"  # Smallest Gemma 4 variant for limited hardware
 
 SYSTEM_PROMPT = """\
 You are an expert Magic: The Gathering player. Analyze the game state and choose the best action.

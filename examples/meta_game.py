@@ -647,7 +647,7 @@ def run_meta_tournament():
     
     # Check if Ollama is available with phi model
     from src.engine.llm_orchestration import OllamaConnector
-    ollama = OllamaConnector(model="phi")  # Small but capable model
+    ollama = OllamaConnector(model="gemma4:2b")  # Smallest Gemma 4 for limited hardware
     has_llm = ollama.is_available
     llm_status = f"[OLLAMA ENABLED - phi]" if has_llm else "[OLLAMA DISABLED - Using Heuristic Play]"
     print(f"\nAgent Mode: {llm_status}")

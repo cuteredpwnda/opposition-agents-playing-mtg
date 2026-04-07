@@ -394,30 +394,30 @@ The full V+M+C world model with JEPA predictor and KG context fusion is implemen
 - [x] SelfPlayCollector records transitions during games
 - [x] RLTrainer runs games and collects trajectories
 - [x] TrajectoryStore persists to disk (NPZ + HDF5)
-- [ ] Wire `GameTokenizer` into SelfPlayCollector so trajectories contain real encoded states (currently placeholder zeros)
-- [ ] Add state encoding to RLTrainer experience collection (currently `[0.0]*64` placeholders)
+- [x] Wire `GameTokenizer` into SelfPlayCollector so trajectories contain real encoded states
+- [x] Add state encoding to RLTrainer experience collection (replaces `[0.0]*64` placeholders)
 - [ ] Implement parallel game execution (asyncio.gather for multiple games)
 
 #### A.2 — World Model Training from Self-Play
 - [x] DreamTrainer orchestrates V→M→C training
 - [x] train_jepa.py trains JEPA predictor
 - [x] train_pipeline.py runs end-to-end
-- [ ] Fix `train_pipeline.py` stage 6 import issue (stray import line)
+- [x] Fix `train_pipeline.py` stage 6 import issue (stray `SchmidhuberTrainingConfig` import moved to correct branch)
 - [ ] Validate full pipeline end-to-end: collect 200 games → train V → train JEPA → train M → train C → evaluate
 - [ ] Add training metrics logging (loss curves, latent space statistics)
 - [ ] Add model checkpointing with best-model tracking
 
 #### A.3 — KG Auto-Enrichment from Self-Play
-- [ ] **Combo discovery:** After N games, query trajectories for repeated card co-occurrences that correlate with wins → propose new combo edges in KG
-- [ ] **Synergy discovery:** Cards that frequently appear together on winning battlefields → SYNERGIZES_WITH edges
-- [ ] **Card valuation update:** Win-rate statistics per card → update `metagameImportance` property in Neo4j
+- [x] **Combo discovery:** `KGEnrichment._discover_combos()` — queries trajectories for repeated multi-card co-occurrences in wins → proposes combo edges
+- [x] **Synergy discovery:** `KGEnrichment._discover_synergies()` — cards with co-occurrence lift above threshold → SYNERGIZES_WITH edges with learned weights
+- [x] **Card valuation update:** `KGEnrichment._write_card_stats()` → updates win-rate statistics per card in Neo4j
 - [ ] **Archetype evolution:** Cluster winning decklists → detect emergent archetypes → create new Archetype nodes
 
 #### A.4 — Surprise Detection & KG Correction
 - [x] JEPA predictor can compute surprise scores (prediction error)
-- [ ] **Implement surprise-triggered KG query:** When world model prediction error exceeds threshold, query KG for the interacting cards to find the rule the model missed
-- [ ] **Log surprise events** for human review and KG gap analysis
-- [ ] **Auto-retrain priority:** High-surprise transitions get upweighted in training data
+- [x] **Implement surprise-triggered KG query:** `SurpriseDetector.analyze_trajectory()` — computes JEPA prediction error per transition, queries KG `subgraph_context()` on high-surprise cards
+- [x] **Log surprise events** `SurpriseDetector.get_surprise_summary()` — tracks most-surprising cards across training runs
+- [x] **Auto-retrain priority:** `SurpriseDetector.get_retraining_weights()` — upweights high-surprise transitions by configurable factor
 
 #### A.5 — Iterative Self-Play Loop
 - [ ] **Implement iterative training loop:**

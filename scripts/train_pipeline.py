@@ -329,7 +329,6 @@ def stage_6_dream_training(
     logger.info("=== Stage 6: Dream Training (%d iterations) ===", num_iterations)
 
     from src.world_model.training.dream_trainer import DreamTrainer, DreamTrainerConfig
-    from src.world_model.training.train_schmidhuber import SchmidhuberTrainingConfig, train_schmidhuber
 
     dream_cfg = DreamTrainerConfig(num_iterations=num_iterations)
     trainer = DreamTrainer(dream_cfg)
@@ -432,6 +431,26 @@ async def run_pipeline(args: argparse.Namespace) -> None:
         store = await stage_4_collect_trajectories(
             num_games=args.num_games, max_turns=args.max_turns,
         )
+
+        # Stage 4.5: KG enrichment from collected trajectories
+        if not args.no_kg:
+            try:
+                from src.knowledge.kg_enrichment import KGEnrichment
+                kg = None
+                try:
+                    from src.knowledge.knowledge_graph import MTGKnowledgeGraph
+                    kg = MTGKnowledgeGraph()
+                except Exception:
+                    pass
+                enrichment = KGEnrichment(kg=kg)
+                report = await enrichment.enrich_from_trajectories(store)
+                logger.info(
+                    "KG enrichment: %d synergies, %d combos discovered",
+                    report.synergies_proposed,
+                    report.combos_proposed,
+                )
+            except Exception as e:
+                logger.warning("KG enrichment skipped: %s", e)
     else:
         from src.world_model.trajectory import TrajectoryStore
         store = TrajectoryStore(base_dir="data/trajectories")
@@ -474,6 +493,7 @@ async def run_pipeline(args: argparse.Namespace) -> None:
 
         elif args.wm_engine == "schmidhuber":
             from src.world_model.schmidhuber_worldmodel_adapter import SchmidhuberWorldModelAdapter
+            from src.world_model.training.train_schmidhuber import SchmidhuberTrainingConfig, train_schmidhuber
 
             schm_cfg = SchmidhuberTrainingConfig(
                 epochs=args.jepa_epochs,
@@ -498,6 +518,33 @@ async def run_pipeline(args: argparse.Namespace) -> None:
             world_model=world_model,
             num_iterations=args.dream_iters,
         )
+
+    # --- Stage 6.5: Surprise detection + KG gap analysis ---
+    if world_model is not None and not args.no_kg:
+        try:
+            from src.world_model.surprise_detector import SurpriseDetector
+            kg = None
+            try:
+                from src.knowledge.knowledge_graph import MTGKnowledgeGraph
+                kg = MTGKnowledgeGraph()
+            except Exception:
+                pass
+
+            detector = SurpriseDetector(world_model=world_model, kg=kg)
+            total_surprises = 0
+            for traj in store.sample_batch(min(20, len(store))):
+                surprises = await detector.analyze_trajectory(traj)
+                total_surprises += len(surprises)
+
+            summary = detector.get_surprise_summary()
+            logger.info(
+                "Surprise detection: %d surprises across sampled trajectories. "
+                "Most surprising cards: %s",
+                summary.get("total_surprises", 0),
+                summary.get("most_surprising_cards", [])[:5],
+            )
+        except Exception as e:
+            logger.warning("Surprise detection skipped: %s", e)
 
     # --- Stage 7 ---
     if not args.skip_eval:

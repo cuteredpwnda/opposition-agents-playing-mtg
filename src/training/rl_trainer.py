@@ -115,6 +115,8 @@ class RLTrainer:
         self.trajectory_store = None
         self.neural_module = None
         self.optimizer = None
+        self.tokenizer = None
+        self.card_embeddings_model = None
         self.stats: list[dict[str, Any]] = []
 
     def setup(self):
@@ -197,6 +199,18 @@ class RLTrainer:
         except ImportError:
             logger.warning("PyTorch not available — training will collect data only")
 
+        # Set up GameTokenizer + CardEmbeddingModel for real state encoding
+        try:
+            from src.world_model.card_embeddings import CardEmbeddingModel
+            from src.world_model.game_tokenizer import GameTokenizer
+            self.card_embeddings_model = CardEmbeddingModel()
+            self.tokenizer = GameTokenizer(
+                card_embeddings=self.card_embeddings_model.get_all_embeddings(),
+            )
+            logger.info("GameTokenizer initialised for trajectory encoding")
+        except Exception as e:
+            logger.warning("GameTokenizer unavailable — trajectories will lack state encoding: %s", e)
+
         # Create directories
         os.makedirs(self.config.checkpoint_dir, exist_ok=True)
         os.makedirs(self.config.log_dir, exist_ok=True)
@@ -234,6 +248,15 @@ class RLTrainer:
                 and self.trajectory_store is not None
             ):
                 self._run_dream_training()
+
+            # Phase 4.5: KG enrichment from trajectories (periodic)
+            if (
+                self.config.collect_trajectories
+                and iteration > 0
+                and iteration % self.config.dream_training_interval == 0
+                and self.trajectory_store is not None
+            ):
+                await self._run_kg_enrichment()
 
             # Phase 5: Log stats
             wins = sum(1 for r in game_results if r.get("winner"))
@@ -296,8 +319,13 @@ class RLTrainer:
                         "player_1": self.pool.create_agent(pool_b, "player_1"),
                     }
 
-                # Set up collector
-                collector = SelfPlayCollector() if collect and self.config.collect_trajectories else None
+                # Set up collector with tokenizer for real state encoding
+                collector = None
+                if collect and self.config.collect_trajectories:
+                    collector = SelfPlayCollector(
+                        tokenizer=self.tokenizer,
+                        card_embeddings=self.card_embeddings_model,
+                    )
 
                 # Build decks
                 decks = {pid: self._build_deck() for pid in player_ids}
@@ -318,15 +346,17 @@ class RLTrainer:
                     loser_pool = pool_b if result.winner == "player_0" else pool_a
                     self.pool.update_elo(winner_pool, loser_pool)
 
-                # Collect experience
+                # Collect experience with real encoded states
                 if collect and self.experience_buffer is not None:
                     for pid in player_ids:
                         reward = 1.0 if pid == result.winner else -1.0 if result.winner else 0.0
+                        # Extract real state features from collector trajectories
+                        state_feats = self._extract_terminal_features(collector, pid)
                         exp = Experience(
-                            state_features=[0.0] * 64,  # placeholder until encoding
+                            state_features=state_feats,
                             action_index=0,
                             reward=reward,
-                            next_state_features=[0.0] * 64,
+                            next_state_features=state_feats,
                             done=True,
                             metadata={"game_turns": result.turns, "player_id": pid},
                         )
@@ -379,6 +409,25 @@ class RLTrainer:
 
         return total_loss / max(self.config.train_steps_per_iter, 1)
 
+    def _extract_terminal_features(self, collector, player_id: str) -> list[float]:
+        """Extract flattened state features from the last trajectory transition.
+
+        Falls back to zeros if no tokenized features are available.
+        """
+        if collector is None:
+            return [0.0] * 64
+        # Look for the last transition with populated state features
+        for traj in reversed(collector.collected_trajectories):
+            for transition in reversed(traj.transitions):
+                if isinstance(transition.state_features, dict):
+                    # Flatten all arrays into a single list
+                    flat = []
+                    for v in transition.state_features.values():
+                        import numpy as np
+                        flat.extend(np.asarray(v).flatten().tolist())
+                    return flat
+        return [0.0] * 64
+
     def _run_dream_training(self):
         """Run world model dream training on collected trajectories."""
         if self.trajectory_store is None or len(self.trajectory_store) < 10:
@@ -397,6 +446,33 @@ class RLTrainer:
             logger.info("Dream training iteration complete")
         except Exception as e:
             logger.warning("Dream training failed: %s", e)
+
+    async def _run_kg_enrichment(self):
+        """Run KG auto-enrichment from collected trajectories."""
+        if self.trajectory_store is None or len(self.trajectory_store) < 10:
+            return
+
+        try:
+            from src.knowledge.kg_enrichment import KGEnrichment
+
+            # Try to connect to KG — if unavailable, run in offline mode
+            kg = None
+            try:
+                from src.knowledge.knowledge_graph import MTGKnowledgeGraph
+                kg = MTGKnowledgeGraph()
+            except Exception:
+                pass
+
+            enrichment = KGEnrichment(kg=kg)
+            report = await enrichment.enrich_from_trajectories(self.trajectory_store)
+            logger.info(
+                "KG enrichment: %d synergies proposed, %d written, %d card stats updated",
+                report.synergies_proposed,
+                report.synergies_written,
+                report.card_stats_updated,
+            )
+        except Exception as e:
+            logger.warning("KG enrichment failed: %s", e)
 
     def _build_deck(self) -> list[dict]:
         """Build a deck for training games."""

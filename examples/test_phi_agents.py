@@ -39,8 +39,8 @@ print("TESTING PHI LLM AGENTS - Magic: The Gathering")
 print("="*70 + "\n")
 
 print("Initializing agents...")
-agent_aggro = MTGAgentLLM("Aggressive", strategy="aggressive", ollama_model="phi")
-agent_control = MTGAgentLLM("Control", strategy="control", ollama_model="phi")
+agent_aggro = MTGAgentLLM("Aggressive", strategy="aggressive", ollama_model="gemma4:2b")
+agent_control = MTGAgentLLM("Control", strategy="control", ollama_model="gemma4:2b")
 
 print(f"Aggressive Agent - LLM Available: {agent_aggro.llm.is_available}")
 print(f"Control Agent - LLM Available: {agent_control.llm.is_available}\n")

@@ -42,7 +42,7 @@ class AgentGamePlayer:
                  strategy: Strategy = Strategy.AGGRESSIVE,
                  knowledge_graph: Optional[MTGKnowledgeGraph] = None,
                  use_llm: bool = False,
-                 llm_model: str = "phi"):
+                 llm_model: str = "gemma4:2b"):
         """Initialize an agent game player.
         
         Args:

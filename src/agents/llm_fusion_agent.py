@@ -44,7 +44,7 @@ class FusionConfig:
 
     # LLM config
     llm_provider: str = "ollama"   # "ollama" | "openai" | "anthropic"
-    llm_model: str = "mistral"
+    llm_model: str = "gemma4:2b"
     llm_timeout: float = 15.0
 
     # When to skip LLM (for speed)
