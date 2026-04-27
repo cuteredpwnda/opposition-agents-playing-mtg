@@ -21,6 +21,7 @@ from .abilities import (
     is_mana_ability,
     resolve_ability
 )
+from .spell_effects import apply_spell_effect, auto_pick_targets
 
 
 def _get_color_identity(card):
@@ -231,12 +232,11 @@ class RulesEngine:
 
         # Combat actions: declare attackers/blockers during combat phases
         from .game_state import Phase
+        from .combat import can_attack, can_block
         if state.phase == Phase.COMBAT_ATTACKERS and state.players[state.active_player_index].player_id == player_id:
-            # During declare attackers, generate options for attacking creatures
-            # In commander/multiplayer, allow attacking any non-self opponent
             opponents = [p.player_id for p in state.players if p.player_id != player_id]
             for card in battlefield:
-                if card.is_creature() and not card.tapped and not card.summoning_sick:
+                if can_attack(card, state.turn_number):
                     for defender_id in opponents:
                         actions.append(
                             Action(
@@ -244,6 +244,23 @@ class RulesEngine:
                                 player_id=player_id,
                                 card_instance_id=card.instance_id,
                                 targets=[defender_id],
+                            )
+                        )
+
+        if state.phase == Phase.COMBAT_BLOCKERS and state.players[state.active_player_index].player_id != player_id and state.combat is not None:
+            # Defender enumerates legal (attacker, blocker) pairs.
+            for attacker_id in state.combat.attackers.keys():
+                attacker = next((c for c in state.cards if c.instance_id == attacker_id), None)
+                if attacker is None:
+                    continue
+                for card in battlefield:
+                    if can_block(attacker, card):
+                        actions.append(
+                            Action(
+                                action_type=ActionType.DECLARE_BLOCKERS,
+                                player_id=player_id,
+                                card_instance_id=card.instance_id,
+                                targets=[attacker_id],
                             )
                         )
 
@@ -315,15 +332,21 @@ class RulesEngine:
                         action.player_id
                     )
 
+                    # Pick targets if the agent didn't supply any.
+                    targets = list(action.targets) if action.targets else auto_pick_targets(
+                        state, card, action.player_id
+                    )
+
                     # Create stack item and push to stack
                     stack_item = StackItem(
                         source_card_id=action.card_instance_id,
                         controller_id=action.player_id,
                         is_spell=True,
+                        targets=targets,
                         card_data=card.card_data.copy(),
                     )
                     state = push_to_stack(state, stack_item)
-                    state.log(f"{card.name} is cast")
+                    state.log(f"{card.name} is cast" + (f" targeting {targets}" if targets else ""))
             return state
         
         if action.action_type == ActionType.ACTIVATE_ABILITY:
@@ -379,20 +402,27 @@ class RulesEngine:
                 card = next((c for c in state.cards if c.instance_id == action.card_instance_id), None)
                 defender_id = action.targets[0]
                 if card:
-                    from .combat import declare_attackers
+                    from .combat import declare_attackers, has_kw
                     from .triggers import check_attack_triggers
-                    
+
+                    # Ensure CombatState exists (priority loop normally creates
+                    # this in COMBAT_BEGIN, but tests/legal-action paths may
+                    # call execute_action without that hook).
+                    if state.combat is None:
+                        from .combat import begin_combat
+                        begin_combat(state)
+
                     declare_attackers(state, {action.card_instance_id: defender_id})
-                    card.tapped = True
-                    
-                    # ATTACKS TRIGGERS: Fire "when creature attacks" triggers
+                    # `declare_attackers` already taps unless vigilance — don't
+                    # double-tap here.
+
+                    # ATTACKS TRIGGERS
                     attack_triggers = check_attack_triggers(state, card)
-                    
                     for trigger in attack_triggers:
                         trigger_stack_item = StackItem(
                             source_card_id=trigger.source_card_id,
                             controller_id=trigger.controller_id,
-                            is_spell=False,  # It's an ability
+                            is_spell=False,
                             card_data={
                                 "name": f"[Trigger] {trigger.description}",
                                 "type_line": "Ability",
@@ -402,7 +432,20 @@ class RulesEngine:
                         state.log(f"[TRIGGER (ATTACK)] {trigger.description} added to stack")
                         state.triggered_abilities.append(trigger)
             return state
-        
+
+        if action.action_type == ActionType.DECLARE_BLOCKERS:
+            if action.card_instance_id and action.targets:
+                from .combat import declare_blockers
+                attacker_id = action.targets[0]
+                if state.combat is None:
+                    return state
+                # Append to existing blocker list for this attacker.
+                existing = list(state.combat.blockers.get(attacker_id, []))
+                if action.card_instance_id not in existing:
+                    existing.append(action.card_instance_id)
+                declare_blockers(state, {attacker_id: existing})
+            return state
+
         # Default: no change
         return state
 
@@ -476,11 +519,14 @@ class RulesEngine:
                 state.triggered_abilities.append(trigger)
         
         else:
-            # For non-creatures, move to graveyard (they've resolved)
-            # TODO: Implement actual spell resolution effects
-            state = move_card(state, source_card_id, Zone.STACK, Zone.GRAVEYARD, card.owner_id)
+            # Non-creature spell: apply its effect, then move to graveyard.
+            state = apply_spell_effect(state, stack_item)
+            # If the spell wasn't already moved (e.g., counter spells don't
+            # move themselves), send it to the graveyard now.
+            if card.zone == Zone.STACK:
+                state = move_card(state, source_card_id, Zone.STACK, Zone.GRAVEYARD, card.owner_id)
             state.log(f"{card.name} resolves")
-        
+
         return state
 
     def resolve_stack_item(self, state: GameState) -> GameState:
@@ -540,18 +586,21 @@ class RulesEngine:
                 events.append(f"{player.name} loses the game (life <= 0)")
                 died_this_check.append(player.player_id)
 
-        # Creatures with lethal damage or 0 toughness die
+        # Creatures with lethal damage or 0 toughness die.
+        # Indestructible (CR 702.12) creatures ignore lethal damage and "destroy"
+        # but still die from 0 (or less) toughness.
         for card in list(state.cards):
             if card.zone != Zone.BATTLEFIELD or not card.is_creature():
                 continue
-            
+
             toughness = _parse_int(card.toughness)
+            indestructible = "indestructible" in (card.oracle_text or "").lower()
             creature_dies = False
-            
-            if toughness is not None and card.damage_marked >= toughness:
+
+            if toughness is not None and card.damage_marked >= toughness and not indestructible:
                 events.append(f"{card.name} dies (lethal damage)")
                 creature_dies = True
-                
+
             elif toughness is not None and toughness <= 0:
                 events.append(f"{card.name} dies (0 toughness)")
                 creature_dies = True

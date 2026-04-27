@@ -1,78 +1,204 @@
-"""
-Keyword ability implementations — Flying, Haste, Lifelink, Menace, etc.
+"""Canonical keyword detection and validity helpers (CR 702).
 
-This module provides keyword ability checks and resolution logic.
-"""
+This module is the single source of truth for "does card X have keyword Y?"
+and for queries like "is this permanent a legal target for `controller`?".
 
+Keywords supported (per CR 702 evergreen + a handful of common deciduous):
+
+Combat:
+    flying, reach, menace, vigilance, haste, defender,
+    first strike, double strike, trample, lifelink,
+    deathtouch, indestructible
+
+Targeting / interaction:
+    hexproof, shroud, protection from <color>, ward {N}
+
+Cast-time / triggered:
+    flash, prowess
+
+The detector is permissive: it scans ``oracle_text`` (case-insensitive) and
+``card_data["keywords"]`` (Scryfall-style list). Keyword text inside reminder
+parens still counts — Scryfall reminder text uses the same wording.
+"""
 from __future__ import annotations
 
-from src.engine.game_state import CardInstance, GameState
+import re
+from typing import Optional
+
+from .game_state import CardInstance, GameState, Zone
 
 
-def has_keyword(card: CardInstance, keyword: str) -> bool:
-    """Check if a card has a specific keyword."""
-    return keyword.lower() in card.oracle_text.lower()
+_EVERGREEN = (
+    "flying", "reach", "menace", "vigilance", "haste", "defender",
+    "first strike", "double strike", "trample", "lifelink",
+    "deathtouch", "indestructible", "hexproof", "shroud",
+    "flash", "prowess",
+)
 
 
-def can_block_with(attacker: CardInstance, defender: CardInstance) -> bool:
-    """Check if defender can block attacker (considering evasion keywords)."""
-    if not defender.is_creature:
+def has(card: Optional[CardInstance], keyword: str) -> bool:
+    """Case-insensitive membership in oracle text or keywords list."""
+    if card is None:
         return False
-    
-    # Flying blockers can only block flying
-    if has_keyword(attacker, "flying") and not has_keyword(defender, "flying"):
-        # Flying creatures can be blocked by birds/other flying, or reach creatures
-        if not has_keyword(defender, "reach"):
-            return False
-    
-    # Shadow can't be blocked by non-shadow
-    if has_keyword(attacker, "shadow") and not has_keyword(defender, "shadow"):
+    kw = keyword.lower()
+    text = (card.oracle_text or "").lower()
+    if kw in text:
+        return True
+    raw = card.card_data.get("keywords") or []
+    if isinstance(raw, str):
+        raw = [raw]
+    return any(kw == str(k).lower() for k in raw)
+
+
+# Backwards-compat alias for older call sites.
+def has_keyword(card: Optional[CardInstance], keyword: str) -> bool:
+    return has(card, keyword)
+
+
+# ---------------------------------------------------------------------------
+# Protection
+# ---------------------------------------------------------------------------
+
+
+_COLOR_WORDS = ("white", "blue", "black", "red", "green")
+_COLOR_LETTER = {"white": "W", "blue": "U", "black": "B", "red": "R", "green": "G"}
+
+
+def protections(card: Optional[CardInstance]) -> list[str]:
+    """Color letters this permanent has protection from."""
+    if card is None:
+        return []
+    text = (card.oracle_text or "").lower()
+    out: list[str] = []
+    for word in _COLOR_WORDS:
+        if f"protection from {word}" in text:
+            out.append(_COLOR_LETTER[word])
+    return out
+
+
+def _spell_colors(card: CardInstance) -> set[str]:
+    raw = card.card_data.get("colors") or []
+    if isinstance(raw, str):
+        raw = [raw]
+    out: set[str] = set()
+    for c in raw:
+        s = str(c).upper()
+        if s in {"W", "U", "B", "R", "G"}:
+            out.add(s)
+    if not out:
+        for letter in re.findall(r"\{([WUBRG])\}", card.mana_cost or ""):
+            out.add(letter)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Ward
+# ---------------------------------------------------------------------------
+
+
+def ward_cost(card: Optional[CardInstance]) -> int:
+    """Generic ward cost (CR 702.21), or 0 if absent."""
+    if card is None:
+        return 0
+    text = (card.oracle_text or "").lower()
+    m = re.search(r"ward\s*\{(\d+)\}", text)
+    if m:
+        return int(m.group(1))
+    if "ward" in text:
+        return 1
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# Targeting validity
+# ---------------------------------------------------------------------------
+
+
+def can_be_targeted(
+    target: CardInstance,
+    source: Optional[CardInstance],
+    source_controller_id: str,
+) -> bool:
+    """True if ``target`` is a legal target for a spell/ability ``source``
+    that ``source_controller_id`` controls.
+
+    Implements hexproof, shroud, and protection-from-color.
+    """
+    if target is None:
         return False
-    
-    # Unblockable by creatures with specific color/type
-    unblockable = [
-        "unblockable by blue creatures",
-        "unblockable by red creatures",
-        "unblockable by creatures",
-    ]
-    for u in unblockable:
-        if u in attacker.oracle_text.lower():
+    is_opponent_source = target.controller_id != source_controller_id
+    if has(target, "shroud"):
+        return False
+    if has(target, "hexproof") and is_opponent_source:
+        return False
+    if source is not None:
+        protected = protections(target)
+        if protected and (_spell_colors(source) & set(protected)):
             return False
-    
     return True
 
 
-def menace_can_be_blocked(
-    attacker: CardInstance, potential_blockers: list[CardInstance]
-) -> bool:
-    """Check if menace creature can be blocked (requires 2+ blockers).
-    
-    Menace means "This creature can't be blocked except by two or more creatures."
-    """
-    if not has_keyword(attacker, "menace"):
-        return True  # Not menace, normal blocking rules apply
-    
-    # Count valid blockers
-    valid_blockers = [b for b in potential_blockers if can_block_with(attacker, b)]
-    
-    # Menace requires 2+ blockers
-    return len(valid_blockers) >= 2
+# ---------------------------------------------------------------------------
+# Block legality (used by combat.can_block)
+# ---------------------------------------------------------------------------
 
 
-def apply_lifelink(
-    damage: int, attacker: CardInstance, defender_id: str, game_state: GameState
-) -> GameState:
-    """If attacker has lifelink, deal damage and gain that much life."""
-    if has_keyword(attacker, "lifelink"):
-        # Find attacker controller in players
-        controller_id = attacker.controller
-        if controller_id in game_state.players:
-            game_state.players[controller_id].life += damage
-    return game_state
+def can_block_with(attacker: CardInstance, defender: CardInstance) -> bool:
+    """Legality wrapper kept for backwards compatibility with older callers."""
+    if defender is None or not defender.is_creature():
+        return False
+    if has(attacker, "flying") and not (has(defender, "flying") or has(defender, "reach")):
+        return False
+    return True
 
 
-def apply_deathtouch(damage: int, defender: CardInstance) -> int:
-    """Deathtouch: 1 damage is lethal."""
-    if hasattr(defender, "damage"):
-        return 1  # Only 1 damage needed to kill
-    return damage
+# ---------------------------------------------------------------------------
+# Prowess (triggered when controller casts a non-creature spell)
+# ---------------------------------------------------------------------------
+
+
+def apply_prowess_on_cast(
+    state: GameState, casting_player_id: str, cast_card: CardInstance
+) -> None:
+    """+1/+0 until end of turn for each prowess creature when caster casts a
+    non-creature spell (CR 702.108). Tracked via a counter cleared in cleanup."""
+    if cast_card.is_creature():
+        return
+    for c in state.cards:
+        if c.zone != Zone.BATTLEFIELD or c.controller_id != casting_player_id:
+            continue
+        if not c.is_creature() or not has(c, "prowess"):
+            continue
+        c.counters["prowess_eot"] = c.counters.get("prowess_eot", 0) + 1
+        state.log(f"{c.name}'s prowess triggers (+1/+0 until end of turn)")
+
+
+def clear_eot_buffs(state: GameState) -> None:
+    """Cleanup-step helper: clear 'until end of turn' counters."""
+    for c in state.cards:
+        if "prowess_eot" in c.counters:
+            c.counters.pop("prowess_eot", None)
+
+
+# ---------------------------------------------------------------------------
+# Effective P/T (factors prowess and other +X/+X temp counters)
+# ---------------------------------------------------------------------------
+
+
+def effective_power(card: CardInstance) -> int:
+    base = _parse_pt(card.power)
+    return base + card.counters.get("prowess_eot", 0) + card.counters.get("+1/+1", 0)
+
+
+def effective_toughness(card: CardInstance) -> int:
+    base = _parse_pt(card.toughness)
+    return base + card.counters.get("+1/+1", 0)
+
+
+def _parse_pt(value) -> int:
+    if value is None:
+        return 0
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
