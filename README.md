@@ -9,6 +9,29 @@ A research framework that combines **knowledge-graph-grounded JEPA world models*
 
 > If you use this project in academic work, please cite the [tech report](paper/opposition_agents_mtg.tex) (see [Citation](#citation)).
 
+## TL;DR
+
+We treat **Magic: The Gathering** — the most combinatorially complex commercial card game (≥10⁸⁰⁰ states, ~28k unique cards, partial observability, unbounded action space) — as a testbed for **neuro-symbolic reasoning under uncertainty**. The framework couples four ideas that are usually studied in isolation:
+
+1. **A from-scratch Comprehensive-Rules engine** (state-based actions, stack/priority, triggers, replacement effects) so we control every observation we hand to an agent.
+2. **A Neo4j knowledge graph** built from an OWL 2 ontology of cards/keywords/archetypes/combos, queried by agents for symbolic strategic reasoning (combo detection, archetype inference, GraphRAG context).
+3. **A V+M+C+JEPA world model** — a Set-Transformer + VAE state encoder, an MDN-LSTM dynamics model, a controller, and a JEPA latent predictor — trained on self-play trajectories for imagination-based planning.
+4. **Active-Inference LLM agents** that fuse symbolic graph queries, latent rollouts, and free-energy-minimising action selection, with a per-opponent belief module that does **exact** library/hand inference when decklists are public.
+
+A champion-vs-challenger self-play loop with ELO promotion drives improvement. The full pipeline is described in the [tech report](paper/opposition_agents_mtg.tex) ([build instructions](paper/README.md)).
+
+### What you can do with this repo today
+
+| You want to… | Read | Run |
+|---|---|---|
+| Play a game with random/heuristic agents | [docs/HOW_IT_ALL_WORKS.md](docs/HOW_IT_ALL_WORKS.md) | `python examples/demo_game_simple.py` |
+| Play a game with LLM agents (Ollama) | [docs/OLLAMA_SETUP.md](docs/OLLAMA_SETUP.md) | `python examples/demo_phi_agents.py` |
+| Inspect the world-model design | [docs/WORLD_MODEL_DESIGN.md](docs/WORLD_MODEL_DESIGN.md) | `pytest tests/test_world_model_pytest.py` |
+| Track a real Commander opponent's hand exactly | [docs/OPPONENT_MODELING_WITH_DECKLIST.md](docs/OPPONENT_MODELING_WITH_DECKLIST.md) | see snippet below |
+| Run the standard agent benchmark | [Benchmarks](#benchmarks) | `python -m src.training.benchmark_suite` |
+| Train the neural reasoner on collected trajectories | [Training](#training) | `python scripts/train_neural_reasoner.py` |
+| Read the science behind it | [paper/opposition_agents_mtg.tex](paper/opposition_agents_mtg.tex) | `cd paper && latexmk -pdf` |
+
 ## Overview
 
 This project builds an agentic framework where multiple AI agents compete in Magic: The Gathering games, using:
@@ -599,6 +622,41 @@ draw_probs = opponent.get_draw_probabilities(num_cards=1)
 - [src/agents/opponent_model.py](src/agents/opponent_model.py) - Updated with CardInformation tracking and process-of-elimination
 - [docs/OPPONENT_MODELING_WITH_DECKLIST.md](docs/OPPONENT_MODELING_WITH_DECKLIST.md) - Complete guide with examples
 
+## Benchmarks
+
+The repo ships with a reproducible benchmark harness ([src/training/benchmark_suite.py](src/training/benchmark_suite.py)) that pits any set of agents against each other across six standard archetype decks ([src/training/archetype_decks.py](src/training/archetype_decks.py)): mono-red aggro, mono-blue control, mono-green ramp, mono-white weenie, mono-black midrange, and Izzet burn. It records per-game CSV (`games.csv`) plus aggregate `summary.json` with win-rates, average decision-time per agent, and incremental ELO updates.
+
+### Run the default benchmark locally
+
+```bash
+# Random vs Heuristic on all six archetype pairs, 4 games each, 4 in parallel
+python -m src.training.benchmark_suite \
+    --games-per-match 4 \
+    --parallel 4 \
+    --output-dir runs/bench-baseline
+```
+
+Add the LLM baseline (requires Ollama running with `gemma4:e2b` — see [docs/OLLAMA_SETUP.md](docs/OLLAMA_SETUP.md)):
+
+```bash
+python -m src.training.benchmark_suite --include-llm --parallel 2
+```
+
+### Where to run them
+
+| Workload | Hardware target | Wall-clock (rough) |
+|---|---|---|
+| Random + Heuristic baselines, 6 archetypes × 6 pairings × 10 games | **Laptop / desktop CPU** (1–4 cores) | minutes |
+| LLM baseline (Ollama `gemma4:e2b`), 100 games | Single workstation with **8+ GB VRAM** *or* CPU-only Ollama | tens of minutes |
+| Full self-play loop ([src/training/self_play.py](src/training/self_play.py)) for 1k iterations | **GPU server** (≥1× consumer GPU, ≥32 GB RAM) | hours–days |
+| World-model + neural-reasoner training on stored trajectories | **GPU server** with PyTorch (CUDA) | hours |
+
+In short: **the benchmark suite and all symbolic agents run fine on this laptop today.** Anything that involves repeated LLM calls, JEPA training, or multi-thousand-game self-play should go on a server with a GPU and enough RAM to keep the trajectory store in memory. A single A6000/4090-class GPU is plenty for everything described in the paper; a small node with one such GPU + 64 GB RAM is the recommended setup.
+
+### Default LLM
+
+The default Ollama model has been switched to **`gemma4:e2b`** (Gemma 4 "edge 2B" variant) across [src/agents/llm_agent.py](src/agents/llm_agent.py), [src/agents/llm_fusion_agent.py](src/agents/llm_fusion_agent.py), [src/engine/llm_orchestration.py](src/engine/llm_orchestration.py), and the example scripts. It gives noticeably stronger reasoning than the previous tag at the same VRAM budget. Pull it with `ollama pull gemma4:e2b`.
+
 ## Configuration
 
 Set environment variables in `.env`:
@@ -688,7 +746,7 @@ If you use this codebase or build on its design, please cite:
 
 ```bibtex
 @techreport{neuburger2026oppositionagents,
-  author      = {Neub\"urger, Felix},
+  author      = {Neub\"urger, Felix and Neub\"urger, Jonas},
   title       = {Opposition Agents Playing Magic: The Gathering --
                  Knowledge-Graph-Grounded JEPA World Models and
                  Active-Inference LLM Agents},
@@ -737,7 +795,10 @@ MIT License. See LICENSE file.
 
 ## Authors
 
-- Project repository: https://github.com/cuteredpwnda/opposition-agents-playing-mtg
+- **Felix Neubürger** — design, world-model, knowledge-graph, agents.
+- **Jonas Neubürger** ([@cuteredpwnda](https://github.com/cuteredpwnda)) — engine, training infrastructure, ontology.
+
+Project repository: <https://github.com/cuteredpwnda/opposition-agents-playing-mtg>
 
 ## Known Limitations
 

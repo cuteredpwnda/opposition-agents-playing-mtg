@@ -1,0 +1,61 @@
+{
+  "config": {
+    "seed": 0,
+    "games_per_match": 4,
+    "max_turns": 25,
+    "archetypes": [
+      "izzet_burn",
+      "mono_black_midrange",
+      "mono_blue_control"
+    ],
+    "parallel": 4,
+    "ablation": null
+  },
+  "per_agent": {
+    "Random": {
+      "wins": 0,
+      "losses": 0,
+      "draws": 36,
+      "games": 36,
+      "winrate": 0.0
+    },
+    "Heuristic": {
+      "wins": 0,
+      "losses": 0,
+      "draws": 36,
+      "games": 36,
+      "winrate": 0.0
+    }
+  },
+  "elo": {
+    "Random": 1000.0,
+    "Heuristic": 1000.0
+  },
+  "per_archetype_pair": {
+    "izzet_burn__vs__izzet_burn": {
+      "games": 4,
+      "decisive": 0
+    },
+    "izzet_burn__vs__mono_black_midrange": {
+      "games": 8,
+      "decisive": 0
+    },
+    "izzet_burn__vs__mono_blue_control": {
+      "games": 8,
+      "decisive": 0
+    },
+    "mono_black_midrange__vs__mono_black_midrange": {
+      "games": 4,
+      "decisive": 0
+    },
+    "mono_black_midrange__vs__mono_blue_control": {
+      "games": 8,
+      "decisive": 0
+    },
+    "mono_blue_control__vs__mono_blue_control": {
+      "games": 4,
+      "decisive": 0
+    }
+  },
+  "total_games": 36
+}

@@ -10,12 +10,13 @@ This project uses Ollama for LLM-powered agent decision-making in Magic: The Gat
 
 2. **Pull a model**
    ```bash
-   ollama pull gemma4:2b
+   ollama pull gemma4:e2b
    ```
    
    Other recommended models:
-   - `ollama pull gemma4:12b` - Larger Gemma 4 (better reasoning, needs more VRAM)
-   - `ollama pull gemma4:27b` - Full Gemma 4 (best quality)
+   - `ollama pull gemma4:e4b` - Larger Gemma 4 edge variant (better reasoning, ~4 GB VRAM)
+   - `ollama pull gemma4:12b` - Mid-tier Gemma 4 (needs ~8 GB VRAM)
+   - `ollama pull gemma4:27b` - Full Gemma 4 (best quality, ~16 GB VRAM)
    - `ollama pull mistral` - Alternative open-source model
    - `ollama pull phi` - Lightweight option
 
@@ -44,7 +45,7 @@ python examples/meta_game.py
 ```
 
 The output will show:
-- **[OLLAMA ENABLED - gemma4:2b]**: LLM is active
+- **[OLLAMA ENABLED - gemma4:e2b]**: LLM is active
 - **[LLM] actions**: Decisions made by the language model
 - **[Heuristic] actions**: Fallback decisions when LLM is unavailable
 
@@ -55,7 +56,7 @@ STANDARD META TOURNAMENT - March 2026
 LLM-POWERED AGENTS (Ollama)
 ======================================================================
 
-Agent Mode: [OLLAMA ENABLED - gemma4:2b]
+Agent Mode: [OLLAMA ENABLED - gemma4:e2b]
 Ollama URL: http://localhost:11434
 
 ======================================================================

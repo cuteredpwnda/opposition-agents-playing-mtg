@@ -194,8 +194,19 @@ class CardInstance:
 
     @property
     def is_token(self) -> bool:
-        """Check if this card is a token (lacks a card set, o/w has token=true)."""
-        return self.card_data.get("token", False) or self.card_data.get("set") is None
+        """Whether this card instance is a token (CR 111.1).
+
+        Tokens must be flagged explicitly via ``card_data['is_token']`` or
+        ``card_data['token']``. We intentionally do *not* infer token-ness
+        from a missing ``set`` field, because user-supplied / synthetic deck
+        dictionaries (e.g., the archetype benchmark decks) routinely omit
+        ``set`` and would otherwise be wiped out by CR 704.5d on the first
+        state-based-action check.
+        """
+        return bool(
+            self.card_data.get("is_token", False)
+            or self.card_data.get("token", False)
+        )
 
     @property
     def keywords(self) -> list[str]:

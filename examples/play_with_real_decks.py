@@ -160,7 +160,7 @@ async def play_with_real_decks():
         Strategy.AGGRESSIVE,
         knowledge_graph=None,
         use_llm=True,
-        llm_model="gemma4:2b"
+        llm_model="gemma4:e2b"
     )
     
     control_agent = AgentGamePlayer(
@@ -168,7 +168,7 @@ async def play_with_real_decks():
         Strategy.CONTROL,
         knowledge_graph=None,
         use_llm=True,
-        llm_model="gemma4:2b"
+        llm_model="gemma4:e2b"
     )
     
     print(f"✓ {aggro_agent.player_id} ({aggro_agent.strategy.value})")

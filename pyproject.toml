@@ -9,7 +9,10 @@ description = "Knowledge-graph-grounded JEPA world models and active-inference L
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
-authors = [{ name = "Felix Neubürger" }]
+authors = [
+    { name = "Felix Neubürger" },
+    { name = "Jonas Neubürger" },
+]
 keywords = [
     "magic-the-gathering",
     "mtg",

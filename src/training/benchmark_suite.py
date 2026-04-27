@@ -178,7 +178,9 @@ class StandardBenchmarkSuite:
                 {"player_1": agent_a, "player_2": agent_b}, decks
             )
         except Exception as exc:
-            logger.warning("Game crashed (%s vs %s): %s", name_a, name_b, exc)
+            logger.warning(
+                "Game crashed (%s vs %s): %s", name_a, name_b, exc, exc_info=True
+            )
             return None
         finally:
             timed.detach()
@@ -393,3 +395,57 @@ async def run_default_benchmark(
     )
     suite = StandardBenchmarkSuite(default_baseline_factories(include_llm), cfg)
     return await suite.run()
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+def _build_argparser():
+    import argparse
+
+    p = argparse.ArgumentParser(
+        description="Run the standard MTG agent benchmark suite",
+    )
+    p.add_argument("--games-per-match", type=int, default=5)
+    p.add_argument("--max-turns", type=int, default=30)
+    p.add_argument("--parallel", type=int, default=2)
+    p.add_argument("--seed", type=int, default=0)
+    p.add_argument(
+        "--archetypes",
+        nargs="*",
+        default=None,
+        help="Subset of archetype names; defaults to the first three.",
+    )
+    p.add_argument("--output-dir", default="logs/benchmark")
+    p.add_argument(
+        "--include-llm",
+        action="store_true",
+        help="Include the Ollama LLM baseline (requires a running Ollama server).",
+    )
+    return p
+
+
+def main(argv: list[str] | None = None) -> int:
+    import asyncio
+    import json
+    import logging
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    args = _build_argparser().parse_args(argv)
+    summary = asyncio.run(
+        run_default_benchmark(
+            games_per_match=args.games_per_match,
+            max_turns=args.max_turns,
+            parallel=args.parallel,
+            seed=args.seed,
+            archetypes=args.archetypes,
+            output_dir=args.output_dir,
+            include_llm=args.include_llm,
+        )
+    )
+    print(json.dumps(summary, indent=2, default=str))
+    return 0
+
+
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(main())

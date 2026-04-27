@@ -32,7 +32,7 @@ class OllamaConnector:
     """Manages connection to Ollama API for LLM inference."""
     
     def __init__(self, 
-                 model: str = "gemma4:2b",
+                 model: str = "gemma4:e2b",
                  base_url: str = "http://localhost:11434",
                  timeout: int = 60):
         """Initialize Ollama connector.

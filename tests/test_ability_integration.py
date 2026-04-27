@@ -166,7 +166,12 @@ def test_activated_ability_mana_generation():
 
 
 def test_rules_engine_execute_activate_ability_uses_mana_ability():
-    """Test RulesEngine.execute_action for ACTIVATE_ABILITY with mana ability."""
+    """Mana abilities are auto-tapped via `auto_tap_for_cost`, not surfaced as
+    discrete `ACTIVATE_ABILITY` actions in `get_legal_actions` (so naive agents
+    don't spend whole priority cycles tapping lands). They must, however, still
+    execute correctly when an Action is constructed manually.
+    """
+    from src.engine.abilities import parse_abilities
     game = create_ability_test_game()
     alice = game.players[0]
 
@@ -188,11 +193,20 @@ def test_rules_engine_execute_activate_ability_uses_mana_ability():
     from src.engine.rules_engine import RulesEngine
     engine = RulesEngine()
 
+    # Mana abilities should be hidden from legal-action enumeration.
     legal_actions = engine.get_legal_actions(game, "Alice")
     activate_actions = [a for a in legal_actions if a.action_type == ActionType.ACTIVATE_ABILITY]
-    assert activate_actions, "Should have an activate ability action"
+    assert not activate_actions, "Mana abilities must not be surfaced as discrete actions"
 
-    action = activate_actions[0]
+    # But executing the activated ability directly must still work.
+    abilities = parse_abilities(land)
+    mana_ability = next(a for a in abilities if a.can_use_any_time)
+    action = Action(
+        action_type=ActionType.ACTIVATE_ABILITY,
+        player_id="Alice",
+        card_instance_id=land.instance_id,
+        metadata={"ability_id": mana_ability.ability_id},
+    )
     game = engine.execute_action(game, action)
 
     assert alice.mana_pool["R"] == 1, "Alice should have gained red mana"

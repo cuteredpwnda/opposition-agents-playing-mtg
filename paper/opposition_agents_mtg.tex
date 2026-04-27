@@ -82,6 +82,7 @@
        and Active-Inference LLM Agents}
 
 \author[1]{Felix Neub\"urger}
+\author[1]{Jonas Neub\"urger}
 \affil[1]{Independent Research \\ \texttt{github.com/cuteredpwnda/opposition-agents-playing-mtg}}
 
 \date{April 2026}
@@ -254,7 +255,7 @@ $\theta$ is the promotion threshold (default $0.55$). The loop is implemented in
 \label{sec:impl}
 
 The codebase is organised into eight top-level packages under \texttt{src/}:
-\texttt{engine/} (Comprehensive-Rules engine), \texttt{knowledge/} (Neo4j, n10s, GraphRAG, GraphSAGE), \texttt{world\_model/} (V, M, C, JEPA, KG-encoder, tokeniser), \texttt{agents/} (LLM, fusion, active-inference, opponent-model), \texttt{orchestrator/} (LangGraph runner, priority loop), \texttt{training/} (RL trainer, self-play, rewards, benchmarks), \texttt{judge/} (RAG over Comprehensive Rules) and \texttt{integrations/} (Scryfall, decklist loaders, SQLite cache). External services (Neo4j, Ollama) are orchestrated via \texttt{docker-compose}. The default LLM is \texttt{gemma4:2b} for low-end hardware compatibility, swappable to any Ollama-served model.
+\texttt{engine/} (Comprehensive-Rules engine), \texttt{knowledge/} (Neo4j, n10s, GraphRAG, GraphSAGE), \texttt{world\_model/} (V, M, C, JEPA, KG-encoder, tokeniser), \texttt{agents/} (LLM, fusion, active-inference, opponent-model), \texttt{orchestrator/} (LangGraph runner, priority loop), \texttt{training/} (RL trainer, self-play, rewards, benchmarks), \texttt{judge/} (RAG over Comprehensive Rules) and \texttt{integrations/} (Scryfall, decklist loaders, SQLite cache). External services (Neo4j, Ollama) are orchestrated via \texttt{docker-compose}. The default LLM is \texttt{gemma4:e2b} (Gemma~4 edge variant) for low-end hardware compatibility, swappable to any Ollama-served model.
 
 \paragraph{Reproducibility.} All randomness flows through a single \texttt{numpy.random.Generator} seeded by \texttt{config.seed}. Decklists are committed alongside the code under \texttt{examples/}. The pipeline (\texttt{scripts/train\_pipeline.py}) has seven stages (infra check, KG build, GNN embedding, self-play, JEPA, dream evaluation, model evaluation) each individually re-runnable.
 
@@ -278,7 +279,7 @@ We deliberately do not claim ``state of the art'' numbers: we know of no compara
 
 \paragraph{Scope.} The current engine targets a Standard subset and an extended Commander subset; banding, phasing, planeswalker loyalty abilities, and exotic targeting restrictions remain partial. The ontology v1.1 covers core mechanics but does not yet encode every keyword from every set --- a known limitation that motivates the OntologyExtender workflow (\Cref{sec:future}).
 
-\paragraph{Compute.} Defaults are tuned for a single-GPU workstation: $z \in \mathbb{R}^{256}$, the LSTM hidden size is 512, the JEPA predictor is a 4-layer pre-norm Transformer, and the LLM is \texttt{gemma4:2b}. Larger pretrained encoders or stronger LLMs (e.g., \texttt{llama-3.1-70b}) would likely improve play strength but were not the focus of this report.
+\paragraph{Compute.} Defaults are tuned for a single-GPU workstation: $z \in \mathbb{R}^{256}$, the LSTM hidden size is 512, the JEPA predictor is a 4-layer pre-norm Transformer, and the LLM is \texttt{gemma4:e2b}. Larger pretrained encoders or stronger LLMs (e.g., \texttt{llama-3.1-70b}) would likely improve play strength but were not the focus of this report.
 
 \paragraph{Active inference vs. RL.} Active inference here is implemented at the \emph{decision} level (action selection conditional on world-model rollouts), not the \emph{learning} level (no free-energy objective for the model itself). This is a deliberate choice: the world model is trained by the standard MSE+KL JEPA objective, which we found to be more compute-efficient than full Bayesian model-evidence maximisation.
 
@@ -308,7 +309,7 @@ We have presented a research framework that approaches Magic: The Gathering not 
 
 % =============================================================================
 \section*{Acknowledgments}
-\noindent The author thanks the open-source maintainers of \texttt{open-mtg}, \texttt{Forge}, \texttt{XMage}, \texttt{Scrython}, \texttt{LangChain}, \texttt{LangGraph}, \texttt{Neo4j}, \texttt{n10s}, \texttt{APOC}, and \texttt{Ollama}, on whose work this project relies.
+\noindent The authors thank the open-source maintainers of \texttt{open-mtg}, \texttt{Forge}, \texttt{XMage}, \texttt{Scrython}, \texttt{LangChain}, \texttt{LangGraph}, \texttt{Neo4j}, \texttt{n10s}, \texttt{APOC}, and \texttt{Ollama}, on whose work this project relies.
 
 % =============================================================================
 \begin{thebibliography}{99}

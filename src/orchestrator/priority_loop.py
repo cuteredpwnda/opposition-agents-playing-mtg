@@ -117,12 +117,18 @@ async def run_priority_loop(
     passed_players: set[str] = set()
     
     loop_iterations = 0
-    max_iterations = 100000  # Increase to avoid early abort in random games
+    # Pure safety net. In a correctly-implemented agent the loop terminates
+    # in O(#players × actions-this-turn) iterations because every player
+    # eventually passes. The cap protects against pathological agents that
+    # never pass; it should never fire in normal play.
+    max_iterations = 500
 
     while True:
         loop_iterations += 1
         if loop_iterations > max_iterations:
-            game_state.log("Priority loop aborted: exceeded max iterations")
+            game_state.log(
+                "Priority loop aborted: exceeded max iterations (forcing phase end)"
+            )
             return game_state
 
         if game_state.game_over:

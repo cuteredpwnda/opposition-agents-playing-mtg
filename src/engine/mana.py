@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from typing import Optional
 
-from .game_state import GameState, PlayerState
+from .game_state import GameState, PlayerState, Zone
 
 
 # Mana cost parsing: {2}{W}{U} → generic=2, W=1, U=1
@@ -48,6 +48,84 @@ def can_pay(player: PlayerState, cost: dict[str, int]) -> bool:
     generic_needed = cost.get("generic", 0)
     total_remaining = sum(pool.values())
     return total_remaining >= generic_needed
+
+
+def potential_mana(state: GameState, player: PlayerState) -> dict[str, int]:
+    """Sum of current pool plus mana producible by untapped basic lands.
+
+    Used to expose ``CAST_SPELL`` actions whenever the player *could* afford
+    the spell after auto-tapping; the engine then auto-taps lands during
+    cast resolution. Treating mana abilities as implicit removes a whole
+    class of priority-loop livelock that hits naive agents (Random/Heuristic)
+    which would otherwise cycle ``ACTIVATE_ABILITY`` forever instead of
+    passing priority.
+    """
+    available = {c: player.mana_pool.get(c, 0) for c in "WUBRGC"}
+    for card in state.cards:
+        if (
+            card.zone == Zone.BATTLEFIELD
+            and card.controller_id == player.player_id
+            and not card.tapped
+            and "Land" in card.type_line
+        ):
+            color = _land_produces(card.card_data)
+            available[color] = available.get(color, 0) + 1
+    return available
+
+
+def can_pay_with_lands(state: GameState, player: PlayerState, cost: dict[str, int]) -> bool:
+    """Like ``can_pay`` but also counts producible mana from untapped lands."""
+    pool = dict(potential_mana(state, player))
+    for color in "WUBRGC":
+        required = cost.get(color, 0)
+        if pool.get(color, 0) < required:
+            return False
+        pool[color] = pool.get(color, 0) - required
+    return sum(pool.values()) >= cost.get("generic", 0)
+
+
+def auto_tap_for_cost(state: GameState, player: PlayerState, cost: dict[str, int]) -> bool:
+    """Tap untapped lands as needed so that ``can_pay`` returns True.
+
+    Returns True on success, False if even after tapping every land the cost
+    cannot be met. Lands are tapped greedily: colored requirements first,
+    then generic.
+    """
+    if can_pay(player, cost):
+        return True
+    # Index lands by produced color
+    untapped: dict[str, list] = {c: [] for c in "WUBRGC"}
+    for card in state.cards:
+        if (
+            card.zone == Zone.BATTLEFIELD
+            and card.controller_id == player.player_id
+            and not card.tapped
+            and "Land" in card.type_line
+        ):
+            untapped[_land_produces(card.card_data)].append(card)
+    # Pay colored requirements
+    for color in "WUBRG":
+        deficit = cost.get(color, 0) - player.mana_pool.get(color, 0)
+        while deficit > 0 and untapped.get(color):
+            land = untapped[color].pop()
+            tap_land_for_mana(state, player, land.instance_id)
+            deficit -= 1
+        if deficit > 0:
+            return False
+    # Pay generic from any remaining untapped lands
+    generic_remaining = cost.get("generic", 0) - max(
+        0,
+        sum(player.mana_pool.values()) - sum(
+            cost.get(c, 0) for c in "WUBRGC"
+        ),
+    )
+    if generic_remaining > 0:
+        for color in "CWUBRG":
+            while generic_remaining > 0 and untapped.get(color):
+                land = untapped[color].pop()
+                tap_land_for_mana(state, player, land.instance_id)
+                generic_remaining -= 1
+    return can_pay(player, cost)
 
 
 def pay_cost(player: PlayerState, cost: dict[str, int]) -> bool:
@@ -100,13 +178,32 @@ def tap_land_for_mana(
 
 
 def _land_produces(card_data: dict) -> str:
-    """Determine what color a basic land produces."""
-    name = card_data.get("name", "")
+    """Determine what color a basic land produces.
+
+    Resolution order:
+    1. Explicit oracle text ``"Add {X}"`` where X∈WUBRGC.
+    2. Basic-land name (or any name starting with one).
+    3. Fallback to colorless ``C``.
+    """
+    name = card_data.get("name", "") or ""
+    oracle = card_data.get("oracle_text", "") or ""
+
+    # 1) Oracle-text scan: "Add {R}", "{T}: Add {U}", etc.
+    match = re.search(r"add\s*\{([WUBRGC])\}", oracle, re.IGNORECASE)
+    if match:
+        return match.group(1).upper()
+
+    # 2) Basic-land name prefix match (handles "Mountain_8", "Plains 12", ...)
     mapping = {
         "Plains": "W",
         "Island": "U",
         "Swamp": "B",
         "Mountain": "R",
         "Forest": "G",
+        "Wastes": "C",
     }
-    return mapping.get(name, "C")
+    for basic, color in mapping.items():
+        if name == basic or name.startswith(basic):
+            return color
+
+    return "C"

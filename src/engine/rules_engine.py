@@ -14,7 +14,7 @@ from .game_state import Action, ActionType, GameState, Phase, Zone, StackItem
 from .phases import is_main_phase
 from .stack import is_empty as stack_is_empty
 from .stack import push_to_stack
-from .mana import can_pay, pay_cost, parse_mana_cost
+from .mana import auto_tap_for_cost, can_pay, can_pay_with_lands, pay_cost, parse_mana_cost
 from .abilities import (
     parse_abilities,
     get_legal_activated_abilities,
@@ -180,7 +180,7 @@ class RulesEngine:
                     continue
 
                 cost = _get_effective_cost(state, player, card)
-                if can_pay(player, cost):
+                if can_pay_with_lands(state, player, cost):
                     actions.append(
                         Action(
                             action_type=ActionType.CAST_SPELL,
@@ -203,7 +203,7 @@ class RulesEngine:
                     continue
 
                 cost = _get_effective_cost(state, player, card)
-                if can_pay(player, cost):
+                if can_pay_with_lands(state, player, cost):
                     actions.append(
                         Action(
                             action_type=ActionType.CAST_SPELL,
@@ -212,11 +212,14 @@ class RulesEngine:
                         )
                     )
 
-        # Activated abilities of permanents
-        # Mana abilities can be used anytime, other abilities require priority
+        # Activated abilities of permanents (skip mana abilities — those are
+        # implicit during cast resolution; surfacing them as discrete actions
+        # would let naive agents livelock the priority loop tapping lands).
         for card in battlefield:
             legal_abilities = get_legal_activated_abilities(state, card, player_id)
             for ability in legal_abilities:
+                if ability.can_use_any_time:  # mana abilities are flagged here
+                    continue
                 actions.append(
                     Action(
                         action_type=ActionType.ACTIVATE_ABILITY,
@@ -293,6 +296,10 @@ class RulesEngine:
                         return state
 
                     cost = _get_effective_cost(state, player, card)
+                    # Auto-tap untapped lands so naive agents don't have to
+                    # explicitly activate mana abilities before each cast.
+                    if not can_pay(player, cost):
+                        auto_tap_for_cost(state, player, cost)
                     if not can_pay(player, cost):
                         return state
 
@@ -507,8 +514,10 @@ class RulesEngine:
             return state
         
         else:
-            # This is a spell, resolve it normally (put it back and call resolve_spell)
-            state.stack.append(stack_item)
+            # This is a spell. resolve_spell expects the StackItem to no longer
+            # be on state.stack (it operates by looking up the card by id and
+            # moving it from Zone.STACK to its destination). We already popped
+            # it above, so just resolve directly.
             return self.resolve_spell(state, stack_item)
 
     def check_state_based_actions(self, state: GameState) -> list[str]:
