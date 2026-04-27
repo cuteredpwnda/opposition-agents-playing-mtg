@@ -81,56 +81,67 @@ class SelfPlayTrainer:
     async def run_self_play_games(
         self, num_games: int
     ) -> list[Experience]:
-        """Run games between copies of the current agent, collect experience."""
+        """Run games between copies of the current agent, collect experience.
+
+        Games are scheduled with :func:`asyncio.gather` and bounded by
+        ``TrainingConfig.num_parallel_games`` so callers can saturate the
+        event loop without overwhelming it.
+        """
         import asyncio
         from src.agents.llm_agent import LLMAgent
         from src.orchestrator.game_runner import GameRunner, GameConfig
 
-        experiences: list[Experience] = []
+        sem = asyncio.Semaphore(max(1, int(self.config.num_parallel_games)))
 
-        # For now, run games sequentially (stub for parallelization)
-        for game_num in range(min(num_games, 5)):  # Limit to 5 games for testing
-            try:
-                # Create two agents
-                agent1 = LLMAgent(player_id="player_1")
-                agent2 = LLMAgent(player_id="player_2")
-                agents = {"player_1": agent1, "player_2": agent2}
-
-                # Create mock decks (simplified)
-                decks = {
-                    "player_1": create_mock_deck(),
-                    "player_2": create_mock_deck(),
-                }
-
-                # Run game
-                runner = GameRunner(GameConfig(max_turns=50))
-                result = await runner.run_game(agents, decks)
-
-                # Collect experience from game
-                # For now, just track win as terminal reward
-                winner_id = result.winner if result.winner else None
-                for player_id in agents:
-                    reward = 1.0 if player_id == winner_id else -1.0 if winner_id else 0.0
-                    exp = Experience(
-                        state_features=[],  # Placeholder
-                        action_index=0,
-                        reward=reward,
-                        next_state_features=[],  # Placeholder
-                        done=True,
-                        metadata={"game_turns": result.turns},
-                    )
-                    experiences.append(exp)
-
-                logger.info(f"Self-play game {game_num+1}: winner={winner_id}, turns={result.turns}")
-
+        async def play_one(game_num: int) -> list[Experience]:
+            async with sem:
+                experiences_local: list[Experience] = []
                 try:
-                    await self._enrich_kg_from_game(result, decks)
+                    agent1 = LLMAgent(player_id="player_1")
+                    agent2 = LLMAgent(player_id="player_2")
+                    agents = {"player_1": agent1, "player_2": agent2}
+                    decks = {
+                        "player_1": create_mock_deck(),
+                        "player_2": create_mock_deck(),
+                    }
+                    runner = GameRunner(GameConfig(max_turns=50))
+                    result = await runner.run_game(agents, decks)
+                    winner_id = result.winner if result.winner else None
+                    for player_id in agents:
+                        reward = (
+                            1.0
+                            if player_id == winner_id
+                            else -1.0
+                            if winner_id
+                            else 0.0
+                        )
+                        exp = Experience(
+                            state_features=[],
+                            action_index=0,
+                            reward=reward,
+                            next_state_features=[],
+                            done=True,
+                            metadata={"game_turns": result.turns},
+                        )
+                        experiences_local.append(exp)
+                    logger.info(
+                        f"Self-play game {game_num+1}: winner={winner_id}, turns={result.turns}"
+                    )
+                    try:
+                        await self._enrich_kg_from_game(result, decks)
+                    except Exception as e:
+                        logger.warning(
+                            f"KG enrichment failed for game {game_num}: {e}"
+                        )
                 except Exception as e:
-                    logger.warning(f"KG enrichment failed for game {game_num}: {e}")
-            except Exception as e:
-                logger.error(f"Error in self-play game {game_num}: {e}")
-                continue
+                    logger.error(f"Error in self-play game {game_num}: {e}")
+                return experiences_local
 
+        tasks = [play_one(i) for i in range(num_games)]
+        per_game = await asyncio.gather(*tasks)
+        experiences: list[Experience] = []
+        for batch in per_game:
+            experiences.extend(batch)
         return experiences
 
     async def _enrich_kg_from_game(self, result, decks) -> None:

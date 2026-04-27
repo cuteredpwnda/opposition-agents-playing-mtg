@@ -1,28 +1,3 @@
-# Optional dependencies for machine learning features
-# Install with: pip install -r requirements-ml.txt
-
-# PyTorch and Graph Neural Networks (for neural_reasoner.py)
-torch>=2.0.0
-torchvision>=0.15.0
-torch-geometric>=2.4.0
-torch-scatter>=2.1.0
-torch-sparse>=0.6.17
-
-# Model Training
-torchmetrics>=1.0.0
-lightning>=2.1.0
-
-# Vector/Embedding Support
-sentence-transformers>=2.2.0
-faiss-cpu>=1.7.4  # or faiss-gpu for GPU support
-
-# Ray for Distributed Training (optional)
-ray[tune]>=2.9.0
-
-# Visualization
-matplotlib>=3.8.0
-tensorboard>=2.14.0
-
-# Data Processing
-scikit-learn>=1.3.0
-scipy>=1.11.0
+# Machine-learning extras. Equivalent to:
+#     pip install -e .[ml]
+-e .[ml]

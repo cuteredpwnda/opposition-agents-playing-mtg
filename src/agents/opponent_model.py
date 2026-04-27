@@ -446,3 +446,74 @@ class OpponentModel:
         
         return likely_plays
 
+    # ------------------------------------------------------------------ export
+    def to_belief_dict(self, top_k_hand: int = 10) -> dict[str, Any]:
+        """Return a JSON-serialisable snapshot of the current belief state.
+
+        The dict is intentionally compact and stable so it can be diffed across
+        decision steps and visualised by external tooling (e.g., a Streamlit
+        panel). The schema is::
+
+            {
+              "opponent_id": str,
+              "archetype_probabilities": {name: prob, ...},
+              "predicted_hand_top_k": [{"card": name, "p": prob}, ...],
+              "card_info": [
+                  {"name": str, "copies_in_deck": int, "copies_remaining": int,
+                   "p_in_hand": float, "p_in_library": float}, ...
+              ],
+              "library_remaining_total": int,
+              "cards_seen_open_zones": int,
+              "actions_observed": int
+            }
+        """
+        # Top-K predicted hand
+        top_hand = sorted(
+            self.predicted_hand.items(), key=lambda kv: -kv[1]
+        )[: max(0, int(top_k_hand))]
+
+        card_info_list: list[dict[str, Any]] = []
+        for ci in self.card_info.values():
+            card_info_list.append(
+                {
+                    "name": ci.name,
+                    "copies_in_deck": ci.copies_in_deck,
+                    "copies_remaining": ci.copies_remaining,
+                    "p_in_hand": ci.probability_in_hand,
+                    "p_in_library": ci.probability_in_library,
+                }
+            )
+
+        library_remaining_total = sum(
+            ci.copies_remaining for ci in self.card_info.values()
+        )
+
+        return {
+            "opponent_id": self.opponent_id,
+            "archetype_probabilities": dict(self.archetype_probabilities),
+            "predicted_hand_top_k": [{"card": n, "p": p} for n, p in top_hand],
+            "card_info": card_info_list,
+            "library_remaining_total": library_remaining_total,
+            "cards_seen_open_zones": len(self.cards_seen_in_open_zones),
+            "actions_observed": len(self.actions_taken),
+        }
+
+    def export_belief_state(
+        self,
+        path: str | "os.PathLike[str]",
+        top_k_hand: int = 10,
+        indent: int = 2,
+    ) -> None:
+        """Persist :meth:`to_belief_dict` to ``path`` as JSON.
+
+        Parent directories are created if needed. Used by the orchestrator
+        to log beliefs alongside trajectories for offline visualisation.
+        """
+        import json
+        import os
+
+        target = os.fspath(path)
+        os.makedirs(os.path.dirname(target) or ".", exist_ok=True)
+        with open(target, "w", encoding="utf-8") as fh:
+            json.dump(self.to_belief_dict(top_k_hand), fh, indent=indent)
+

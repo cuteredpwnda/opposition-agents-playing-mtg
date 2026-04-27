@@ -58,6 +58,9 @@ class RLConfig:
     # Promotion loop
     promotion_threshold: float = 0.55     # Candidate must beat champion by > threshold
 
+    # Parallelism
+    parallel_games: int = 1               # asyncio.gather concurrency for matchup play
+
     # Checkpointing
     checkpoint_dir: str = "checkpoints/rl"
     log_dir: str = "logs/rl"
@@ -436,66 +439,86 @@ class RLTrainer:
         num_games: int,
         collect: bool,
     ) -> list[dict[str, Any]]:
-        """Run games between two specific agents in the pool."""
+        """Run games between two specific agents in the pool.
+
+        When ``self.config.parallel_games > 1`` the games for the matchup are
+        scheduled with :func:`asyncio.gather` (bounded by a semaphore) so that
+        large self-play epochs can saturate available cores.
+        """
         from src.orchestrator.game_runner import GameRunner, GameConfig
         from src.world_model.data_sources.self_play_collector import SelfPlayCollector
         from src.training.rewards import RewardFunction
         from src.training.experience_buffer import Experience
 
-        results = []
-        for game_num in range(num_games):
-            try:
-                player_ids = ["player_0", "player_1"]
-                agents = {
-                    "player_0": self.pool.create_agent(pool_a, "player_0"),
-                    "player_1": self.pool.create_agent(pool_b, "player_1"),
-                }
+        sem = asyncio.Semaphore(max(1, int(self.config.parallel_games)))
 
-                collector = None
-                if collect and self.config.collect_trajectories:
-                    collector = SelfPlayCollector(
-                        tokenizer=self.tokenizer,
-                        card_embeddings=self.card_embeddings_model,
-                    )
+        async def play_one(game_num: int) -> dict[str, Any]:
+            async with sem:
+                try:
+                    player_ids = ["player_0", "player_1"]
+                    agents = {
+                        "player_0": self.pool.create_agent(pool_a, "player_0"),
+                        "player_1": self.pool.create_agent(pool_b, "player_1"),
+                    }
 
-                decks = {pid: self._build_deck() for pid in player_ids}
-                gc = GameConfig(
-                    format=self.config.game_format,
-                    starting_life=self.config.starting_life,
-                    max_turns=self.config.max_turns_per_game,
-                )
-                runner = GameRunner(gc, self_play_collector=collector)
-                result = await runner.run_game(agents, decks)
-
-                if result.winner:
-                    winner_pool = pool_a if result.winner == "player_0" else pool_b
-                    loser_pool = pool_b if result.winner == "player_0" else pool_a
-                    self.pool.update_elo(winner_pool, loser_pool)
-
-                if collect and self.experience_buffer is not None:
-                    for pid in player_ids:
-                        reward = 1.0 if pid == result.winner else -1.0 if result.winner else 0.0
-                        state_feats = self._extract_terminal_features(collector, pid)
-                        exp = Experience(
-                            state_features=state_feats,
-                            action_index=0,
-                            reward=reward,
-                            next_state_features=state_feats,
-                            done=True,
-                            metadata={"game_turns": result.turns, "player_id": pid},
+                    collector = None
+                    if collect and self.config.collect_trajectories:
+                        collector = SelfPlayCollector(
+                            tokenizer=self.tokenizer,
+                            card_embeddings=self.card_embeddings_model,
                         )
-                        self.experience_buffer.add(exp)
 
-                if collector and self.trajectory_store:
-                    for traj in collector.collected_trajectories:
-                        self.trajectory_store.add(traj)
+                    decks = {pid: self._build_deck() for pid in player_ids}
+                    gc = GameConfig(
+                        format=self.config.game_format,
+                        starting_life=self.config.starting_life,
+                        max_turns=self.config.max_turns_per_game,
+                    )
+                    runner = GameRunner(gc, self_play_collector=collector)
+                    result = await runner.run_game(agents, decks)
 
-                results.append({"winner": result.winner, "turns": result.turns})
-                logger.debug("Game %d: winner=%s, turns=%d", game_num + 1, result.winner, result.turns)
-            except Exception as e:
-                logger.warning("Game %d failed: %s", game_num + 1, e)
-                results.append({"winner": None, "turns": 0, "error": str(e)})
+                    if result.winner:
+                        winner_pool = pool_a if result.winner == "player_0" else pool_b
+                        loser_pool = pool_b if result.winner == "player_0" else pool_a
+                        self.pool.update_elo(winner_pool, loser_pool)
 
+                    if collect and self.experience_buffer is not None:
+                        for pid in player_ids:
+                            reward = (
+                                1.0
+                                if pid == result.winner
+                                else -1.0
+                                if result.winner
+                                else 0.0
+                            )
+                            state_feats = self._extract_terminal_features(collector, pid)
+                            exp = Experience(
+                                state_features=state_feats,
+                                action_index=0,
+                                reward=reward,
+                                next_state_features=state_feats,
+                                done=True,
+                                metadata={"game_turns": result.turns, "player_id": pid},
+                            )
+                            self.experience_buffer.add(exp)
+
+                    if collector and self.trajectory_store:
+                        for traj in collector.collected_trajectories:
+                            self.trajectory_store.add(traj)
+
+                    logger.debug(
+                        "Game %d: winner=%s, turns=%d",
+                        game_num + 1,
+                        result.winner,
+                        result.turns,
+                    )
+                    return {"winner": result.winner, "turns": result.turns}
+                except Exception as e:
+                    logger.warning("Game %d failed: %s", game_num + 1, e)
+                    return {"winner": None, "turns": 0, "error": str(e)}
+
+        tasks = [play_one(i) for i in range(num_games)]
+        results: list[dict[str, Any]] = await asyncio.gather(*tasks)
         return results
 
     def _pick_challenger(self) -> str | None:
