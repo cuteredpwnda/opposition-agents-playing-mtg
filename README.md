@@ -1,6 +1,13 @@
 # Opposition Agents Playing MTG
 
-An experimental framework for training LLM-powered agents to play Magic: The Gathering via multi-agent reinforcement learning, active inference, and knowledge graph reasoning.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
+[![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
+[![Status: Experimental](https://img.shields.io/badge/status-experimental-orange.svg)](#known-limitations)
+
+A research framework that combines **knowledge-graph-grounded JEPA world models**, **active-inference LLM agents**, and a from-scratch **Magic: The Gathering** game engine to study reasoning under uncertainty in the most combinatorially complex commercial card game.
+
+> If you use this project in academic work, please cite the [tech report](paper/opposition_agents_mtg.tex) (see [Citation](#citation)).
 
 ## Overview
 
@@ -19,10 +26,17 @@ This project builds an agentic framework where multiple AI agents compete in Mag
 For detailed architecture and design decisions, see:
 
 - **[PLAN.md](PLAN.md)** - Comprehensive project plan with 19 sections covering objectives, architecture, tech stack, implementation roadmap, and open questions
-- **[DEVELOPMENT.md](DEVELOPMENT.md)** - Development guide, server deployment, API endpoints, and troubleshooting
-- **[docs/ONTOLOGY_EXTENSION_GUIDE.md](docs/ONTOLOGY_EXTENSION_GUIDE.md)** - **NEW** Systematic approach to extending the MTG ontology using OntologyExtender (multi-agent HITL framework) and Comprehensive Rules extraction
-- **[docs/OPPONENT_MODELING_WITH_DECKLIST.md](docs/OPPONENT_MODELING_WITH_DECKLIST.md)** - **NEW** Decklist-aware opponent modeling with process-of-elimination for exact library inference
-- **[docs/](docs/)** - Additional technical documentation
+- **[IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md)** - Module-by-module implementation status and roadmap (canonical status doc)
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** - Phase-1 design choices and pattern matrix
+- **[DEVELOPMENT.md](DEVELOPMENT.md)** - Development guide and troubleshooting
+- **[paper/opposition_agents_mtg.tex](paper/opposition_agents_mtg.tex)** - Tech report describing the system in publication form
+- **[docs/RESEARCH.md](docs/RESEARCH.md)** - Survey of open-source MTG engines, GraphRAG, and agent frameworks
+- **[docs/ONTOLOGY_RESEARCH.md](docs/ONTOLOGY_RESEARCH.md)** - OWL ontology extension research and best practices
+- **[docs/OLLAMA_SETUP.md](docs/OLLAMA_SETUP.md)** - Local LLM (Ollama) installation and configuration
+- **[docs/ONTOLOGY_EXTENSION_GUIDE.md](docs/ONTOLOGY_EXTENSION_GUIDE.md)** - Systematic approach to extending the MTG ontology
+- **[docs/OPPONENT_MODELING_WITH_DECKLIST.md](docs/OPPONENT_MODELING_WITH_DECKLIST.md)** - Decklist-aware opponent modeling
+- **[docs/WORLD_MODEL_DESIGN.md](docs/WORLD_MODEL_DESIGN.md)** - V+M+C+JEPA world model architecture details
+- **[docs/HOW_IT_ALL_WORKS.md](docs/HOW_IT_ALL_WORKS.md)** - End-to-end walkthrough of an episode
 
 ## Quick Start
 
@@ -36,7 +50,7 @@ For detailed architecture and design decisions, see:
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/your-org/opposition-agents-playing-mtg
+git clone https://github.com/cuteredpwnda/opposition-agents-playing-mtg
 cd opposition-agents-playing-mtg
 ```
 
@@ -92,7 +106,7 @@ docker-compose up -d neo4j
 
 1. **Read the overview** above to understand the project goals
 2. **Set up your environment** following the Quick Start section
-3. **Run the test** to verify everything works: `python tests/test_game_engine.py`
+3. **Run the test suite** to verify everything works: `pytest tests/`
 4. **Explore the code** in `src/` organized by package (see Project Structure below)
 5. **Read PLAN.md** for detailed architecture, design decisions, and implementation roadmap
 
@@ -666,20 +680,23 @@ combos = await fetch_all_combos()
 docker-compose up
 ```
 
-This starts Neo4j with n10s plugin pre-loaded.
+This starts Neo4j with the `n10s` plugin pre-loaded. See [docker-compose.yml](docker-compose.yml) for the full stack and [docker-compose.remote.yml](docker-compose.remote.yml) for remote/Ollama-host configurations.
 
-### Server Deployment (LLM Calls)
+## Citation
 
-For production LLM agent execution, deploy as a service:
+If you use this codebase or build on its design, please cite:
 
-```bash
-pip install gunicorn uvicorn
-
-# Start API server
-uvicorn src.api.server:app --host 0.0.0.0 --port 8000
+```bibtex
+@techreport{neuburger2026oppositionagents,
+  author      = {Neub\"urger, Felix},
+  title       = {Opposition Agents Playing Magic: The Gathering --
+                 Knowledge-Graph-Grounded JEPA World Models and
+                 Active-Inference LLM Agents},
+  institution = {Independent Research},
+  year        = {2026},
+  url         = {https://github.com/cuteredpwnda/opposition-agents-playing-mtg}
+}
 ```
-
-See `src/api/` for FastAPI endpoints for game execution, agent decisions, and judge queries.
 
 ## References & Acknowledgments
 
@@ -720,7 +737,7 @@ MIT License. See LICENSE file.
 
 ## Authors
 
-- Project repository: https://github.com/your-org/opposition-agents-playing-mtg
+- Project repository: https://github.com/cuteredpwnda/opposition-agents-playing-mtg
 
 ## Known Limitations
 

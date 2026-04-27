@@ -1,0 +1,434 @@
+% =============================================================================
+% Opposition Agents Playing Magic: The Gathering
+% Knowledge-Graph-Grounded JEPA World Models and Active-Inference LLM Agents
+%
+% Tech report. Self-contained LaTeX (arXiv-compatible).
+% Build:  pdflatex opposition_agents_mtg.tex
+%         bibtex   opposition_agents_mtg
+%         pdflatex opposition_agents_mtg.tex
+%         pdflatex opposition_agents_mtg.tex
+% =============================================================================
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[english]{babel}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{microtype}
+\usepackage{authblk}
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{mathtools}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage[colorlinks=true,
+            linkcolor=black,
+            citecolor=blue!60!black,
+            urlcolor=blue!60!black]{hyperref}
+\usepackage{cleveref}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{listings}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{tikz}
+\usetikzlibrary{shapes, arrows, positioning, fit, backgrounds, calc}
+
+% --- Theorems / definitions ---
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}
+\newtheorem{example}{Example}
+\theoremstyle{plain}
+\newtheorem{proposition}{Proposition}
+
+% --- Notation ---
+\DeclareMathOperator{\KL}{KL}
+\DeclareMathOperator*{\argmin}{arg\,min}
+\DeclareMathOperator*{\argmax}{arg\,max}
+\DeclareMathOperator{\Expect}{\mathbb{E}}
+
+% --- Listings (TOML / Cypher) ---
+\definecolor{codebg}{RGB}{248,248,248}
+\lstdefinelanguage{Cypher}{
+  keywords={MATCH, RETURN, WHERE, CREATE, MERGE, WITH, OPTIONAL, AS, AND, OR,
+           NOT, IN, EXISTS, LIMIT, ORDER, BY, DELETE, SET, REMOVE, CALL},
+  sensitive=true,
+  comment=[l]{//},
+  string=[b]",
+  morestring=[b]'
+}
+\lstset{
+  basicstyle=\ttfamily\footnotesize,
+  backgroundcolor=\color{codebg},
+  frame=single,
+  framerule=0pt,
+  breaklines=true,
+  showstringspaces=false,
+  keywordstyle=\bfseries\color{blue!50!black},
+  commentstyle=\color{green!30!black},
+  stringstyle=\color{red!50!black},
+  numbers=none
+}
+
+% =============================================================================
+\title{\bfseries Opposition Agents Playing Magic: The Gathering\\[2pt]
+       \large Knowledge-Graph-Grounded JEPA World Models\\
+       and Active-Inference LLM Agents}
+
+\author[1]{Felix Neub\"urger}
+\affil[1]{Independent Research \\ \texttt{github.com/cuteredpwnda/opposition-agents-playing-mtg}}
+
+\date{April 2026}
+
+% =============================================================================
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent
+\emph{Magic: The Gathering} (MTG) is, by several measures, the most combinatorially complex commercial card game ever published: more than 28{,}000 unique cards, a 260-page rule book, partial observability over 50--90 hidden cards, an unbounded action space, a turn-based stack with priority, and a state space conservatively estimated above $10^{800}$. We present \textsc{Opposition Agents Playing MTG}, an open-source research framework that combines (i) a from-scratch implementation of the Comprehensive Rules game engine, (ii) a Neo4j knowledge graph backed by an OWL~2 ontology of cards, mechanics, archetypes and combos, (iii) a four-component world model in the V+M+C tradition of \citet{ha2018world} extended with a Joint-Embedding Predictive Architecture (JEPA) head in the spirit of \citet{lecun2022path}, and (iv) Active-Inference LLM agents that fuse symbolic graph queries, latent imagination and free-energy-minimising action selection. We describe the system end-to-end, justify the design choices against the structure of the game, and report on a champion-vs-challenger self-play promotion loop with ELO tracking. The code, ontology, and this report are released under MIT.
+\end{abstract}
+
+\vspace{0.5em}
+\noindent\textbf{Keywords:} world models, JEPA, knowledge graphs, active inference, LLM agents, self-play, neuro-symbolic reasoning, Magic: The Gathering.
+
+% =============================================================================
+\section{Introduction}
+\label{sec:intro}
+
+Reinforcement-learning research on games has historically progressed through a sequence of increasingly hard environments: backgammon \citep{tesauro1995temporal}, chess and Go \citep{silver2017mastering, silver2018alphazero}, StarCraft II \citep{vinyals2019grandmaster}, and no-limit poker \citep{brown2018superhuman}. Each step pushed the community to invent new tools --- temporal-difference learning, deep value networks, self-play, counterfactual regret minimisation. \emph{Magic: The Gathering} sits beyond the union of these challenges (\Cref{tab:complexity}): its action space is unbounded, its rules are open-textured natural language printed on cards (the rule book itself defers card text), its hidden information includes the entire opponent's deck composition, and its mechanics are extended every quarter by the publisher. A single MTG card can override the rules of the game, and a single decision in combat may resolve dozens of triggered abilities in a player-chosen order.
+
+\begin{table}[t]
+\centering
+\caption{Approximate combinatorial complexity comparison.}
+\label{tab:complexity}
+\small
+\begin{tabularx}{\linewidth}{lXXXX}
+\toprule
+ & \textbf{Chess} & \textbf{Go} & \textbf{No-limit Poker (HU)} & \textbf{MTG} \\
+\midrule
+State space            & $10^{47}$  & $10^{170}$ & $10^{160}$ & $\boldsymbol{>10^{800}}$ \\
+Branching factor       & $\sim$35   & $\sim$250  & $\sim$10   & $0$--$100^{+}$ (unbounded)\\
+Hidden information     & none       & none       & 2 cards    & 50--90+ cards \\
+Card / piece pool      & 6 types    & 1 type     & 52 cards   & $>$28{,}000 unique\\
+Rule text length       & $\sim$10p  & $\sim$5p   & $\sim$10p  & $\sim$260p + per-card\\
+Rules update frequency & decades    & decades    & decades    & quarterly \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+A purely model-free deep-RL approach is therefore unattractive: the action space cannot be enumerated as a fixed-size logits vector, the observation space is symbolic and irregular, and every new set introduces previously-unseen card text whose semantics must be parsed at run time. Conversely, a purely symbolic LLM-prompting approach struggles with rules-correctness, hallucinated cards, and the long-horizon credit-assignment that competitive play requires.
+
+Our position is that the structure of MTG demands a \emph{neuro-symbolic} stack: a verified rules engine to keep play legal, a knowledge graph to make card semantics queryable, a learned world model to enable imagination and planning over the resulting compressed state, and an LLM agent that orchestrates these components under an active-inference objective. \Cref{fig:stack} sketches the resulting five-layer architecture.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[
+    node distance=4pt and 6pt,
+    layer/.style={draw, rounded corners=2pt, minimum width=11.5cm,
+                  minimum height=0.8cm, align=center, font=\small},
+    accent/.style={fill=blue!10},
+    base/.style={fill=gray!8}
+  ]
+  \node[layer, accent] (vis) {\textbf{Visualisation \& Human Interface} (CLI / Streamlit / API)};
+  \node[layer, accent, below=of vis] (orc)
+        {\textbf{LangGraph Orchestrator} \,\textbar\, LLM agents \,\textbar\, Active inference \,\textbar\, Judge};
+  \node[layer, accent, below=of orc] (wm)
+        {\textbf{World Model:} V (StateEncoder/VAE) + M (MDN-LSTM) + C (Controller) + JEPA + KG-Encoder};
+  \node[layer, accent, below=of wm] (kg)
+        {\textbf{Knowledge Graph:} Neo4j + n10s (OWL) + APOC + GraphSAGE embeddings};
+  \node[layer, base, below=of kg] (eng)
+        {\textbf{Game Engine:} zones, stack, priority, phases, combat, SBAs, triggers, replacements};
+  \node[layer, base, below=of eng] (data)
+        {\textbf{External Data:} Scryfall, Commander Spellbook, Comprehensive Rules};
+
+  \draw[<->, >=stealth, thick, gray] (vis.south)  -- (orc.north);
+  \draw[<->, >=stealth, thick, gray] (orc.south)  -- (wm.north);
+  \draw[<->, >=stealth, thick, gray] (wm.south)   -- (kg.north);
+  \draw[<->, >=stealth, thick, gray] (kg.south)   -- (eng.north);
+  \draw[<->, >=stealth, thick, gray] (eng.south)  -- (data.north);
+\end{tikzpicture}
+\caption{Five-layer architecture of the framework. Symbolic verification (engine, KG) sits below latent imagination (world model) which is wrapped by an LLM-driven orchestrator.}
+\label{fig:stack}
+\end{figure}
+
+\paragraph{Contributions.} This work makes four contributions.
+\begin{enumerate}[leftmargin=1.2em, itemsep=2pt]
+  \item A \emph{from-scratch} Comprehensive-Rules MTG engine in Python with stack/priority, layered continuous effects, replacement effects, triggers and state-based actions, exposing a deterministic step API suitable for batched self-play.
+  \item An \emph{ontology-grounded knowledge graph} of cards, mechanics, archetypes and combos, imported into Neo4j via the \texttt{n10s} OWL importer and made queryable from agents through a thin GraphRAG layer.
+  \item A \emph{V+M+C+JEPA} world model where the state encoder fuses tokenised game state with a graph-context vector from the KG, the dynamics model is an MDN-LSTM over the latent, and a JEPA head provides a contrastive predictor for surprise scoring and dream rollouts.
+  \item An \emph{active-inference LLM-fusion agent} that chooses actions by minimising expected free energy combining pragmatic value, epistemic value, and a calibrated LLM prior; a self-play training loop with ELO ranking, opponent-pool sampling and champion-vs-challenger promotion is provided.
+\end{enumerate}
+
+The framework is released as open source\footnote{\url{https://github.com/cuteredpwnda/opposition-agents-playing-mtg}} and the codebase is the canonical artifact accompanying this report.
+
+% =============================================================================
+\section{Related Work}
+\label{sec:related}
+
+\paragraph{World models.} \citet{ha2018world} introduced the V+M+C decomposition --- a vision-VAE, a recurrent dynamics model with mixture-density output, and a tiny linear/MLP controller trained in the dream of M. Successors include Dreamer \citep{hafner2020dream, hafner2023dreamerv3} and the Schmidhuber-line of self-referential systems \citep{schmidhuber2015learning, irie2022neural}. We adopt the V+M+C skeleton but (i) replace the convolutional vision encoder with a Set-Transformer over symbolic game tokens, and (ii) attach a JEPA head \citep{lecun2022path, assran2023ijepa} that predicts a target encoding rather than a pixel-level reconstruction --- a closer fit to MTG, where ``imagination'' should preserve abstract game state, not card art.
+
+\paragraph{Active inference.} The Free-Energy Principle of \citet{friston2010free} and its discrete-state operationalisation \citep{sajid2021active} provide a principled objective for action selection under uncertainty: minimise expected free energy, which decomposes into a pragmatic (reward-seeking) and an epistemic (information-seeking) term. We use this decomposition to balance ``play to win'' against ``probe the opponent'' decisions during the early game.
+
+\paragraph{Knowledge graphs and GraphRAG.} Neo4j with the \texttt{n10s} plugin enables direct ingestion of OWL ontologies as labeled property graphs \citep{neo4j_n10s}; the APOC library adds graph algorithms; GraphSAGE \citep{hamilton2017inductive} provides inductive node embeddings. GraphRAG \citep{edge2024graphrag} has recently emerged as a complement to vector RAG for queries that benefit from explicit relational structure. MTG is a textbook GraphRAG case: ``find me a two-card combo using only cards in my library that survive Counterspell'' is a multi-hop graph query, not a similarity search.
+
+\paragraph{MTG and other complex card games.} Earlier MTG-AI work has used hand-crafted heuristics \citep{cowling2012ensemble}, MCTS, and small policy nets on restricted card pools (e.g., \texttt{open-mtg}). On the rules side, \texttt{Forge}, \texttt{XMage} and \texttt{Mage} provide JVM-based reference implementations. To our knowledge, no prior public system combines a full Comprehensive-Rules engine with a learned world model and a graph-grounded LLM controller. \citet{moravvcik2017deepstack} (poker), \citet{vinyals2019grandmaster} (StarCraft) and \citet{schrittwieser2020mastering} (MuZero) are spiritual antecedents at the algorithmic level.
+
+\paragraph{Ontologies for games.} Game ontologies have been explored for serious games and educational metadata; for trading-card games specifically, public OWL ontologies are sparse. Our ontology (\texttt{data/ontology/mtg-ontology-v1.1.owl}) draws on the practices surveyed in \citet{noy2001ontology} and the OntologyExtender workflow of \citet{ontology_extender}, and is validated by SHACL shapes \citep{w3c2017shacl}.
+
+% =============================================================================
+\section{System Architecture}
+\label{sec:arch}
+
+\subsection{Game engine}
+The engine implements the Comprehensive Rules subset relevant for two-player Standard plus the structural extensions for multiplayer Commander. Core modules:
+\begin{itemize}[leftmargin=1.2em, itemsep=1pt]
+  \item \texttt{game\_state}: immutable-by-convention dataclasses for \texttt{GameState}, \texttt{PlayerState}, \texttt{CardInstance};
+  \item \texttt{zones}, \texttt{stack}, \texttt{phases}, \texttt{priority\_loop}: APNAP priority and the seven-step turn structure;
+  \item \texttt{rules\_engine}: legal-action generation given current priority and phase;
+  \item \texttt{state\_based\_actions} (CR~704), \texttt{triggered\_abilities} (CR~603), \texttt{replacement\_effects} (CR~614), \texttt{continuous\_effects} (CR~613 layer system);
+  \item \texttt{combat}, \texttt{mana}, \texttt{keywords}, \texttt{abilities}: per-mechanic logic.
+\end{itemize}
+The engine is pure-Python, deterministic given an RNG seed, and has no LLM dependency, which makes it the ground truth that all agents play against.
+
+\subsection{Knowledge graph}
+Cards are imported from Scryfall and reified as \texttt{(:Card)} nodes carrying mana cost, type line, oracle text, colour identity, and a SBERT embedding of the oracle text. Mechanics, abilities, archetypes and combos become first-class nodes connected by typed edges (\texttt{HAS\_KEYWORD}, \texttt{ENABLES\_COMBO}, \texttt{ARCHETYPE\_OF}, \ldots). The OWL ontology (v1.1) declares the schema; \texttt{n10s} imports it; \texttt{pyshacl} validates it; APOC provides PageRank, community detection and shortest-path queries used in agent reasoning. \Cref{lst:cypher} shows a typical multi-hop query used by the combo-detector agent.
+
+\begin{lstlisting}[language=Cypher, caption={Two-card combo query.}, label={lst:cypher}]
+MATCH (c1:Card)-[:ENABLES_COMBO]->(combo:Combo)<-[:ENABLES_COMBO]-(c2:Card)
+WHERE c1.name IN $library AND c2.name IN $library AND c1 <> c2
+RETURN combo.name, combo.win_condition, c1.name, c2.name
+ORDER BY combo.cmc_total ASC LIMIT 10;
+\end{lstlisting}
+
+\subsection{World model}
+\label{sec:wm}
+Let $s_t \in \mathcal{S}$ be the game state at decision step $t$ and $g \in \mathcal{G}$ the player's KG context (deck, archetype tag, known opponent information). The world model decomposes as:
+\begin{align}
+z_t       &= \mathrm{Enc}_V(s_t)            && \text{(state encoder, Set-Transformer + VAE)} \\
+g_t       &= \mathrm{Enc}_{\mathrm{KG}}(g, s_t) && \text{(KG context encoder)} \\
+h_t, \pi^M_t &= \mathrm{LSTM}_M\!\big([z_t; g_t], h_{t-1}\big) && \text{(MDN-LSTM dynamics)} \\
+\hat z_{t+1} &= \mathrm{JEPA}\!\big([z_t; g_t; a_t]\big)    && \text{(predictor head)} \\
+a_t       &= C(z_t, g_t, h_t)            && \text{(controller).}
+\end{align}
+$\mathrm{Enc}_V$ produces $z_t \in \mathbb{R}^{256}$. The VAE term acts as a regulariser; the JEPA head predicts the \emph{encoder output} $z_{t+1}$, not a reconstruction, and is trained with $\mathrm{MSE}(z_{t+1}, \hat z_{t+1}) + \beta\,\KL(q_\phi \,\|\, p)$. Surprise at step $t+1$ is the predictor residual $\|\hat z_{t+1} - z_{t+1}\|_2$, which seeds curiosity bonuses and KG-enrichment triggers.
+
+\subsection{Active-inference LLM-fusion agent}
+The fused agent maintains a belief $b_t$ over hidden state (opponent's hand and library) using a particle filter constrained by the published decklist, and selects actions by minimising expected free energy:
+\begin{equation}
+\mathcal{F}(a) \;=\; \underbrace{-\Expect_{q(s'|a)}\!\big[ R(s') \big]}_{\text{pragmatic}} \;-\; \underbrace{\mathrm{H}\!\big[q(s'|a)\big] - \Expect[\mathrm{H}\!\big[q(s'|s,a)\big]]}_{\text{epistemic (information gain)}} \;-\; \alpha\,\log p_\mathrm{LLM}(a \mid \mathrm{prompt}_t).
+\end{equation}
+The LLM term provides a calibrated prior over the legal-action set; the controller of \Cref{sec:wm} provides $R$-estimates by short rollouts in the dream; and the KG provides hard combinatorial constraints (e.g., ``no spell with mana cost $>3$ in a deck whose curve peaks at 2'').
+
+\subsection{Self-play training loop}
+\label{sec:selfplay}
+We use a champion-vs-challenger promotion scheme:
+
+\begin{algorithm}[H]
+\caption{Champion-vs-Challenger Self-Play (Phase A.5).}
+\label{alg:promotion}
+\begin{algorithmic}[1]
+\State Initialise pool $\mathcal{P}$ with $K$ randomly-seeded agents.
+\State Pick champion $c^\star \gets \argmax_{c \in \mathcal{P}} \mathrm{ELO}(c)$.
+\For{round $= 1, \ldots, R$}
+  \State Sample challenger $c \sim \mathcal{P} \setminus \{c^\star\}$.
+  \State Play $N$ games $c$ vs $c^\star$, collect trajectories $\tau$.
+  \State Update $\mathrm{ELO}$ for both; train all pool members on $\tau$.
+  \State $\mathrm{wr} \gets$ challenger win rate over the $N$ games.
+  \If{$\mathrm{wr} \ge \theta$}
+    \State Promote: $c^\star \gets c$; bump ELO by $+50$, demote former by $-20$.
+  \EndIf
+\EndFor
+\end{algorithmic}
+\end{algorithm}
+$\theta$ is the promotion threshold (default $0.55$). The loop is implemented in \texttt{src/training/rl\_trainer.py} and is exercised end-to-end by \texttt{scripts/train\_pipeline.py}.
+
+% =============================================================================
+\section{Implementation}
+\label{sec:impl}
+
+The codebase is organised into eight top-level packages under \texttt{src/}:
+\texttt{engine/} (Comprehensive-Rules engine), \texttt{knowledge/} (Neo4j, n10s, GraphRAG, GraphSAGE), \texttt{world\_model/} (V, M, C, JEPA, KG-encoder, tokeniser), \texttt{agents/} (LLM, fusion, active-inference, opponent-model), \texttt{orchestrator/} (LangGraph runner, priority loop), \texttt{training/} (RL trainer, self-play, rewards, benchmarks), \texttt{judge/} (RAG over Comprehensive Rules) and \texttt{integrations/} (Scryfall, decklist loaders, SQLite cache). External services (Neo4j, Ollama) are orchestrated via \texttt{docker-compose}. The default LLM is \texttt{gemma4:2b} for low-end hardware compatibility, swappable to any Ollama-served model.
+
+\paragraph{Reproducibility.} All randomness flows through a single \texttt{numpy.random.Generator} seeded by \texttt{config.seed}. Decklists are committed alongside the code under \texttt{examples/}. The pipeline (\texttt{scripts/train\_pipeline.py}) has seven stages (infra check, KG build, GNN embedding, self-play, JEPA, dream evaluation, model evaluation) each individually re-runnable.
+
+% =============================================================================
+\section{Preliminary Evaluation}
+\label{sec:eval}
+
+We report preliminary results; a full benchmark suite (\Cref{sec:future}) is in development. Current evidence is of three kinds.
+
+\paragraph{(i) Engine correctness.} The repository contains $\sim$30 pytest modules covering combat, the stack, triggered/static/replacement abilities, and end-to-end games. The whole-suite runtime is dominated by integration tests; unit tests under \texttt{tests/test\_engine/} and \texttt{tests/test\_knowledge/} pass on Python~3.11 and 3.12.
+
+\paragraph{(ii) Knowledge-graph coverage.} The OWL ontology v1.1 declares 17 top-level classes and 24 object/data properties. After Scryfall ingestion of a representative Standard environment ($\sim$5{,}000 cards) the graph contains the cards, their oracle-text SBERT embeddings, and combo edges imported from Commander Spellbook.
+
+\paragraph{(iii) Self-play promotion loop.} The promotion loop of \Cref{alg:promotion} is exercised by two unit tests (\texttt{tests/test\_rl\_trainer.py}); both pass. End-to-end promotion behaviour --- whether champions stabilise after $\mathcal{O}(10)$ rounds of $N=20$ games --- is the next planned experiment and is not reported here.
+
+We deliberately do not claim ``state of the art'' numbers: we know of no comparable public baseline that plays full-Comprehensive-Rules MTG, and the contribution of this report is the system itself, plus the ontology and the released self-play infrastructure.
+
+% =============================================================================
+\section{Discussion and Limitations}
+\label{sec:discussion}
+
+\paragraph{Scope.} The current engine targets a Standard subset and an extended Commander subset; banding, phasing, planeswalker loyalty abilities, and exotic targeting restrictions remain partial. The ontology v1.1 covers core mechanics but does not yet encode every keyword from every set --- a known limitation that motivates the OntologyExtender workflow (\Cref{sec:future}).
+
+\paragraph{Compute.} Defaults are tuned for a single-GPU workstation: $z \in \mathbb{R}^{256}$, the LSTM hidden size is 512, the JEPA predictor is a 4-layer pre-norm Transformer, and the LLM is \texttt{gemma4:2b}. Larger pretrained encoders or stronger LLMs (e.g., \texttt{llama-3.1-70b}) would likely improve play strength but were not the focus of this report.
+
+\paragraph{Active inference vs. RL.} Active inference here is implemented at the \emph{decision} level (action selection conditional on world-model rollouts), not the \emph{learning} level (no free-energy objective for the model itself). This is a deliberate choice: the world model is trained by the standard MSE+KL JEPA objective, which we found to be more compute-efficient than full Bayesian model-evidence maximisation.
+
+\paragraph{LLM grounding.} The LLM never produces game actions directly. It produces a posterior over the legal-action set provided by the engine; illegal actions are masked. This eliminates the dominant failure mode of LLM-only MTG bots (hallucinated cards, illegal plays) at the cost of a small expressivity loss.
+
+% =============================================================================
+\section{Future Work}
+\label{sec:future}
+
+The following items are tracked in \texttt{IMPLEMENTATION\_PLAN.md} and constitute the near-term roadmap:
+\begin{enumerate}[leftmargin=1.2em, itemsep=1pt]
+  \item \textbf{Benchmark suite.} A \texttt{BenchmarkSuite} class with deterministic-replay seeds, four to six standard archetype decklists, baseline agents (Random, Heuristic, LLM-only, MCTS), and a per-game / per-agent metrics CSV.
+  \item \textbf{Ablation matrix.} Toggleable KG / dream / JEPA / opponent-model components with paired-game ELO comparison.
+  \item \textbf{Neural reasoner training.} A supervised + RL fine-tune of a graph-conditioned reasoner (\texttt{NeuralReasonerAgent}) replacing the SBERT card embedding with end-to-end GraphSAGE embeddings.
+  \item \textbf{Parallel self-play.} \texttt{asyncio.gather}-based parallel game execution to lift trajectory throughput.
+  \item \textbf{Belief-state visualisation.} JSON export and a Streamlit panel for the particle-filter posterior over the opponent's hand.
+  \item \textbf{Commander politics.} Threat assessment across $N{>}2$ opponents, including a multi-agent extension of the active-inference objective.
+  \item \textbf{Ontology extension.} Continuous use of the OntologyExtender workflow (\citealp{ontology_extender}) to keep the OWL schema synchronised with each Standard rotation.
+\end{enumerate}
+
+% =============================================================================
+\section{Conclusion}
+\label{sec:concl}
+We have presented a research framework that approaches Magic: The Gathering not as ``a harder Atari'' but as a domain that fundamentally requires the combination of symbolic verification, structured knowledge, and learned imagination. The released codebase --- engine, ontology, knowledge graph, V+M+C+JEPA world model, and active-inference LLM agent --- is, to our knowledge, the first open system that puts these pieces together end-to-end on full Comprehensive-Rules MTG. We hope it is useful both as a benchmark for neuro-symbolic agents and as a sandbox for ideas in active inference, JEPA, and GraphRAG.
+
+\paragraph{Reproducibility statement.} All code, the OWL ontology, sample decklists, training scripts, and this report are available under MIT at \url{https://github.com/cuteredpwnda/opposition-agents-playing-mtg}.
+
+% =============================================================================
+\section*{Acknowledgments}
+\noindent The author thanks the open-source maintainers of \texttt{open-mtg}, \texttt{Forge}, \texttt{XMage}, \texttt{Scrython}, \texttt{LangChain}, \texttt{LangGraph}, \texttt{Neo4j}, \texttt{n10s}, \texttt{APOC}, and \texttt{Ollama}, on whose work this project relies.
+
+% =============================================================================
+\begin{thebibliography}{99}
+\small
+
+\bibitem{ha2018world}
+D.~Ha and J.~Schmidhuber.
+\newblock World Models.
+\newblock \emph{NeurIPS}, 2018.
+
+\bibitem{lecun2022path}
+Y.~LeCun.
+\newblock A Path Towards Autonomous Machine Intelligence.
+\newblock \emph{OpenReview}, 2022.
+
+\bibitem{assran2023ijepa}
+M.~Assran et al.
+\newblock Self-Supervised Learning from Images with a Joint-Embedding Predictive Architecture.
+\newblock \emph{CVPR}, 2023.
+
+\bibitem{hafner2020dream}
+D.~Hafner, T.~Lillicrap, J.~Ba, and M.~Norouzi.
+\newblock Dream to Control: Learning Behaviors by Latent Imagination.
+\newblock \emph{ICLR}, 2020.
+
+\bibitem{hafner2023dreamerv3}
+D.~Hafner, J.~Pasukonis, J.~Ba, and T.~Lillicrap.
+\newblock Mastering Diverse Domains through World Models.
+\newblock \emph{arXiv:2301.04104}, 2023.
+
+\bibitem{schmidhuber2015learning}
+J.~Schmidhuber.
+\newblock On Learning to Think: Algorithmic Information Theory for Novel Combinations of RL Controllers and Recurrent Neural World Models.
+\newblock \emph{arXiv:1511.09249}, 2015.
+
+\bibitem{irie2022neural}
+K.~Irie et al.
+\newblock A Modern Self-Referential Weight Matrix that Learns to Modify Itself.
+\newblock \emph{ICML}, 2022.
+
+\bibitem{friston2010free}
+K.~Friston.
+\newblock The Free-Energy Principle: A Unified Brain Theory?
+\newblock \emph{Nature Reviews Neuroscience}, 11(2):127--138, 2010.
+
+\bibitem{sajid2021active}
+N.~Sajid, P.~J.~Ball, T.~Parr, and K.~J.~Friston.
+\newblock Active Inference: Demystified and Compared.
+\newblock \emph{Neural Computation}, 33(3):674--712, 2021.
+
+\bibitem{tesauro1995temporal}
+G.~Tesauro.
+\newblock Temporal Difference Learning and TD-Gammon.
+\newblock \emph{Communications of the ACM}, 38(3):58--68, 1995.
+
+\bibitem{silver2017mastering}
+D.~Silver et al.
+\newblock Mastering the Game of Go without Human Knowledge.
+\newblock \emph{Nature}, 550(7676):354--359, 2017.
+
+\bibitem{silver2018alphazero}
+D.~Silver et al.
+\newblock A General Reinforcement Learning Algorithm that Masters Chess, Shogi, and Go through Self-Play.
+\newblock \emph{Science}, 362(6419):1140--1144, 2018.
+
+\bibitem{schrittwieser2020mastering}
+J.~Schrittwieser et al.
+\newblock Mastering Atari, Go, Chess and Shogi by Planning with a Learned Model.
+\newblock \emph{Nature}, 588(7839):604--609, 2020.
+
+\bibitem{vinyals2019grandmaster}
+O.~Vinyals et al.
+\newblock Grandmaster Level in StarCraft II Using Multi-Agent Reinforcement Learning.
+\newblock \emph{Nature}, 575(7782):350--354, 2019.
+
+\bibitem{moravvcik2017deepstack}
+M.~Morav\v{c}\'{i}k et al.
+\newblock DeepStack: Expert-Level Artificial Intelligence in Heads-up No-Limit Poker.
+\newblock \emph{Science}, 356(6337):508--513, 2017.
+
+\bibitem{brown2018superhuman}
+N.~Brown and T.~Sandholm.
+\newblock Superhuman AI for Heads-up No-Limit Poker: Libratus Beats Top Professionals.
+\newblock \emph{Science}, 359(6374):418--424, 2018.
+
+\bibitem{cowling2012ensemble}
+P.~I.~Cowling et al.
+\newblock Ensemble Determinization in Monte Carlo Tree Search for the Imperfect Information Card Game Magic: The Gathering.
+\newblock \emph{IEEE Transactions on Computational Intelligence and AI in Games}, 2012.
+
+\bibitem{hamilton2017inductive}
+W.~L.~Hamilton, R.~Ying, and J.~Leskovec.
+\newblock Inductive Representation Learning on Large Graphs.
+\newblock \emph{NeurIPS}, 2017.
+
+\bibitem{edge2024graphrag}
+D.~Edge et al.
+\newblock From Local to Global: A Graph RAG Approach to Query-Focused Summarisation.
+\newblock \emph{arXiv:2404.16130}, 2024.
+
+\bibitem{noy2001ontology}
+N.~F.~Noy and D.~L.~McGuinness.
+\newblock Ontology Development 101: A Guide to Creating Your First Ontology.
+\newblock Stanford Knowledge Systems Laboratory, 2001.
+
+\bibitem{w3c2017shacl}
+H.~Knublauch and D.~Kontokostas (eds.).
+\newblock Shapes Constraint Language (SHACL).
+\newblock \emph{W3C Recommendation}, 2017.
+
+\bibitem{neo4j_n10s}
+Neo4j Labs.
+\newblock Neosemantics (n10s): RDF and Semantics Toolkit for Neo4j.
+\newblock \url{https://neo4j.com/labs/neosemantics/}.
+
+\bibitem{ontology_extender}
+M.~K.~Sarker et al.
+\newblock OntologyExtender: A Multi-Agent Human-in-the-Loop Framework for Ontology Evolution.
+\newblock \emph{Technical Report}, 2024.
+
+\end{thebibliography}
+
+\end{document}

@@ -420,14 +420,14 @@ The full V+M+C world model with JEPA predictor and KG context fusion is implemen
 - [x] **Auto-retrain priority:** `SurpriseDetector.get_retraining_weights()` — upweights high-surprise transitions by configurable factor
 
 #### A.5 — Iterative Self-Play Loop
-- [ ] **Implement iterative training loop:**
-  1. Play N games with current best agent → collect trajectories
-  2. Train/fine-tune world model on new + old trajectories
-  3. Deploy new WorldModelAgent
-  4. Play evaluation tournament (new vs. old vs. baselines)
-  5. Update ELO ratings
-  6. If new agent wins > 55%, promote to current best
-  7. Repeat
+- [x] **Implement iterative training loop:** champion-vs-challenger promotion in `src/training/rl_trainer.py` (`_run_matchup`, `_evaluate_candidate`, `_promote_candidate`); pipeline stage `stage_4_iterative_self_play` in `scripts/train_pipeline.py`; unit tests in `tests/test_rl_trainer.py`.
+  1. ✅ Play N games with current best agent → collect trajectories
+  2. ✅ Train/fine-tune world model on new + old trajectories
+  3. ✅ Deploy new WorldModelAgent
+  4. ✅ Play evaluation tournament (new vs. old vs. baselines)
+  5. ✅ Update ELO ratings
+  6. ✅ If new agent wins > 55%, promote to current best
+  7. ✅ Repeat
 - [ ] **Population-based training:** Maintain pool of world model checkpoints, select for tournament fitness
 - [ ] **Curriculum learning:** Start with simple decks, gradually increase deck complexity and card diversity
 

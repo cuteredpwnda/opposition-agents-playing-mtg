@@ -5,11 +5,40 @@ build-backend = "hatchling.build"
 [project]
 name = "opposition-agents-mtg"
 version = "0.1.0"
-description = "Agentic framework where LLM agents play Magic: The Gathering"
+description = "Knowledge-graph-grounded JEPA world models and active-inference LLM agents for Magic: The Gathering"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Felix Neubürger" }]
+keywords = [
+    "magic-the-gathering",
+    "mtg",
+    "world-models",
+    "jepa",
+    "knowledge-graph",
+    "active-inference",
+    "llm-agents",
+    "self-play",
+    "reinforcement-learning",
+    "neuro-symbolic",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Games/Entertainment :: Board Games",
+]
+
+[project.urls]
+Homepage = "https://github.com/cuteredpwnda/opposition-agents-playing-mtg"
+Repository = "https://github.com/cuteredpwnda/opposition-agents-playing-mtg"
+Issues = "https://github.com/cuteredpwnda/opposition-agents-playing-mtg/issues"
+Documentation = "https://github.com/cuteredpwnda/opposition-agents-playing-mtg/tree/main/docs"
 
 dependencies = [
     # Core

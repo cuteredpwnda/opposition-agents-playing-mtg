@@ -28,9 +28,18 @@ data/combos.json
 data/comprehensive_rules.txt
 data/scryfall_bulk/
 
-# Model weights
+# Model weights & checkpoints
 models/*.pt
 models/*.pth
+checkpoints/**/*.pt
+checkpoints/**/*.pth
+checkpoints/**/*.ckpt
+
+# Training artifacts
+logs/
+data/trajectories/
+data/imports/
+data/cache/
 
 # IDE
 .vscode/
@@ -46,6 +55,7 @@ models/*.pth
 *.vrb
 *.fdb_latexmk
 *.fls
+*.synctex.gz
 
 # OS
 Thumbs.db
