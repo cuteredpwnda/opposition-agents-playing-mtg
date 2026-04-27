@@ -257,7 +257,7 @@ def apply_spell_effect(
         for tid in targets:
             tcard = _find_card(state, tid)
             if tcard and tcard.zone == Zone.BATTLEFIELD:
-                if "indestructible" in tcard.oracle_text.lower():
+                if has_kw(tcard, "indestructible"):
                     state.log(f"{name} cannot destroy indestructible {tcard.name}")
                     continue
                 move_card(
@@ -265,6 +265,136 @@ def apply_spell_effect(
                     Zone.GRAVEYARD, tcard.owner_id,
                 )
                 state.log(f"{name} destroys {tcard.name}")
+        return state
+
+    if kind == "exile":
+        for tid in targets:
+            tcard = _find_card(state, tid)
+            if tcard and tcard.zone == Zone.BATTLEFIELD:
+                # Exile bypasses indestructible (CR 701.18).
+                move_card(
+                    state, tcard.instance_id, Zone.BATTLEFIELD,
+                    Zone.EXILE, tcard.owner_id,
+                )
+                state.log(f"{name} exiles {tcard.name}")
+        return state
+
+    if kind == "tap":
+        for tid in targets:
+            tcard = _find_card(state, tid)
+            if tcard and tcard.zone == Zone.BATTLEFIELD:
+                tcard.tapped = True
+                state.log(f"{name} taps {tcard.name}")
+        return state
+
+    if kind == "fight":
+        if len(targets) >= 2:
+            a = _find_card(state, targets[0])
+            b = _find_card(state, targets[1])
+            if a and b and a.zone == Zone.BATTLEFIELD and b.zone == Zone.BATTLEFIELD:
+                ap, bp = _power(a), _power(b)
+                a.damage_marked += bp
+                b.damage_marked += ap
+                state.log(f"{name}: {a.name} ({ap}) fights {b.name} ({bp})")
+        return state
+
+    if kind == "mill":
+        # Default: mill 1 from opponent.
+        opp_player = _opponent(state, controller_id)
+        amount = _parse_amount(oracle, default=1)
+        if opp_player:
+            library = [
+                c for c in state.cards
+                if c.zone == Zone.LIBRARY and c.owner_id == opp_player.player_id
+            ]
+            for c in library[:amount]:
+                move_card(state, c.instance_id, Zone.LIBRARY, Zone.GRAVEYARD, opp_player.player_id)
+            state.log(f"{name}: {opp_player.name} mills {min(amount, len(library))}")
+        return state
+
+    if kind == "token":
+        # "Create N X/Y <type> creature tokens" — minimal parser.
+        m_count = re.search(r"create (\d+|a|an|two|three|four)", oracle.lower())
+        word_to_int = {"a": 1, "an": 1, "two": 2, "three": 3, "four": 4}
+        if m_count:
+            raw = m_count.group(1)
+            count = int(raw) if raw.isdigit() else word_to_int.get(raw, 1)
+        else:
+            count = 1
+        m_pt = re.search(r"(\d+)/(\d+)", oracle)
+        if m_pt:
+            tp, tt = m_pt.group(1), m_pt.group(2)
+        else:
+            tp, tt = "1", "1"
+        # Try to identify the token's creature type ("Soldier", "Goblin", ...).
+        m_type = re.search(r"(\d+)/(\d+)\s+(?:white|blue|black|red|green|colorless)?\s*([A-Z][a-z]+)", source.oracle_text if source else "")
+        token_subtype = m_type.group(3) if m_type else "Spirit"
+        for _ in range(count):
+            tok = CardInstance(
+                card_data={
+                    "name": f"{token_subtype} Token",
+                    "type_line": f"Token Creature \u2014 {token_subtype}",
+                    "mana_cost": "",
+                    "cmc": 0,
+                    "oracle_text": "",
+                    "power": tp,
+                    "toughness": tt,
+                    "is_token": True,
+                },
+                zone=Zone.BATTLEFIELD,
+                owner_id=controller_id,
+                controller_id=controller_id,
+                summoning_sick=True,
+                turn_entered=state.turn_number,
+            )
+            state.cards.append(tok)
+        state.log(f"{name}: creates {count} {tp}/{tt} {token_subtype} token(s)")
+        return state
+
+    if kind == "scry":
+        amount = _parse_amount(oracle, default=1)
+        # Greedy: keep cards with cmc <= turn_number, send the rest to bottom.
+        controller = _find_player(state, controller_id)
+        if controller:
+            library = [
+                c for c in state.cards
+                if c.zone == Zone.LIBRARY and c.owner_id == controller_id
+            ]
+            top = library[:amount]
+            keep_top: list[CardInstance] = []
+            send_bottom: list[CardInstance] = []
+            for c in top:
+                if c.is_land() and controller.land_plays_remaining > 0:
+                    keep_top.append(c)
+                elif c.cmc <= max(1, state.turn_number):
+                    keep_top.append(c)
+                else:
+                    send_bottom.append(c)
+            # Reorder library: keep_top, then unchanged middle, then send_bottom.
+            middle = library[amount:]
+            new_order = keep_top + middle + send_bottom
+            # Rebuild library zone in order: pop existing, push in new order.
+            state.cards = [c for c in state.cards if c not in library] + new_order
+            state.log(f"{name}: scries {amount} (keep {len(keep_top)}, bottom {len(send_bottom)})")
+        return state
+
+    if kind == "surveil":
+        amount = _parse_amount(oracle, default=1)
+        controller = _find_player(state, controller_id)
+        if controller:
+            library = [
+                c for c in state.cards
+                if c.zone == Zone.LIBRARY and c.owner_id == controller_id
+            ]
+            top = library[:amount]
+            for c in top:
+                # Heuristic: graveyard cards we don't want; lands stay on top.
+                if c.is_land() and controller.land_plays_remaining > 0:
+                    continue
+                # Send first non-land to graveyard, rest stay.
+                move_card(state, c.instance_id, Zone.LIBRARY, Zone.GRAVEYARD, controller_id)
+                state.log(f"{name}: surveil sends {c.name} to graveyard")
+                break
         return state
 
     if kind == "bounce":

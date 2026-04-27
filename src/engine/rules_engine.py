@@ -337,6 +337,50 @@ class RulesEngine:
                         state, card, action.player_id
                     )
 
+                    # Validate targets against hexproof/shroud/protection;
+                    # if illegal targets remain, refuse to cast (the spell
+                    # has no legal targets, CR 601.2c).
+                    from .keywords import (
+                        can_be_targeted,
+                        ward_cost as _ward_cost,
+                        apply_prowess_on_cast,
+                    )
+                    valid_targets: list[str] = []
+                    extra_ward_cost = 0
+                    for tid in targets:
+                        tcard = next((c for c in state.cards if c.instance_id == tid), None)
+                        if tcard is None:
+                            # Player or stack-item id — accept as-is.
+                            valid_targets.append(tid)
+                            continue
+                        if not can_be_targeted(tcard, card, action.player_id):
+                            state.log(f"{card.name} cannot target {tcard.name} (hexproof/shroud/protection)")
+                            continue
+                        # Ward (CR 702.21): caster pays extra generic mana or
+                        # the spell is countered. We charge it as additional
+                        # generic cost from the pool/lands; fail to cast if
+                        # the controller can't pay.
+                        if tcard.controller_id != action.player_id:
+                            wc = _ward_cost(tcard)
+                            extra_ward_cost += wc
+                        valid_targets.append(tid)
+
+                    if targets and not valid_targets:
+                        state.log(f"{card.name} fizzles (no legal targets)")
+                        return state
+
+                    if extra_ward_cost > 0:
+                        ward_pay_cost = {"generic": extra_ward_cost}
+                        if not can_pay(player, ward_pay_cost):
+                            auto_tap_for_cost(state, player, ward_pay_cost)
+                        if not can_pay(player, ward_pay_cost):
+                            state.log(f"{card.name} cannot pay ward {{{extra_ward_cost}}} — countered")
+                            return state
+                        pay_cost(player, ward_pay_cost)
+                        state.log(f"{card.name} pays ward {{{extra_ward_cost}}}")
+
+                    targets = valid_targets
+
                     # Create stack item and push to stack
                     stack_item = StackItem(
                         source_card_id=action.card_instance_id,
@@ -346,6 +390,9 @@ class RulesEngine:
                         card_data=card.card_data.copy(),
                     )
                     state = push_to_stack(state, stack_item)
+                    # Prowess (CR 702.108): non-creature spells boost
+                    # prowess creatures controller controls.
+                    apply_prowess_on_cast(state, action.player_id, card)
                     state.log(f"{card.name} is cast" + (f" targeting {targets}" if targets else ""))
             return state
         

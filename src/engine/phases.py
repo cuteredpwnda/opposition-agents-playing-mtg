@@ -28,6 +28,15 @@ PHASE_ORDER: list[Phase] = [
 def advance_phase(state: GameState) -> Phase:
     """Advance to the next phase/step. Returns the new phase."""
     current_idx = PHASE_ORDER.index(state.phase)
+
+    # Cleanup step (CR 514): clear damage from creatures and end-of-turn
+    # buffs (prowess, +X/+X "until end of turn").
+    if state.phase == Phase.CLEANUP:
+        from .keywords import clear_eot_buffs
+        for c in state.cards:
+            c.damage_marked = 0
+        clear_eot_buffs(state)
+
     next_idx = current_idx + 1
 
     if next_idx >= len(PHASE_ORDER):
