@@ -236,6 +236,39 @@ async def stage_4_collect_trajectories(
     logger.info("Trajectory collection done: %d total", len(store))
     return store
 
+async def stage_4_iterative_self_play(
+    num_iterations: int = 8,
+    games_per_iteration: int = 20,
+    eval_games: int = 10,
+    max_turns: int = 50,
+    checkpoint_dir: str = "checkpoints/rl",
+) -> "TrajectoryStore":
+    """Run an iterative self-play promotion loop to collect trajectories."""
+    logger.info(
+        "=== Stage 4.5: Iterative Self-Play Promotion (%d iters, %d games/iter) ===",
+        num_iterations,
+        games_per_iteration,
+    )
+
+    from src.training.rl_trainer import RLConfig, RLTrainer
+    from src.world_model.trajectory import TrajectoryStore
+
+    rl_config = RLConfig(
+        num_iterations=num_iterations,
+        games_per_iteration=games_per_iteration,
+        eval_games_per_iteration=eval_games,
+        max_turns_per_game=max_turns,
+        collect_trajectories=True,
+        dream_training_interval=9999,
+        checkpoint_dir=checkpoint_dir,
+    )
+    trainer = RLTrainer(rl_config)
+    await trainer.train()
+
+    if trainer.trajectory_store is not None:
+        return trainer.trajectory_store
+
+    return TrajectoryStore(base_dir="data/trajectories")
 
 # ╔═══════════════════════════════════════════════════════════════════╗
 # ║  Stage 5 — JEPA World Model Training                              ║
@@ -428,9 +461,18 @@ async def run_pipeline(args: argparse.Namespace) -> None:
 
     # --- Stage 4 ---
     if start <= 4:
-        store = await stage_4_collect_trajectories(
-            num_games=args.num_games, max_turns=args.max_turns,
-        )
+        if args.iterative_training:
+            store = await stage_4_iterative_self_play(
+                num_iterations=args.iterative_iters,
+                games_per_iteration=args.iterative_games_per_iter,
+                eval_games=args.iterative_eval_games,
+                max_turns=args.max_turns,
+                checkpoint_dir=args.checkpoint_dir,
+            )
+        else:
+            store = await stage_4_collect_trajectories(
+                num_games=args.num_games, max_turns=args.max_turns,
+            )
 
         # Stage 4.5: KG enrichment from collected trajectories
         if not args.no_kg:
@@ -579,6 +621,16 @@ def main() -> None:
                         help="Number of self-play games to collect")
     parser.add_argument("--max-turns", type=int, default=50,
                         help="Max turns per game")
+    parser.add_argument("--iterative-training", action="store_true",
+                        help="Use the iterative self-play promotion loop during stage 4")
+    parser.add_argument("--iterative-iters", type=int, default=8,
+                        help="Number of iterations for iterative self-play")
+    parser.add_argument("--iterative-games-per-iter", type=int, default=20,
+                        help="Games per iteration for iterative self-play")
+    parser.add_argument("--iterative-eval-games", type=int, default=10,
+                        help="Evaluation games per iteration for iterative self-play")
+    parser.add_argument("--checkpoint-dir", type=str, default="checkpoints/rl",
+                        help="Checkpoint directory for RLTrainer during iterative training")
 
     # JEPA training
     parser.add_argument("--jepa-beta", type=float, default=1.0,

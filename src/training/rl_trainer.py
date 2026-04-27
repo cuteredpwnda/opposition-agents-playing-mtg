@@ -17,6 +17,7 @@ import asyncio
 import logging
 import os
 import json
+import random
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -54,6 +55,9 @@ class RLConfig:
     collect_trajectories: bool = True     # Feed games into world model training
     dream_training_interval: int = 10     # Run dream training every N iterations
 
+    # Promotion loop
+    promotion_threshold: float = 0.55     # Candidate must beat champion by > threshold
+
     # Checkpointing
     checkpoint_dir: str = "checkpoints/rl"
     log_dir: str = "logs/rl"
@@ -89,12 +93,21 @@ class AgentPool:
 
     def get_matchup(self) -> tuple[str, str]:
         """Select two agents for a match (prefer close ELO)."""
-        import random
         ids = list(self.agents.keys())
         if len(ids) < 2:
             return ids[0], ids[0]
         random.shuffle(ids)
         return ids[0], ids[1]
+
+    def get_best_agents(self) -> tuple[str, str]:
+        """Return the top two agents by ELO rating."""
+        ids = list(self.agents.keys())
+        if not ids:
+            raise ValueError("No agents registered in pool")
+        if len(ids) == 1:
+            return ids[0], ids[0]
+        sorted_ids = sorted(ids, key=lambda k: self.elo.get(k, 1200.0), reverse=True)
+        return sorted_ids[0], sorted_ids[1]
 
 
 class RLTrainer:
@@ -117,6 +130,7 @@ class RLTrainer:
         self.optimizer = None
         self.tokenizer = None
         self.card_embeddings_model = None
+        self.champion_id: str | None = None
         self.stats: list[dict[str, Any]] = []
 
     def setup(self):
@@ -192,12 +206,23 @@ class RLTrainer:
             import torch
             from src.agents.neural_reasoner import NeuralReasoningModule
             self.neural_module = NeuralReasoningModule()
-            self.optimizer = torch.optim.AdamW(
-                self.neural_module.parameters(),
-                lr=self.config.learning_rate,
-            )
+            if hasattr(self.neural_module, "parameters"):
+                self.optimizer = torch.optim.AdamW(
+                    self.neural_module.parameters(),
+                    lr=self.config.learning_rate,
+                )
+            else:
+                logger.warning(
+                    "NeuralReasoningModule is not trainable — skipping optimizer setup"
+                )
+                self.neural_module = None
+                self.optimizer = None
         except ImportError:
             logger.warning("PyTorch not available — training will collect data only")
+        except AttributeError as e:
+            logger.warning("Neural module initialization failed: %s", e)
+            self.neural_module = None
+            self.optimizer = None
 
         # Set up GameTokenizer + CardEmbeddingModel for real state encoding
         try:
@@ -215,6 +240,11 @@ class RLTrainer:
         os.makedirs(self.config.checkpoint_dir, exist_ok=True)
         os.makedirs(self.config.log_dir, exist_ok=True)
 
+        # Initialize champion agent for iterative self-play
+        if self.pool.agents:
+            self.champion_id, _ = self.pool.get_best_agents()
+            logger.info("Initial champion agent: %s", self.champion_id)
+
     async def train(self):
         """Main RL training loop."""
         self.setup()
@@ -226,8 +256,15 @@ class RLTrainer:
             logger.info("--- Iteration %d / %d ---", iteration + 1, self.config.num_iterations)
 
             # Phase 1: Generate games (self-play)
-            game_results = await self._run_games(
-                self.config.games_per_iteration, collect=True
+            challenger_id = self._pick_challenger()
+            if challenger_id is None:
+                challenger_id = self.champion_id
+
+            game_results = await self._run_matchup(
+                self.champion_id,
+                challenger_id,
+                self.config.games_per_iteration,
+                collect=True,
             )
 
             # Phase 2: Train neural module (after warmup)
@@ -235,10 +272,24 @@ class RLTrainer:
             if iteration >= self.config.warmup_iterations and self.neural_module is not None:
                 train_loss = self._train_neural_step()
 
-            # Phase 3: Evaluate agents
-            eval_results = await self._run_games(
-                self.config.eval_games_per_iteration, collect=False
+            # Phase 3: Evaluate candidate against champion
+            eval_results = await self._evaluate_candidate(
+                challenger_id,
+                self.champion_id,
+                self.config.eval_games_per_iteration,
             )
+            win_rate = eval_results.get("win_rate", 0.0)
+            logger.info(
+                "Candidate %s win rate vs champion %s: %.2f",
+                challenger_id,
+                self.champion_id,
+                win_rate,
+            )
+
+            # Phase 3.5: Promote if candidate is stronger
+            if self._promote_candidate(challenger_id, self.champion_id, win_rate):
+                logger.info("Promoted %s to champion", challenger_id)
+                self.champion_id = challenger_id
 
             # Phase 4: Dream training (periodic)
             if (
@@ -377,6 +428,105 @@ class RLTrainer:
                 results.append({"winner": None, "turns": 0, "error": str(e)})
 
         return results
+
+    async def _run_matchup(
+        self,
+        pool_a: str,
+        pool_b: str,
+        num_games: int,
+        collect: bool,
+    ) -> list[dict[str, Any]]:
+        """Run games between two specific agents in the pool."""
+        from src.orchestrator.game_runner import GameRunner, GameConfig
+        from src.world_model.data_sources.self_play_collector import SelfPlayCollector
+        from src.training.rewards import RewardFunction
+        from src.training.experience_buffer import Experience
+
+        results = []
+        for game_num in range(num_games):
+            try:
+                player_ids = ["player_0", "player_1"]
+                agents = {
+                    "player_0": self.pool.create_agent(pool_a, "player_0"),
+                    "player_1": self.pool.create_agent(pool_b, "player_1"),
+                }
+
+                collector = None
+                if collect and self.config.collect_trajectories:
+                    collector = SelfPlayCollector(
+                        tokenizer=self.tokenizer,
+                        card_embeddings=self.card_embeddings_model,
+                    )
+
+                decks = {pid: self._build_deck() for pid in player_ids}
+                gc = GameConfig(
+                    format=self.config.game_format,
+                    starting_life=self.config.starting_life,
+                    max_turns=self.config.max_turns_per_game,
+                )
+                runner = GameRunner(gc, self_play_collector=collector)
+                result = await runner.run_game(agents, decks)
+
+                if result.winner:
+                    winner_pool = pool_a if result.winner == "player_0" else pool_b
+                    loser_pool = pool_b if result.winner == "player_0" else pool_a
+                    self.pool.update_elo(winner_pool, loser_pool)
+
+                if collect and self.experience_buffer is not None:
+                    for pid in player_ids:
+                        reward = 1.0 if pid == result.winner else -1.0 if result.winner else 0.0
+                        state_feats = self._extract_terminal_features(collector, pid)
+                        exp = Experience(
+                            state_features=state_feats,
+                            action_index=0,
+                            reward=reward,
+                            next_state_features=state_feats,
+                            done=True,
+                            metadata={"game_turns": result.turns, "player_id": pid},
+                        )
+                        self.experience_buffer.add(exp)
+
+                if collector and self.trajectory_store:
+                    for traj in collector.collected_trajectories:
+                        self.trajectory_store.add(traj)
+
+                results.append({"winner": result.winner, "turns": result.turns})
+                logger.debug("Game %d: winner=%s, turns=%d", game_num + 1, result.winner, result.turns)
+            except Exception as e:
+                logger.warning("Game %d failed: %s", game_num + 1, e)
+                results.append({"winner": None, "turns": 0, "error": str(e)})
+
+        return results
+
+    def _pick_challenger(self) -> str | None:
+        """Choose a challenger agent different from the current champion."""
+        if self.champion_id is None:
+            return None
+        candidates = [pid for pid in self.pool.agents.keys() if pid != self.champion_id]
+        if not candidates:
+            return self.champion_id
+        return random.choice(candidates)
+
+    async def _evaluate_candidate(
+        self, candidate_id: str, champion_id: str, num_games: int
+    ) -> dict[str, float]:
+        """Evaluate candidate against champion and return a win rate summary."""
+        results = await self._run_matchup(candidate_id, champion_id, num_games, collect=False)
+        wins = sum(1 for r in results if r.get("winner") == "player_0")
+        total = len(results)
+        return {"win_rate": wins / total if total > 0 else 0.0, "games": total}
+
+    def _promote_candidate(
+        self, candidate_id: str, champion_id: str, win_rate: float
+    ) -> bool:
+        """Promote candidate to champion if it outperforms the existing champion."""
+        if candidate_id == champion_id:
+            return False
+        if win_rate > self.config.promotion_threshold:
+            self.pool.elo[candidate_id] = self.pool.elo.get(candidate_id, 1200.0) + 50.0
+            self.pool.elo[champion_id] = self.pool.elo.get(champion_id, 1200.0) - 20.0
+            return True
+        return False
 
     def _train_neural_step(self) -> float:
         """Train the neural module on buffered experience."""
