@@ -823,3 +823,340 @@ opposition-agents-playing-mtg/
 ---
 
 *This document is the single source of truth for implementation status. Update it as features are completed.*
+
+---
+
+## 9. Unimplemented MTG Mechanics — Comprehensive Checklist
+
+Engine coverage is "good enough for an EDH pod with random/heuristic
+agents", but a long tail of keyword mechanics is missing. This list is
+the canonical backlog. Tick a box only when (a) parser handles the
+oracle text, (b) the rules engine produces the correct legal action(s),
+(c) a unit test under `tests/` exercises the mechanic, and (d) the EDH
+pod sim still completes a 6-turn run.
+
+Ordering: roughly by frequency in modern Magic / how visible the gap is
+in pod games. Strike-through items have been completed but kept here as
+historical reference.
+
+### Cast-time / casting-cost mechanics
+
+- [ ] **Adventure** (CR 715) — split cards with an instant/sorcery on the
+      left and a creature on the right; cast either half from hand.
+- [ ] **Modal Double-Faced Cards (MDFC)** — cast either face from hand;
+      transform-style DFCs (CR 712).
+- [ ] **Splice** (CR 702.46) — reveal an arcane card from hand and add
+      its text to the spell you're casting.
+- [ ] **Suspend** (CR 702.61) — cast for `{X}` exile cost, place N time
+      counters; cast without paying mana cost when last counter is
+      removed.
+- [ ] **Storm** (CR 702.39) — copy the spell N times where N is spells
+      cast before it this turn.
+- [ ] **Cascade** (CR 702.85) — exile until a non-land cheaper card,
+      cast that for free.
+- [ ] **Bestow** (CR 702.102) — cast a creature as an aura with an
+      alternative cost.
+- [ ] **Morph / Megamorph / Manifest / Disguise / Cloak** (CR 702.36 /
+      702.142 / 701.33 / 702.166) — cast face-down for `{3}`, turn face
+      up for the morph cost.
+- [ ] **Mutate** (CR 702.139 — Ikoria) — cast for the mutate cost over /
+      under a non-Human creature you control.
+- [ ] **Affinity** (CR 702.40), **Convoke** (702.51), **Delve** (702.66),
+      **Improvise** (702.126), **Emerge** (702.119) — alternative
+      payment mechanics for casting cost.
+- [ ] **Madness** (CR 702.34) — alternative cost when discarded.
+- [ ] **Foretell** (CR 702.143) — `{2}` to exile face-down, alt cost on
+      a later turn.
+- [ ] **Buyback** (CR 702.27), **Kicker** / **Multikicker** (702.32 /
+      702.99), **Replicate** (702.99), **Entwine** (702.42), **Surge**
+      (702.117) — additional/optional costs.
+- [ ] **Channel** (CR 702.74) — activated ability from hand that
+      discards the card.
+- [ ] **Flashback** (CR 702.33) — cast from graveyard for a flashback
+      cost, then exile.
+- [ ] **Encore** (CR 702.140) — graveyard-zone activated ability.
+- [ ] **Disturb** (CR 702.146) — flashback variant that returns
+      transformed.
+
+### Combat-relevant keywords (legal-actions / damage-step)
+
+- [ ] **Equip / Crew** activations — `--queued in 4.1`. Surface as
+      `ACTIVATE_ABILITY`.
+- [ ] **Bestow** attachment (see above).
+- [ ] **Ninjutsu / Commander Ninjutsu** (CR 702.49) — replace an
+      unblocked attacker with a Ninja from hand.
+- [ ] **Dash** (CR 702.108), **Boast** (702.140) — turn-restricted
+      activated abilities.
+- [ ] **Mentor** (702.133), **Riot** (702.135), **Spectacle** (702.131),
+      **Adamant** (702.137), **Renown** (702.111), **Outlast**
+      (702.106), **Exalted** (702.82), **Banding** (702.21), **Bushido**
+      (702.45), **Soulshift** (702.49), **Devour** (702.81), **Modular**
+      (702.42), **Vanishing / Fading** (702.62 / 702.32) — combat /
+      ETB-flavoured triggered abilities and counter mechanics.
+- [ ] **Day / Night card transformations** — state machine is
+      implemented (`DayNight` enum + `update_day_night_for_upkeep`); the
+      *transform on day↔night flip* trigger needs an oracle hook.
+- [ ] **Daybound / Nightbound** triggers on cast.
+- [ ] **Class levels** — chapter-style activated abilities; partial
+      Saga support exists but Class needs its own state.
+
+### Card-draw / value engines
+
+- [ ] **Cycling** (CR 702.29), **Channel** activations — both are
+      activated abilities **from hand**, not battlefield. Engine needs
+      a `legal_activations_from_hand` extension.
+- [ ] **Investigate / Treasure / Food / Blood / Clue / Map / Powerstone**
+      tokens — partially implemented; ensure each token's activated
+      ability is surfaced (sacrifice for effect).
+- [ ] **Plot** (CR 702.169 — MH3) — `{2}` to exile face-up, cast for
+      mana cost on a later turn.
+- [ ] **Discover** (CR 702.168) — cascade-style for non-land cards of
+      mana value ≤ N.
+- [ ] **Bargain** (CR 702.170) — optional sacrifice cost.
+- [ ] **Surveil / Scry / Connive / Manifest dread** — library-top
+      manipulation. `Scry` exists; `Surveil` needs graveyard option;
+      `Connive` couples with discard.
+- [ ] **Proliferate** target choice — currently always proliferates
+      everything (queue 4.1 polish).
+
+### Triggered / hook mechanics waiting on oracle parsing
+
+- [ ] **Dungeon advance from card effects** (`Venture into the dungeon`
+      on instants/sorceries) — state implemented; oracle hook to call
+      `venture_into_dungeon` from `triggers.py` / `spell_effects.py`
+      pending.
+- [ ] **Monarch transfer on combat damage** — `monarch` state exists;
+      transfer trigger on dealing combat damage to the monarch needs to
+      be wired in `combat.py`.
+- [ ] **Initiative transfer** — same as monarch but for the initiative
+      designation.
+- [ ] **Emblem creation from planeswalker ultimates** — `Emblem`
+      dataclass exists; the `-N` ultimate parser needs to call
+      `create_emblem`.
+- [ ] **Companion in-game cast path** — model is in place
+      (`src/engine/companion.py`); the cast-spell pipeline still needs
+      to recognise "from outside the game with `{3}` extra" as a legal
+      cast option once per game.
+
+### Framework gaps
+
+- [ ] **Replacement effects framework** — generalised hook bus.
+      Currently only ETB-tapped + stun counters are special-cased.
+      Block requested by Equip/Crew, "if a creature would die exile
+      instead", "skip your next turn", etc.
+- [ ] **Activated mana abilities for non-land permanents** (Treasure,
+      Sol Ring, Birds of Paradise, Llanowar Elves) surfaced as legal
+      actions (queue 4.1).
+- [ ] **Aura targeting on cast** (queue 4.1) — `auto_pick_targets`
+      special path.
+- [ ] **Counterspell awareness** in heuristic agent (queue 4.1).
+- [ ] **Lord effects beyond +X/+X** — granting keywords by subtype
+      (queue 4.1).
+
+### Multiplayer / table-state extras
+
+- [ ] **Partner / Friends Forever / Background** parsing — setup wiring
+      is done, oracle-text parser to recognise the keyword and validate
+      decklists is pending.
+- [ ] **"Your starting hand size" modifiers** — vanguard avatars and
+      cards like Serra Ascendant edge cases.
+- [ ] **Two-player vs. multi-player triggered ability targeting**
+      review — many "target opponent" cards naively pick `players[1]`.
+
+---
+
+## 10. Dreaming + World Model — Detailed Implementation Plan
+
+Once the engine is "EDH-pod-complete" (every commander deck plays its
+full curve without crashes), the project's research thrust is the
+**latent-space dreaming agent**. This section is the build-out plan,
+written so a future contributor can pick up any phase independently.
+
+Reference architectures:
+* Ha & Schmidhuber, *World Models* — V (vision/encoder) + M
+  (memory/dynamics) + C (controller).
+* LeWM / JEPA — embedding-space prediction with stop-gradient targets.
+* Active Inference — variational free-energy minimisation under
+  partial observability.
+
+### 10.1 Phase 1 — Trajectory generation & storage
+
+**Goal:** produce a labelled corpus of self-play games we can train on.
+
+- File: `src/training/trajectory_store.py` (exists, shape audit needed).
+- File: `src/training/self_play_collector.py` (exists, hook into
+  `GameRunner`).
+- Output format: NPZ shards under `runs/trajectories/` with:
+  ```
+  obs[T, D_obs]  uint8/float32       # tokenised game state per ply
+  act[T]         int32               # discrete action index
+  rew[T]         float32             # shaped reward
+  done[T]        bool
+  meta           dict (deck IDs, agent types, seed, winner)
+  ```
+- Curriculum: 10k random×random games → 10k heuristic×heuristic →
+  10k mixed → ongoing self-play replay buffer.
+- Acceptance test: `pytest tests/test_trajectory_store.py` round-trips
+  a 100-ply game without loss; total disk ≤ 4 GB per 10k pod games.
+
+### 10.2 Phase 2 — State tokenisation (`GameTokenizer`)
+
+**Goal:** lossy-but-useful fixed-width vector representation of a
+`GameState` from the active player's perspective.
+
+- File: `src/world_model/game_tokenizer.py` (exists; needs feature
+  audit).
+- Features (minimum viable):
+  * Per-player slot: life, mana pool by colour, hand size, library
+    count, graveyard count, # creatures, total power, total toughness,
+    mana value sum, commander damage taken matrix.
+  * Per-permanent slot (top K=64 by controller × type): card embedding
+    id, P/T deltas, tapped, summoning-sick, counters dict bucketed.
+  * Stack: top-S=4 stack-item card-embedding ids + controller.
+  * Phase one-hot, active player flag, turn number (clamped).
+- Card embeddings: pre-compute `data/card_embeddings.npz` from
+  `scripts/build_embeddings.py` using a frozen sentence encoder over
+  `oracle_text + type_line`.
+- Output: `obs ∈ R^D` with `D ≈ 1024–2048`.
+- Acceptance test: round-trip 1000 random states, assert < 1% nan/inf,
+  assert that mana-pool / life features are exactly recoverable by
+  linear probe.
+
+### 10.3 Phase 3 — Encoder V (`StateEncoder`)
+
+**Goal:** map `obs → z ∈ R^d` with `d ≈ 256` for downstream prediction.
+
+- File: `src/world_model/state_encoder.py` (exists).
+- Architecture options (selectable via config):
+  1. **VAE**: enc/dec with KL regulariser; baseline.
+  2. **JEPA**: predictor-encoder pair, target encoder is EMA of online
+     encoder (Stop-Gradient).
+  3. **Contrastive**: SimCLR-style on `(s_t, s_{t+1})` pairs.
+- Training script: `scripts/train_state_encoder.py`.
+- Loss: VAE ELBO **or** JEPA `‖p(z_t) − sg(z_{t+1})‖²` **or** InfoNCE.
+- Acceptance: linear probe accuracy ≥ 80% on each of {life, mana,
+  cards-in-hand, board power}.
+
+### 10.4 Phase 4 — Dynamics model M (`DynamicsModel`)
+
+**Goal:** predict `(z_{t+1}, r_{t+1}, done_{t+1}) | (z_t, a_t)` and
+implicit hidden state.
+
+- File: `src/world_model/dynamics_model.py` (exists; verify MDN-RNN
+  shape).
+- Architecture: MDN-RNN (Mixture Density Network on top of LSTM/GRU)
+  per Ha & Schmidhuber, with K=5 mixture components.
+- Training script: `scripts/train_dynamics_model.py` — consumes the
+  trajectory store, runs teacher-forced rollouts.
+- Loss: NLL of next-`z` mixture + MSE on reward + BCE on done.
+- Acceptance: open-loop 5-step rollout MSE on `z` < 0.1 vs encoder of
+  ground-truth state on a held-out test set.
+
+### 10.5 Phase 5 — Controller C
+
+**Goal:** policy `π(a | z, h)` and value `V(z, h)`.
+
+- File: `src/world_model/controller.py` (exists).
+- Two interchangeable backends:
+  1. **CMA-ES** over a tiny MLP (Ha & Schmidhuber baseline).
+  2. **PPO / SAC** with the encoder + dynamics frozen.
+- Training script: `scripts/train_pipeline.py --stage controller`.
+- Action masking: hard-mask illegal actions inside softmax; never let
+  the controller output an illegal index.
+- Acceptance: > 60% win rate vs. `RandomAgent` over 200 games.
+
+### 10.6 Phase 6 — Dream search
+
+**Goal:** decision-time planning entirely in latent space.
+
+- File: `src/world_model/dream_search.py` (exists; verify it's wired).
+- Algorithm: best-first / MCTS over `(z, a) → z'` rollouts using M;
+  expand for budget `B = 1000` simulations, return action with
+  highest backed-up `V(z_leaf)`.
+- Speed target: ≥ 1000 rollouts/sec on a single GPU.
+- Acceptance: dream-search controller > 55% vs. greedy controller on
+  matched compute.
+
+### 10.7 Phase 7 — KG context fusion (`KGContextEncoder`)
+
+**Goal:** inject Neo4j-derived static priors (combo membership,
+synergy counts, archetype tags) into the latent state.
+
+- File: `src/world_model/kg_context_encoder.py` (exists).
+- Source: `src/knowledge/kg_combo_database.py` produces, for each
+  card, a small feature vector (in-combo, role, archetype). Also the
+  GNN embeddings from `scripts/train_graph_embeddings.py`.
+- Fusion: `z_fused = MLP([z_state, KG(deck), KG(board)])`.
+- Ablation hooks: `WorldModelAgent(kg_fusion=False)` for benchmark
+  matrix in §6.
+
+### 10.8 Phase 8 — Active inference / opponent modelling
+
+**Goal:** maintain Bayesian belief over hidden information (opponent
+hand contents, library top, what they're representing) and choose
+actions that minimise expected free energy.
+
+- File: `src/agents/active_inference_agent.py` (exists).
+- Belief: particle filter over consistent opponent hands given
+  decklist (public!) + observed casts/discards + colour identity.
+- Used inside dream search: when expanding an opponent ply, sample
+  hidden state from belief instead of treating it as oracle.
+
+### 10.9 Phase 9 — Reward shaping
+
+- File: `src/training/reward_function.py` (exists).
+- Components:
+  * Terminal: `+1 / 0 / −1` for win/draw/loss.
+  * Shaped: small bonuses for life-totals delta, board presence,
+    card advantage; **decay** over training so the final policy is
+    purely outcome-driven.
+- Hyper-parameters in `src/config.py` so ablations are config-only.
+
+### 10.10 Phase 10 — Curriculum & full training pipeline
+
+```
+random×random  → encoder pretrain (V)
+              ↓
+heuristic×heuristic → dynamics pretrain (M)
+              ↓
+controller stage 1 (PPO vs heuristic)
+              ↓
+self-play replay buffer (top-N agents by ELO)
+              ↓
+dream search at decision time
+              ↓
+fold KG fusion + active inference
+              ↓
+benchmark matrix (§6)
+```
+
+- Single orchestrator: `scripts/train_pipeline.py` with subcommands
+  `--stage {encoder,dynamics,controller,selfplay}`.
+- Each stage writes checkpoints to `checkpoints/<stage>/<run-id>.pt`
+  and a one-line summary to `runs/training_log.jsonl`.
+
+### 10.11 Phase 11 — Evaluation
+
+- Round-robin tournament runner: `scripts/benchmark.py` (exists).
+- ELO updates after each pod game; report stored as
+  `runs/bench-<tag>/elo.csv`.
+- Required deliverables for the paper:
+  1. ELO table over the §6 ablation matrix.
+  2. Linear-probe accuracy plot (encoder quality).
+  3. 5-step rollout MSE plot (dynamics quality).
+  4. Win-rate vs. game length distribution (does the agent close out
+     games or stall?).
+
+### 10.12 Risks & mitigations
+
+| Risk | Mitigation |
+|---|---|
+| Tokeniser is lossy in subtle ways → unbeatable bugs | Linear-probe acceptance gate per §10.2; refuse to train next phase if probe fails. |
+| Action space explodes (mana payments, target picks) → controller can't learn | Action factorisation: `(action_kind, target_id)` heads with hard masks; group activations by source. |
+| KG pipeline depends on Neo4j availability | Cache combo features into a pickle so training is offline-safe. |
+| Self-play collapses to a single dominant strategy | Population-based training: keep top-K agents and rotate opponents. |
+| Compute budget | Dream search uses a frozen M; encoder/dynamics trained once and reused. |
+
+---
+
+*End of plan. Update sections 9 and 10 alongside Active Work Log entries.*
