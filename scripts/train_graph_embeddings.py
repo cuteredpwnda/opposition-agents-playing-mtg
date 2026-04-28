@@ -62,8 +62,14 @@ ORDER BY c.cardName
 """
 
 EXPORT_EDGES_QUERY = """
+// Direct Card-Card edges (SYNERGIZES_WITH, COUNTERS, ENABLES — once populated)
 MATCH (a:Card)-[r]->(b:Card)
 RETURN a.cardName AS src, b.cardName AS dst, type(r) AS rel
+UNION
+// Combo co-membership: every pair of cards in the same combo gets a CO_COMBO edge
+MATCH (a:Card)-[:PART_OF_COMBO]->(combo:Combo)<-[:PART_OF_COMBO]-(b:Card)
+WHERE a.cardName < b.cardName
+RETURN a.cardName AS src, b.cardName AS dst, 'CO_COMBO' AS rel
 """
 
 
@@ -264,10 +270,11 @@ def train_graph_embedder(
 async def write_embeddings_to_neo4j(
     embeddings: torch.Tensor,
     name_to_idx: dict[str, int],
+    batch_size: int = 500,
 ) -> int:
     """Write card embeddings back to Neo4j as a vector property.
 
-    Sets ``c.graphEmbedding`` on each Card node.
+    Sets ``c.embedding`` on each Card node (batched UNWIND for speed).
 
     Returns:
         Number of cards updated.
@@ -279,18 +286,24 @@ async def write_embeddings_to_neo4j(
         settings.neo4j_uri, auth=(settings.neo4j_user, settings.neo4j_password)
     )
 
+    rows = [
+        {"name": idx_to_name[i], "vec": embeddings[i].tolist()}
+        for i in range(embeddings.size(0))
+        if i in idx_to_name
+    ]
     count = 0
+    query = (
+        "UNWIND $batch AS row "
+        "MATCH (c:Card {cardName: row.name}) "
+        "SET c.embedding = row.vec"
+    )
     async with driver.session() as session:
-        for idx in range(embeddings.size(0)):
-            name = idx_to_name.get(idx)
-            if name is None:
-                continue
-            vec = embeddings[idx].tolist()
-            await session.run(
-                "MATCH (c:Card {cardName: $name}) SET c.graphEmbedding = $vec",
-                name=name, vec=vec,
-            )
-            count += 1
+        for start in range(0, len(rows), batch_size):
+            chunk = rows[start : start + batch_size]
+            await session.run(query, batch=chunk)
+            count += len(chunk)
+            if start % (batch_size * 10) == 0:
+                logger.info("Wrote %d/%d embeddings...", count, len(rows))
 
     await driver.close()
     logger.info("Wrote %d embeddings to Neo4j", count)
