@@ -139,6 +139,14 @@ items stay for traceability.
       ability that flows through `has_keyword`. Plural→singular handled
       via trailing-s strip. Tests: `tests/test_lord_and_etb_tapped.py`
       (6 tests, also covers ETB-tapped).
+- [x] **Equip / Crew — verified end-to-end** — already surfaced as
+      `Special_Action(metadata={'special':'equip'/'crew'})` legal actions
+      with `execute_equip` / `execute_crew` paths in `rules_engine`.
+      Fixed a re-equip P/T leak: `execute_equip` now clears the previous
+      target's `equip_pwr` / `equip_tou` counters before re-attaching.
+      `keywords.effective_power/toughness` now read those counters so
+      "Equipped creature gets +N/+M" is reflected in combat. Tests:
+      `tests/test_equip_bonus.py` (2 tests).
 
 ### In progress
 
@@ -146,8 +154,6 @@ _(none — pick from queue below)_
 
 ### Queue — High Priority
 
-- [ ] **Equip / Crew activation** — surface as `ACTIVATE_ABILITY` actions and
-      wire attachment.
 - [ ] **Counterspell awareness** — heuristic agent should hold up `{U}` when
       it has a counter in hand and the opponent casts a relevant spell.
 

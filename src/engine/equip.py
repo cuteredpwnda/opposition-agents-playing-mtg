@@ -106,6 +106,15 @@ def execute_equip(
         state.log(f"{player.name} cannot pay equip {cost_text} for {equipment.name}")
         return False
     pay_cost(player, cost)
+    # Clear bonuses on the creature this equipment was previously attached to.
+    if equipment.attached_to and equipment.attached_to != target.instance_id:
+        prev = next(
+            (c for c in state.cards if c.instance_id == equipment.attached_to),
+            None,
+        )
+        if prev is not None:
+            prev.counters.pop("equip_pwr", None)
+            prev.counters.pop("equip_tou", None)
     equipment.attached_to = target.instance_id
     state.log(f"{equipment.name} equipped to {target.name}")
     # Apply +X/+Y from oracle text "Equipped creature gets +N/+M".

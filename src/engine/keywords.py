@@ -190,7 +190,8 @@ def effective_power(card: CardInstance) -> int:
     plus = card.counters.get("+1/+1", 0)
     minus = card.counters.get("-1/-1", 0)
     eot = int(getattr(card, "eot_power_bonus", 0) or 0)
-    return base + card.counters.get("prowess_eot", 0) + plus - minus + eot
+    equip = int(card.counters.get("equip_pwr", 0) or 0)
+    return base + card.counters.get("prowess_eot", 0) + plus - minus + eot + equip
 
 
 def effective_toughness(card: CardInstance) -> int:
@@ -198,7 +199,8 @@ def effective_toughness(card: CardInstance) -> int:
     plus = card.counters.get("+1/+1", 0)
     minus = card.counters.get("-1/-1", 0)
     eot = int(getattr(card, "eot_toughness_bonus", 0) or 0)
-    return base + plus - minus + eot
+    equip = int(card.counters.get("equip_tou", 0) or 0)
+    return base + plus - minus + eot + equip
 
 
 def _parse_pt(value) -> int:
