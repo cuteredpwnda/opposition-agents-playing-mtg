@@ -232,7 +232,7 @@ The framework is released as open source\footnote{\url{https://github.com/cutere
 
 \paragraph{MTG and other complex card games.} Earlier MTG-AI work has used hand-crafted heuristics \citep{cowling2012ensemble}, MCTS, and small policy nets on restricted card pools (e.g., \texttt{open-mtg}). On the rules side, \texttt{Forge}, \texttt{XMage} and \texttt{Mage} provide JVM-based reference implementations. To our knowledge, no prior public system combines a full Comprehensive-Rules engine with a learned world model and a graph-grounded LLM controller. \citet{moravvcik2017deepstack} (poker), \citet{vinyals2019grandmaster} (StarCraft) and \citet{schrittwieser2020mastering} (MuZero) are spiritual antecedents at the algorithmic level.
 
-\paragraph{Ontologies for games.} Game ontologies have been explored for serious games and educational metadata; for trading-card games specifically, public OWL ontologies are sparse. Our ontology (\texttt{data/ontology/mtg-ontology-v1.1.owl}) draws on the practices surveyed in \citet{noy2001ontology} and the OntologyExtender workflow of \citet{ontology_extender}, and is validated by SHACL shapes \citep{w3c2017shacl}.
+\paragraph{Ontologies for games.} Game ontologies have been explored for serious games and educational metadata; for trading-card games specifically, public OWL ontologies are sparse. Our ontology (\texttt{data/ontology/mtg-ontology-v1.1.owl}) is hand-crafted following the methodology surveyed in \citet{noy2001ontology} and validated by SHACL shapes \citep{w3c2017shacl}. The framework is designed to interoperate with the OntologyExtender tool \citep{ontology_extender}\,---\,a separate, in-development multi-agent human-in-the-loop ontology-evolution toolchain by the same lab\,---\,but in the present version the OWL schema is a fixed v1.1 artefact: we do not currently run automated extension passes.
 
 % =============================================================================
 \section{Theoretical Foundations}
@@ -470,7 +470,7 @@ We deliberately do not claim ``state of the art'' numbers: we know of no compara
 \label{sec:discussion}
 \label{sec:limits}
 
-\paragraph{Scope.} The current engine targets a Standard subset and an extended Commander subset; banding, phasing, planeswalker loyalty abilities, and exotic targeting restrictions remain partial. The ontology v1.1 covers core mechanics but does not yet encode every keyword from every set --- a known limitation that motivates the OntologyExtender workflow (\Cref{sec:future}).
+\paragraph{Scope.} The current engine targets a Standard subset and an extended Commander subset; banding, phasing, planeswalker loyalty abilities, and exotic targeting restrictions remain partial. The ontology v1.1 covers core mechanics but does not yet encode every keyword from every set, and we do not currently extend it automatically per Standard rotation --- a known limitation that motivates planned integration with the OntologyExtender tool (\Cref{sec:future}).
 
 \paragraph{Compute.} Defaults are tuned for a single-GPU workstation: $z \in \mathbb{R}^{256}$, the LSTM hidden size is 512, the JEPA predictor is a 4-layer pre-norm Transformer, and the LLM is \texttt{gemma4:e2b}. Larger pretrained encoders or stronger LLMs (e.g., \texttt{llama-3.1-70b}) would likely improve play strength but were not the focus of this report.
 
@@ -492,7 +492,7 @@ The following items are tracked in \texttt{IMPLEMENTATION\_PLAN.md} and constitu
   \item \textbf{Parallel self-play.} \texttt{asyncio.gather}-based parallel game execution to lift trajectory throughput, plus restoring \texttt{pytest-asyncio} so the async runner is exercised in CI.
   \item \textbf{Belief-state visualisation.} JSON export and a Streamlit panel for the particle-filter posterior over the opponent's hand.
   \item \textbf{Commander politics.} Threat assessment across $N{>}2$ opponents, including a multi-agent extension of the active-inference objective, and the Commander variant of the mulligan (free first mulligan).
-  \item \textbf{Ontology extension.} Continuous use of the OntologyExtender workflow (\citealp{ontology_extender}) to keep the OWL schema synchronised with each Standard rotation.
+  \item \textbf{Ontology evolution.} Wire the framework into the OntologyExtender tool \citep{ontology_extender} so the OWL schema is updated semi-automatically per Standard rotation, with humans in the loop on debated axioms. At present the ontology is a static, hand-curated v1.1 artefact.
 \end{enumerate}
 
 % =============================================================================
@@ -620,10 +620,11 @@ Neo4j Labs.
 \newblock Neosemantics (n10s): RDF and Semantics Toolkit for Neo4j.
 \newblock \url{https://neo4j.com/labs/neosemantics/}.
 
-\bibitem[Sarker et~al.(2024)]{ontology_extender}
-M.~K.~Sarker et al.
+\bibitem[{Data Science Lab FHSWF}(2024)]{ontology_extender}
+Data Science Lab, Fachhochschule S\"udwestfalen.
 \newblock OntologyExtender: A Multi-Agent Human-in-the-Loop Framework for Ontology Evolution.
-\newblock \emph{Technical Report}, 2024.
+\newblock GitHub repository (work in progress), 2024.
+\newblock \url{https://github.com/DataScienceLabFHSWF/OntologyExtender}.
 
 \end{thebibliography}
 

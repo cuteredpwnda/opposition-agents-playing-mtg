@@ -22,10 +22,13 @@
                    inner xsep=2pt, inner ysep=1pt}
   ]
 
-  % ---- Column 1: data sources (well-spaced, no overlap) -----------------
+  % ---- Column 1: data sources -----------------------------------------
+  % Order chosen so that BOTH KG-bound sources (Scryfall, Spellbook) are
+  % above and BOTH engine-bound sources (Rules, Decklists) are below;
+  % this avoids the rules→engine and spellbook→KG arrows crossing.
   \node[data] (scry)  at (0,  3.6) {Scryfall\\(card DB)};
-  \node[data] (rules) at (0,  1.2) {Comprehensive\\Rules};
-  \node[data] (sb)    at (0, -1.2) {Commander\\Spellbook};
+  \node[data] (sb)    at (0,  1.2) {Commander\\Spellbook};
+  \node[data] (rules) at (0, -1.2) {Comprehensive\\Rules};
   \node[data] (decks) at (0, -3.6) {Decklists\\(\texttt{data/decks})};
 
   % ---- Column 2: symbolic substrate ------------------------------------
@@ -57,10 +60,16 @@
   \end{pgfonlayer}
 
   % ---- data -> symbolic ------------------------------------------------
-  \draw[flow] (scry.east)  -- node[elabel,pos=0.55]{cards}   (kg.west);
-  \draw[flow] (sb.east)    -- node[elabel,pos=0.55]{combos}  (kg.west);
-  \draw[flow] (rules.east) -- node[elabel,pos=0.55]{rules}   (eng.west);
-  \draw[flow] (decks.east) -- node[elabel,pos=0.55]{game cfg}(eng.west);
+  % Each data box connects to the WEST anchor of the symbolic box on its
+  % row’s side: top two go into KG, bottom two go into the engine.
+  \draw[flow] (scry.east)  -- ([yshift= 0.6cm]kg.west)
+              node[elabel, pos=0.55]{cards};
+  \draw[flow] (sb.east)    -- ([yshift=-0.6cm]kg.west)
+              node[elabel, pos=0.55]{combos};
+  \draw[flow] (rules.east) -- ([yshift= 0.6cm]eng.west)
+              node[elabel, pos=0.55]{rules};
+  \draw[flow] (decks.east) -- ([yshift=-0.6cm]eng.west)
+              node[elabel, pos=0.55]{game cfg};
 
   % ---- engine <-> KG (lookup) -----------------------------------------
   \draw[twoway] (kg.south) -- node[elabel]{card lookup} (eng.north);
@@ -70,35 +79,39 @@
 
   % ---- training: replay -> M; KG -> V ---------------------------------
   \draw[flow] (rb.east) -- ++(0.4,0) |- node[elabel,pos=0.78]{train} (M.west);
-  \draw[flow] (kg.east) -- node[elabel]{KG ctx} (V.west);
+  \draw[flow] (kg.east) -- (V.west);
 
   % ---- agent decide_action loop -- routed in the COLUMN GAP between the
   % symbolic substrate (x=4.7) and the WM (x=9.7), then along far top/bottom
-  % buses, so they never cross any node.
-  \coordinate (busTop)  at (7.2,  4.6);
-  \coordinate (busBot)  at (7.2, -4.6);
+  % buses, so the arrows never cross any node.
+  \coordinate (busTopL) at (7.2,  4.6);
+  \coordinate (busBotL) at (7.2, -4.6);
   \coordinate (busTopR) at (14.0, 4.6);
   \coordinate (busBotR) at (14.0,-4.6);
 
+  % engine -> agent (state, legal_actions):
+  % start ON the upper-east edge of the engine box, run east into the
+  % gap, up to the top bus, across, and down into the agent zoo.
   \draw[flow]
-      ([xshift=8mm]eng.north east) -- ++(0,0)
-      coordinate (engUp);
-  \draw[flow]
-      (engUp) |- (busTop)
-      -- (busTopR)
+      ([yshift= 0.2cm]eng.east) -- (7.2, 0.2)
+      -- (7.2, 4.6) -- (14.0, 4.6)
       node[elabel, pos=0.55, above=1pt]{state, legal\_actions}
       -- (a1.north);
 
+  % agent -> engine (action):
+  % start at the bottom of the agent column, down to the bottom bus,
+  % across, up the gap, and INTO the lower-east edge of the engine box.
   \draw[backflow]
-      (a6.south) -- (busBotR)
-      -- (busBot)
+      (a6.south) -- (14.0,-4.6)
+      -- (7.2,-4.6)
       node[elabel, pos=0.55, below=1pt]{action}
-      |- ([xshift=8mm]eng.south east);
+      -- (7.2,-0.2)
+      -- ([yshift=-0.2cm]eng.east);
 
-  % ---- agent lookups (dotted) -----------------------------------------
-  \draw[flow, dotted] (a4.west) -- (C.east);
-  \draw[flow, dotted] (a6.west) -- ([yshift=-2mm]C.east);
-  \draw[flow, dotted] (a2.west) -- ++(-0.4,0) |- ([yshift=2mm]kg.east);
+  % Dotted agent-side lookups (agent->KG, agent->C controller) are
+  % omitted from the figure to keep it readable; they are described in
+  % the body text. Every agent additionally has read access to the KG
+  % and the WM via a thin lookup interface.
 
 \end{tikzpicture}
 \end{document}
