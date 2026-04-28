@@ -99,8 +99,14 @@ class GameRunner:
         cards: list[CardInstance],
         shuffle: bool,
         max_mulligans: int,
+        keep_fn=None,
+        bottom_fn=None,
     ) -> int:
         import random
+
+        if keep_fn is None:
+            def keep_fn(hand, mulligans_taken, max_mulligans):
+                return self._opening_hand_is_keepable(hand)
 
         mulligans_taken = 0
         while True:
@@ -116,23 +122,63 @@ class GameRunner:
             for c in hand:
                 c.zone = Zone.HAND
 
-            if mulligans_taken >= max_mulligans or self._opening_hand_is_keepable(hand):
+            if mulligans_taken >= max_mulligans or keep_fn(
+                    hand, mulligans_taken, max_mulligans):
                 break
             mulligans_taken += 1
 
         if mulligans_taken > 0:
             hand = [c for c in cards if c.zone == Zone.HAND]
+            if bottom_fn is not None:
+                try:
+                    to_bottom = list(bottom_fn(hand, mulligans_taken))[:mulligans_taken]
+                except Exception:
+                    to_bottom = []
+            else:
+                to_bottom = []
 
-            def bottom_priority(card: CardInstance) -> tuple[int, float]:
-                return (0 if card.is_land() else 1, float(card.cmc or 0.0))
+            if not to_bottom:
+                def bottom_priority(card: CardInstance) -> tuple[int, float]:
+                    return (0 if card.is_land() else 1, float(card.cmc or 0.0))
 
-            to_bottom = sorted(hand, key=bottom_priority, reverse=True)[:mulligans_taken]
+                to_bottom = sorted(hand, key=bottom_priority, reverse=True)[:mulligans_taken]
+
             for card in to_bottom:
                 card.zone = Zone.LIBRARY
-                cards.remove(card)
+                if card in cards:
+                    cards.remove(card)
                 cards.append(card)
 
         return mulligans_taken
+
+    @staticmethod
+    def _agent_mulligan_callbacks(agent):
+        """Build (keep_fn, bottom_fn) for an ``MTGAgent`` with a safe fallback."""
+
+        def keep_fn(hand, mulligans_taken: int, max_mulligans: int) -> bool:
+            if agent is not None and hasattr(agent, "decide_mulligan"):
+                try:
+                    return bool(agent.decide_mulligan(
+                        hand, mulligans_taken, max_mulligans))
+                except Exception:
+                    pass
+            from src.agents.mulligan import should_keep
+            return should_keep(hand,
+                               strategy=getattr(agent, "strategy", None),
+                               mulligans_taken=mulligans_taken,
+                               max_mulligans=max_mulligans)
+
+        def bottom_fn(hand, n):
+            if agent is not None and hasattr(agent, "select_bottom_cards"):
+                try:
+                    return list(agent.select_bottom_cards(hand, n))
+                except Exception:
+                    pass
+            from src.agents.mulligan import select_bottom_cards
+            return select_bottom_cards(hand, n,
+                                       strategy=getattr(agent, "strategy", None))
+
+        return keep_fn, bottom_fn
 
     async def run_game(
         self,
@@ -257,10 +303,13 @@ class GameRunner:
 
             player_state = next((p for p in players if p.player_id == pid), None)
             if self.config.mulligan_enabled:
+                keep_fn, bottom_fn = self._agent_mulligan_callbacks(agents.get(pid))
                 mulligans_taken = self._apply_london_mulligan(
                     player_cards,
                     shuffle=True,
                     max_mulligans=self.config.max_mulligans,
+                    keep_fn=keep_fn,
+                    bottom_fn=bottom_fn,
                 )
                 if player_state is not None:
                     player_state.mulligans_taken = mulligans_taken

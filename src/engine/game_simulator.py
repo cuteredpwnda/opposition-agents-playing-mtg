@@ -189,10 +189,13 @@ class GameSimulator:
         # mulligan for normal 7-card starts when enabled.
         mulligans_taken = 0
         if starting_hand_size == 7 and mulligan_enabled:
+            keep_fn, bottom_fn = self._mulligan_callbacks_for(player_id)
             mulligans_taken = self._apply_london_mulligan(
                 cards,
                 shuffle=shuffle,
                 max_mulligans=max_mulligans,
+                keep_fn=keep_fn,
+                bottom_fn=bottom_fn,
             )
             player = next((p for p in self.game.players if p.player_id == player_id), None)
             if player is not None:
@@ -202,6 +205,49 @@ class GameSimulator:
                 c.zone = Zone.HAND
 
         self.game.cards.extend(cards)
+
+    def _mulligan_callbacks_for(self, player_id: str):
+        """Return (keep_fn, bottom_fn) honouring the agent's mulligan hooks.
+
+        Falls back to the strategy-aware default when no agent is wired up
+        (kept for unit tests that drive ``_apply_london_mulligan`` with a
+        bare deck list).
+        """
+        agent_player = None
+        if getattr(self.agent1, "player_id", None) == player_id:
+            agent_player = self.agent1
+        elif getattr(self.agent2, "player_id", None) == player_id:
+            agent_player = self.agent2
+
+        # Prefer the underlying MTGAgent (which exposes the hooks) if the
+        # AgentGamePlayer wraps one; otherwise fall through to the
+        # strategy-aware default using the player's strategy attribute.
+        agent_obj = getattr(agent_player, "llm_agent", None) or agent_player
+
+        def keep_fn(hand, mulligans_taken: int, max_mulligans: int) -> bool:
+            if agent_obj is not None and hasattr(agent_obj, "decide_mulligan"):
+                try:
+                    return bool(agent_obj.decide_mulligan(
+                        hand, mulligans_taken, max_mulligans))
+                except Exception:
+                    pass
+            from src.agents.mulligan import should_keep
+            strategy = getattr(agent_player, "strategy", None)
+            return should_keep(hand, strategy=strategy,
+                               mulligans_taken=mulligans_taken,
+                               max_mulligans=max_mulligans)
+
+        def bottom_fn(hand, n):
+            if agent_obj is not None and hasattr(agent_obj, "select_bottom_cards"):
+                try:
+                    return list(agent_obj.select_bottom_cards(hand, n))
+                except Exception:
+                    pass
+            from src.agents.mulligan import select_bottom_cards
+            strategy = getattr(agent_player, "strategy", None)
+            return select_bottom_cards(hand, n, strategy=strategy)
+
+        return keep_fn, bottom_fn
 
     def _opening_hand_is_keepable(self, hand_cards: list[CardInstance]) -> bool:
         """Simple deterministic keep heuristic for mulligans.
@@ -215,13 +261,24 @@ class GameSimulator:
     def _apply_london_mulligan(self,
                                cards: list[CardInstance],
                                shuffle: bool,
-                               max_mulligans: int) -> int:
+                               max_mulligans: int,
+                               keep_fn=None,
+                               bottom_fn=None) -> int:
         """Apply London mulligan to a player's deck cards in-place.
 
         Draw 7, optionally repeat up to max_mulligans, then put cards equal to
         mulligans taken on the bottom of the library.
+
+        ``keep_fn(hand, mulligans_taken, max_mulligans) -> bool`` and
+        ``bottom_fn(hand, n) -> list[CardInstance]`` allow agents to plug
+        in their own decisions; both default to the heuristic behaviour
+        used by earlier engine snapshots.
         """
         import random
+
+        if keep_fn is None:
+            def keep_fn(hand, mulligans_taken, max_mulligans):
+                return self._opening_hand_is_keepable(hand)
 
         mulligans_taken = 0
         while True:
@@ -236,7 +293,8 @@ class GameSimulator:
             for c in hand:
                 c.zone = Zone.HAND
 
-            if mulligans_taken >= max_mulligans or self._opening_hand_is_keepable(hand):
+            if mulligans_taken >= max_mulligans or keep_fn(
+                    hand, mulligans_taken, max_mulligans):
                 break
 
             mulligans_taken += 1
@@ -244,15 +302,25 @@ class GameSimulator:
         # Put one card on bottom per mulligan taken.
         if mulligans_taken > 0:
             hand = [c for c in cards if c.zone == Zone.HAND]
+            if bottom_fn is not None:
+                try:
+                    to_bottom = list(bottom_fn(hand, mulligans_taken))[:mulligans_taken]
+                except Exception:
+                    to_bottom = []
+            else:
+                to_bottom = []
 
-            def bottom_priority(card: CardInstance) -> tuple[int, float]:
-                # Bottom expensive non-lands first, then lands.
-                return (0 if card.is_land() else 1, float(card.cmc or 0.0))
+            if not to_bottom:
+                def bottom_priority(card: CardInstance) -> tuple[int, float]:
+                    # Bottom expensive non-lands first, then lands.
+                    return (0 if card.is_land() else 1, float(card.cmc or 0.0))
 
-            to_bottom = sorted(hand, key=bottom_priority, reverse=True)[:mulligans_taken]
+                to_bottom = sorted(hand, key=bottom_priority, reverse=True)[:mulligans_taken]
+
             for card in to_bottom:
                 card.zone = Zone.LIBRARY
-                cards.remove(card)
+                if card in cards:
+                    cards.remove(card)
                 cards.append(card)
 
         return mulligans_taken

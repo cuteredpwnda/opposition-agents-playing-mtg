@@ -189,13 +189,17 @@ The framework is released as open source\footnote{\url{https://github.com/cutere
 \label{sec:arch}
 
 \subsection{Game engine}
-The engine implements the Comprehensive Rules subset relevant for two-player Standard plus the structural extensions for multiplayer Commander. Core modules:
+The engine implements the Comprehensive Rules subset relevant for two-player Standard plus the structural extensions for multiplayer Commander. Two parallel orchestrators sit on top of the same dataclasses: a synchronous \texttt{GameSimulator} (\texttt{src/engine/game\_simulator.py}) used in tournaments and tests, and an asynchronous \texttt{GameRunner} (\texttt{src/orchestrator/game\_runner.py}) used in self-play data collection. Both implement the same end-of-game rules. Core modules:
 \begin{itemize}[leftmargin=1.2em, itemsep=1pt]
-  \item \texttt{game\_state}: immutable-by-convention dataclasses for \texttt{GameState}, \texttt{PlayerState}, \texttt{CardInstance};
+  \item \texttt{game\_state}: immutable-by-convention dataclasses for \texttt{GameState}, \texttt{PlayerState} (carrying \texttt{max\_hand\_size} and \texttt{mulligans\_taken}), and \texttt{CardInstance};
   \item \texttt{zones}, \texttt{stack}, \texttt{phases}, \texttt{priority\_loop}: APNAP priority and the seven-step turn structure;
   \item \texttt{rules\_engine}: legal-action generation given current priority and phase;
   \item \texttt{state\_based\_actions} (CR~704), \texttt{triggered\_abilities} (CR~603), \texttt{replacement\_effects} (CR~614), \texttt{continuous\_effects} (CR~613 layer system);
-  \item \texttt{combat}, \texttt{mana}, \texttt{keywords}, \texttt{abilities}: per-mechanic logic.
+  \item \texttt{combat}, \texttt{mana}, \texttt{keywords}, \texttt{abilities}: per-mechanic logic;
+  \item \textbf{London mulligan} at game setup: draw 7, optionally re-mulligan up to a configurable cap, then bottom cards equal to the number of mulligans taken (CR~103.5);
+  \item \textbf{Cleanup-phase discard} down to \texttt{PlayerState.max\_hand\_size} (default 7), which had been a long-standing gap in earlier engine snapshots (CR~514);
+  \item \textbf{Deterministic empty-library loss}: drawing from an empty library ends the game with that player losing (CR~104.3c / 704.5b), in both the sync simulator and the async runner;
+  \item \textbf{Deterministic timeout tie-breaker}: instead of auto-draw on hitting the configured turn limit, the leader on the lexicographic tuple (life total, permanents in play, hand size, library size) wins; only true ties are recorded as draws.
 \end{itemize}
 The engine is pure-Python, deterministic given an RNG seed, and has no LLM dependency, which makes it the ground truth that all agents play against.
 
@@ -292,12 +296,14 @@ We deliberately do not claim ``state of the art'' numbers: we know of no compara
 
 The following items are tracked in \texttt{IMPLEMENTATION\_PLAN.md} and constitute the near-term roadmap:
 \begin{enumerate}[leftmargin=1.2em, itemsep=1pt]
+  \item \textbf{Strategy-aware and agent-driven mulligan policy.} The current keep/bottom heuristic is a single deterministic land-count rule shared by all agents. We are moving the decision through the agent interface (\texttt{MTGAgent.decide\_mulligan}, \texttt{MTGAgent.bottom\_cards}) so that aggressive, control, combo, and reactive strategies---and ultimately learned policies---can evaluate their own opening hands. JEPA-conditioned mulligan selection (rolling out a few imagined turns from each candidate hand) is the longer-term target.
+  \item \textbf{Priority-loop driven instants in the sync simulator.} The sync \texttt{GameSimulator} currently advances combat without exposing an instant-speed window to the non-active player; threading the existing \texttt{priority\_loop} into combat steps will let counterspells and combat tricks fire mid-attack.
   \item \textbf{Benchmark suite.} A \texttt{BenchmarkSuite} class with deterministic-replay seeds, four to six standard archetype decklists, baseline agents (Random, Heuristic, LLM-only, MCTS), and a per-game / per-agent metrics CSV.
   \item \textbf{Ablation matrix.} Toggleable KG / dream / JEPA / opponent-model components with paired-game ELO comparison.
   \item \textbf{Neural reasoner training.} A supervised + RL fine-tune of a graph-conditioned reasoner (\texttt{NeuralReasonerAgent}) replacing the SBERT card embedding with end-to-end GraphSAGE embeddings.
-  \item \textbf{Parallel self-play.} \texttt{asyncio.gather}-based parallel game execution to lift trajectory throughput.
+  \item \textbf{Parallel self-play.} \texttt{asyncio.gather}-based parallel game execution to lift trajectory throughput, plus restoring \texttt{pytest-asyncio} so the async runner is exercised in CI.
   \item \textbf{Belief-state visualisation.} JSON export and a Streamlit panel for the particle-filter posterior over the opponent's hand.
-  \item \textbf{Commander politics.} Threat assessment across $N{>}2$ opponents, including a multi-agent extension of the active-inference objective.
+  \item \textbf{Commander politics.} Threat assessment across $N{>}2$ opponents, including a multi-agent extension of the active-inference objective, and the Commander variant of the mulligan (free first mulligan).
   \item \textbf{Ontology extension.} Continuous use of the OntologyExtender workflow (\citealp{ontology_extender}) to keep the OWL schema synchronised with each Standard rotation.
 \end{enumerate}
 

@@ -1,5 +1,14 @@
 # Opposition Agents Playing Magic: The Gathering — Master Plan
 
+> **Status (April 2026):** Two-player games run end-to-end through both the
+> sync `GameSimulator` and the async `GameRunner`. London mulligan,
+> cleanup-phase discard to `max_hand_size`, deterministic empty-library loss
+> (CR 104.3c), and a life/board/hand/library tie-breaker for max-turn timeouts
+> are all live. Active focus is now agent intelligence (strategy-aware
+> mulligan, smarter combat, learned policies) rather than raw rules plumbing.
+> See [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) for the authoritative
+> task tracker.
+
 ## Table of Contents
 
 1. [Vision & Goals](#1-vision--goals)

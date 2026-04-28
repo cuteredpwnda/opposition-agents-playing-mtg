@@ -1,5 +1,13 @@
 # How the World Model + Agents Play Magic: The Gathering
 
+> **Engine status (April 2026):** Games run end-to-end. Each game now begins
+> with a London mulligan (configurable cap, default 3), the cleanup phase
+> discards down to `PlayerState.max_hand_size`, drawing from an empty library
+> ends the game (CR 104.3c), and max-turn timeouts resolve via a
+> life → battlefield → hand → library tie-breaker rather than auto-DRAW. The
+> world-model and agent layers described below now sit on top of a complete
+> two-player rules pipeline.
+
 ## Table of Contents
 
 1. [Overview — What Is This?](#1-overview)

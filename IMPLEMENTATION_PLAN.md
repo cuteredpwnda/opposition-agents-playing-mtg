@@ -1,12 +1,37 @@
 # Implementation Plan — Single Source of Truth
 
 > **opposition-agents-playing-mtg**
-> Last updated: 2026-03-27
+> Last updated: 2026-04-28
 
 This document is the **single source of truth** for what has been implemented,
 what is in progress, and what remains. It supersedes the phase descriptions in
 `PLAN.md`, `ARCHITECTURE.md`, and the presentation slides for tracking purposes
 — those documents retain their value as design rationale and research context.
+
+## Status Snapshot — April 2026
+
+Full two-player games of Magic now run end-to-end through both the synchronous
+`GameSimulator` and the async `GameRunner`. Recent engine hardening:
+
+- **End-to-end gameplay**: lands, mana, casting, stack resolution, attacks,
+  blocks, damage, life loss, elimination, and game termination all wired
+  through the simulator main loop.
+- **Mulligans (London)**: opening hands draw 7, optionally mulligan up to a
+  configured cap, then bottom cards equal to mulligans taken. Configurable via
+  `setup_game(mulligan_enabled=..., max_mulligans=...)` and `GameConfig`.
+- **Cleanup discard to max hand size**: `PlayerState.max_hand_size` (default 7)
+  is enforced at cleanup; both engine paths discard down deterministically.
+- **Empty-library loss (CR 104.3c / 704.5b)**: drawing from an empty library
+  immediately ends the game with that player losing.
+- **Timeout tie-breakers**: max-turn timeouts no longer auto-DRAW. The leader
+  (life → battlefield → hand → library) wins; only true ties remain DRAW.
+- **Crash-hardening**: result logging and tournament recording now use stable
+  agent IDs so eliminated players being removed from `players` doesn't IndexError.
+
+Full test suite for the simulator + tournament passes (70 tests). The primary
+remaining work shifts from raw rules-engine plumbing to **agent intelligence**
+(strategy-aware mulligans, smarter heuristics, learned policies) and **format
+coverage** (Commander, multiplayer, exotic keywords).
 
 ---
 
@@ -259,9 +284,9 @@ and can be mixed in any combination for tournaments and ablation studies.
 
 ### 4.1 Game Engine
 
-**Status: ✅ Production-ready for 2-player Standard**
+**Status: ✅ Production-ready for 2-player Standard, full games run end-to-end**
 
-The engine implements the full MTG turn structure with stack, priority passing, combat, triggered abilities, static abilities, continuous effects, replacement effects, and state-based actions. Games run end-to-end between any pair of agents.
+The engine implements the full MTG turn structure with stack, priority passing, combat, triggered abilities, static abilities, continuous effects, replacement effects, and state-based actions. Games run end-to-end between any pair of agents and terminate naturally on lethal damage, deck-out, concede, or max-turn tiebreaker.
 
 **What works:**
 - Full phase progression: Untap → Upkeep → Draw → Main 1 → Combat (Begin → Attackers → Blockers → Damage → End) → Main 2 → End → Cleanup
@@ -273,9 +298,14 @@ The engine implements the full MTG turn structure with stack, priority passing, 
 - Continuous effects with layer system (CR 613)
 - Replacement effects
 - State-based actions: 0 life, 0 toughness, legend rule
-- Game logging
+- **London mulligan** with configurable cap and bottom-cards step
+- **Cleanup discard to `PlayerState.max_hand_size`** (default 7)
+- **Empty-library = immediate loss** (CR 104.3c / 704.5b) in both simulator and async runner
+- **Deterministic timeout tie-breaker** (life → battlefield → hand → library) instead of auto-DRAW
+- Game logging and result reporting that survive player elimination
 
 **Partial/TODO:**
+- [ ] Strategy-aware mulligan keep/bottom heuristics (currently a single deterministic land-count rule for all agents)
 - [ ] Commander-specific rules (command zone, commander tax, color identity, commander damage)
 - [ ] 4-player APNAP priority (2-player works, 4-player data structures exist but untested)
 - [ ] Full keyword ability coverage (common keywords done; exotic ones like Banding, Phasing not implemented)
@@ -386,7 +416,30 @@ The full V+M+C world model with JEPA predictor and KG context fusion is implemen
 
 ## 5. Roadmap — Remaining Work
 
-### Phase A: Self-Play Learning Loop & KG Feedback ⬅️ NEXT
+### Phase 0: Engine + Agent Polish ⬅️ ACTIVE (April 2026)
+
+**Goal:** Make full games not only run, but be *interestingly* playable so that
+every downstream training and benchmark signal is meaningful.
+
+- [ ] **Strategy-aware mulligan policy.** Push the keep/bottom decision through
+  the agent interface (`MTGAgent.decide_mulligan`) so each agent type
+  (aggressive/control/combo/reactive, LLM, world-model, active-inference) can
+  evaluate its own opening hand instead of using the shared land-count rule.
+- [ ] **Smarter combat heuristics.** The default declare-attackers / blockers
+  fallback is greedy; replace with a value-based attacker selection (avoid
+  trades that lose the race) and bring it in line with the existing
+  `AgentStrategist` evaluations.
+- [ ] **Mana / ability activation in priority loop.** Instant-speed plays in
+  the sync simulator currently don't get a response window; thread the
+  priority loop's instant window into `GameSimulator` so counterspells / pump
+  spells fire mid-combat.
+- [ ] **Deterministic seeded games.** Plumb a single `random.Random` instance
+  through `setup_game` / `_setup_game` so every match is reproducible from a
+  seed (currently shuffles use the module-global RNG).
+- [ ] **First-turn draw-skip toggle.** Optional MTG-faithful starting-player
+  draw skip behind a config flag; current behavior preserves existing tests.
+
+### Phase A: Self-Play Learning Loop & KG Feedback
 
 **Goal:** Close the learn-from-play loop. Agents play, trajectories train the world model, insights feed back into the KG, and the next generation of agents is stronger.
 

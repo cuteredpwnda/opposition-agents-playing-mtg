@@ -47,6 +47,47 @@ class MTGAgent(abc.ABC):
             f"T{game_state.turn_number} {action.action_type.value}"
         )
 
+    # ------------------------------------------------------------------
+    # Mulligan hooks (London mulligan).  Default implementations delegate
+    # to the strategy-aware policy in ``src/agents/mulligan.py`` so every
+    # agent has sensible behaviour out of the box; LLM / world-model /
+    # active-inference agents override these for learned decisions.
+    # ------------------------------------------------------------------
+
+    @property
+    def strategy(self):  # pragma: no cover - thin accessor
+        """Strategy enum value used by the default mulligan heuristics.
+
+        Subclasses that have a real strategy should override this; the
+        default of ``None`` triggers the generic fallback heuristic.
+        """
+        return None
+
+    def decide_mulligan(
+        self,
+        hand,
+        mulligans_taken: int,
+        max_mulligans: int,
+    ) -> bool:
+        """Return True to KEEP the current opening hand, False to mulligan.
+
+        Default: strategy-aware land-and-curve heuristic.
+        """
+        from src.agents.mulligan import should_keep
+
+        return should_keep(
+            hand,
+            strategy=self.strategy,
+            mulligans_taken=mulligans_taken,
+            max_mulligans=max_mulligans,
+        )
+
+    def select_bottom_cards(self, hand, n: int) -> list:
+        """Return the ``n`` cards from ``hand`` to put on the bottom."""
+        from src.agents.mulligan import select_bottom_cards as _bottom
+
+        return _bottom(hand, n, strategy=self.strategy)
+
     def reset(self) -> None:
         """Reset agent state for a new game."""
         self.memory = AgentMemory()

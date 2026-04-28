@@ -1,5 +1,12 @@
 # Opposition Agents Playing MTG — Architecture Guide
 
+> **Status (April 2026):** The engine has matured past Phase 1. Two-player
+> games run end-to-end with London mulligan, cleanup-phase discard to
+> `PlayerState.max_hand_size`, empty-library deterministic loss, and a
+> life/board/hand/library timeout tie-breaker. Both the sync `GameSimulator`
+> and the async `GameRunner` implement the same rules. See
+> [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) for current task status.
+
 ## Vision
 
 Build an adversarial MTG game engine where **LLM agents** play Magic against each other using a **tool-calling pattern**, informed by the best open-source MTG engines.

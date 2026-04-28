@@ -1,5 +1,12 @@
 # Development & Deployment Guide
 
+> **Status (April 2026):** Engine and orchestrator are stable for two-player
+> games. Run `python examples/demo_game_simple.py` for a complete match
+> (now defaults to up to 40 turns with deterministic timeout tie-breakers).
+> Mulligan behaviour is configurable via `GameSimulator.setup_game(
+> mulligan_enabled=..., max_mulligans=...)` and `GameConfig.mulligan_enabled`
+> / `GameConfig.max_mulligans`.
+
 ## Local Development Setup
 
 ### Prerequisites
