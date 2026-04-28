@@ -34,6 +34,9 @@ class GameConfig:
     max_turns: int = 100
     mulligan_enabled: bool = True
     max_mulligans: int = 3
+    # Optional WotC Commander Bracket (1=Exhibition .. 5=cEDH); informational
+    # only at runtime — used by deck loaders / matchmaking, not the rules.
+    bracket: int | None = None
 
 
 @dataclass

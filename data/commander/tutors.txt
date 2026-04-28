@@ -1,0 +1,27 @@
+# Cards that tutor a single specific card (narrow / unconditional tutors).
+# Used to count "tutor density" for bracket classification.
+
+Demonic Tutor
+Vampiric Tutor
+Imperial Seal
+Mystical Tutor
+Enlightened Tutor
+Worldly Tutor
+Diabolic Tutor
+Diabolic Intent
+Grim Tutor
+Beseech the Queen
+Beseech the Mirror
+Increasing Ambition
+Razaketh's Rite
+Cruel Tutor
+Final Parting
+Demonic Collusion
+Tainted Pact
+Wargate
+Eldritch Evolution
+Fauna Shaman
+Survival of the Fittest
+Birthing Pod
+Prime Speaker Vannifar
+Neoform

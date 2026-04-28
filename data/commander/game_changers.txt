@@ -1,0 +1,44 @@
+# Commander "Game Changers" list (WotC, official as of 2025-04).
+#
+# These cards are powerful enough that adding more than 3 of them pushes
+# a deck up to Bracket 4 (Optimized). Brackets 1 and 2 forbid them entirely.
+#
+# Reference: https://magic.wizards.com/en/news/announcements/introducing-commander-brackets-beta
+#
+# This file is editable — add or remove names as the list evolves. One
+# card per line, comments with '#'. Names must match Scryfall exactly.
+
+# Mana
+Ancient Tomb
+Chrome Mox
+Gaea's Cradle
+Grim Monolith
+Jeweled Lotus
+Mana Crypt
+Mana Vault
+Mox Diamond
+The One Ring
+
+# Tutors
+Demonic Tutor
+Enlightened Tutor
+Imperial Seal
+Mystical Tutor
+Vampiric Tutor
+
+# Counterspells / Free interaction
+Fierce Guardianship
+Force of Will
+Mana Drain
+
+# Engines / Lockpieces
+Bolas's Citadel
+Drannith Magistrate
+Glacial Chasm
+Rhystic Study
+Smothering Tithe
+Trinisphere
+
+# Win conditions
+Coalition Victory
+Thassa's Oracle

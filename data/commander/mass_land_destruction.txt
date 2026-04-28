@@ -1,0 +1,19 @@
+# Mass Land Destruction — symmetrical or one-sided board wipes targeting lands.
+# Used by the Commander Bracket classifier: any of these in the deck pushes
+# it out of Brackets 1–3.
+
+Armageddon
+Ravages of War
+Catastrophe
+Decree of Annihilation
+Jokulhaups
+Obliterate
+Wildfire
+Boom // Bust
+Cataclysm
+Devastation
+Impending Disaster
+Sunder
+Worldslayer
+Ruination
+Epicenter
