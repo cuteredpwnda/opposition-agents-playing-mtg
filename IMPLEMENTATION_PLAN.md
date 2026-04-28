@@ -128,6 +128,17 @@ items stay for traceability.
       `[pool: {R} | potential: {R}]` while mana is floating and falls back
       to `[open mana: …]` otherwise. Tests: `tests/test_floating_mana.py`
       (4 tests).
+- [x] **"Enters tapped" replacement for non-land permanents** — the
+      `resolve_stack_item` creature/permanent paths now honour
+      `enters tapped` / `enters the battlefield tapped` oracle text and
+      log the tapped entry. Previously only `PLAY_LAND` applied this
+      replacement.
+- [x] **Subtype keyword grants** — `parse_static_abilities` recognises
+      `<Subtype>(s) you control have <keyword>` (e.g. *Goblins you control
+      have haste*) and emits a `subtype_creatures_you_control` keyword
+      ability that flows through `has_keyword`. Plural→singular handled
+      via trailing-s strip. Tests: `tests/test_lord_and_etb_tapped.py`
+      (6 tests, also covers ETB-tapped).
 
 ### In progress
 
@@ -137,9 +148,6 @@ _(none — pick from queue below)_
 
 - [ ] **Equip / Crew activation** — surface as `ACTIVATE_ABILITY` actions and
       wire attachment.
-- [ ] **"Enters tapped" replacement** for lands/permanents that say so.
-- [ ] **Lord effects beyond +X/+X** — granting keywords by subtype
-      (e.g. "Goblins you control have haste").
 - [ ] **Counterspell awareness** — heuristic agent should hold up `{U}` when
       it has a counter in hand and the opponent casts a relevant spell.
 
