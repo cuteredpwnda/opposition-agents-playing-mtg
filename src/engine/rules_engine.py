@@ -10,6 +10,8 @@ References:
 
 from __future__ import annotations
 
+import re
+
 from .game_state import Action, ActionType, GameState, Phase, Zone, StackItem
 from .phases import is_main_phase
 from .stack import is_empty as stack_is_empty
@@ -41,6 +43,32 @@ def _commander_color_identity(state: GameState, player_id: str) -> set:
         return set()
     commander_card = next((c for c in state.cards if c.instance_id == commander_id), None)
     return _get_color_identity(commander_card)
+
+
+_WORD_COUNTS = {"a": 1, "an": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5}
+_ADD_SAC_RE = re.compile(
+    r"as an additional cost to cast this spell,\s*sacrifice\s+([a-z0-9]+)\s+([a-z]+)",
+    re.IGNORECASE,
+)
+
+
+def _parse_additional_sac_cost(oracle: str) -> list[tuple[str, int]]:
+    """Parse "As an additional cost to cast this spell, sacrifice <N> <type>".
+
+    Returns a list of ``(type_token, count)`` pairs (one per matching
+    clause).  ``type_token`` is the literal noun from the oracle text
+    ("artifact", "creature", "land", ...).  Plurals are handled.
+    """
+    out: list[tuple[str, int]] = []
+    for m in _ADD_SAC_RE.finditer(oracle or ""):
+        qty_tok = m.group(1).lower()
+        ttype = m.group(2).rstrip("s").lower()
+        if qty_tok.isdigit():
+            count = int(qty_tok)
+        else:
+            count = _WORD_COUNTS.get(qty_tok, 1)
+        out.append((ttype, count))
+    return out
 
 
 def _check_color_identity(state: GameState, player_id: str, card) -> bool:
