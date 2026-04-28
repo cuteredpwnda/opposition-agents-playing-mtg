@@ -186,14 +186,14 @@ Our position is that the structure of MTG demands a \emph{neuro-symbolic} stack:
   \end{pgfonlayer}
 
   % ---- data -> symbolic -----------------------------------------------
-  \draw[flow] (scry.east)  -- ([yshift= 0.6cm]kg.west)
-              node[elabel, pos=0.55]{cards};
-  \draw[flow] (sb.east)    -- ([yshift=-0.6cm]kg.west)
-              node[elabel, pos=0.55]{combos};
-  \draw[flow] (rules.east) -- ([yshift= 0.6cm]eng.west)
-              node[elabel, pos=0.55]{rules};
-  \draw[flow] (decks.east) -- ([yshift=-0.6cm]eng.west)
-              node[elabel, pos=0.55]{game cfg};
+  \draw[flow] (scry.east)  -- (2.3,  3.6) -- (2.3,  3.0) -- ([yshift= 0.6cm]kg.west)
+              node[elabel, pos=0.85]{cards};
+  \draw[flow] (sb.east)    -- (2.3,  1.2) -- (2.3,  1.8) -- ([yshift=-0.6cm]kg.west)
+              node[elabel, pos=0.85]{combos};
+  \draw[flow] (rules.east) -- (2.3, -1.2) -- (2.3,  0.6) -- ([yshift= 0.6cm]eng.west)
+              node[elabel, pos=0.85]{rules};
+  \draw[flow] (decks.east) -- (2.3, -3.6) -- (2.3, -0.6) -- ([yshift=-0.6cm]eng.west)
+              node[elabel, pos=0.85]{game cfg};
 
   % ---- engine <-> KG (lookup) -----------------------------------------
   \draw[twoway] (kg.south) -- node[elabel]{card lookup} (eng.north);

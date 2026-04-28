@@ -59,17 +59,18 @@
           label={[font=\small\bfseries, yshift=-1pt]above:Agent Zoo}] (agents) {};
   \end{pgfonlayer}
 
-  % ---- data -> symbolic ------------------------------------------------
-  % Each data box connects to the WEST anchor of the symbolic box on its
-  % row’s side: top two go into KG, bottom two go into the engine.
-  \draw[flow] (scry.east)  -- ([yshift= 0.6cm]kg.west)
-              node[elabel, pos=0.55]{cards};
-  \draw[flow] (sb.east)    -- ([yshift=-0.6cm]kg.west)
-              node[elabel, pos=0.55]{combos};
-  \draw[flow] (rules.east) -- ([yshift= 0.6cm]eng.west)
-              node[elabel, pos=0.55]{rules};
-  \draw[flow] (decks.east) -- ([yshift=-0.6cm]eng.west)
-              node[elabel, pos=0.55]{game cfg};
+  % ---- data -> symbolic -----------------------------------------------
+  % Orthogonal routing only: data boxes go east to a vertical bus at
+  % x=2.3, then up/down to the row of their target anchor, then east
+  % into the symbolic substrate. Two right angles per path.
+  \draw[flow] (scry.east)  -- (2.3,  3.6) -- (2.3,  3.0) -- ([yshift= 0.6cm]kg.west)
+              node[elabel, pos=0.85]{cards};
+  \draw[flow] (sb.east)    -- (2.3,  1.2) -- (2.3,  1.8) -- ([yshift=-0.6cm]kg.west)
+              node[elabel, pos=0.85]{combos};
+  \draw[flow] (rules.east) -- (2.3, -1.2) -- (2.3,  0.6) -- ([yshift= 0.6cm]eng.west)
+              node[elabel, pos=0.85]{rules};
+  \draw[flow] (decks.east) -- (2.3, -3.6) -- (2.3, -0.6) -- ([yshift=-0.6cm]eng.west)
+              node[elabel, pos=0.85]{game cfg};
 
   % ---- engine <-> KG (lookup) -----------------------------------------
   \draw[twoway] (kg.south) -- node[elabel]{card lookup} (eng.north);
