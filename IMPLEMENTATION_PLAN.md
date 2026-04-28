@@ -43,6 +43,27 @@ items stay for traceability.
 
 ### Done
 
+- [x] Agent reasoning traces — every agent now populates
+      ``self.last_reasoning`` with a structured `ReasoningTrace`
+      (rationale, scores, top candidates, beliefs).  The priority
+      loop forwards it via `JsonlActionTrace.on_action(reasoning=...)`
+      so each JSONL action record carries a transparent rationale.
+      Wired in `RandomAgent`, `HeuristicAgent`, `KGHeuristicAgent`,
+      `WorldModelAgent`, `ActiveInferenceAgent`.  Inspector at
+      `scripts/inspect_reasoning.py`.  Tests:
+      `tests/test_reasoning_trace.py`.
+- [x] Polite combo-fetch backoff — `combo_database.py` now uses
+      jittered exponential backoff with `Retry-After` honour and a
+      shared `User-Agent`.  Added `fetch_edhrec_combos` (EDHREC mirror)
+      and `fetch_combos_merged` so an EDHREC fallback is available
+      when Spellbook is rate-limited.  `scripts/import_combos.py`
+      consumes the merged source by default.
+- [x] `KGHeuristicAgent` — KG-aware heuristic that re-ranks
+      `CAST_SPELL` actions using `detect_near_combos` /
+      `get_synergies_for`.  Falls back gracefully if Neo4j is offline.
+- [x] Stage 7 evaluation game fixes — wrong attribute access
+      (`Action.card` → `Action.card_instance_id`) and KG-encoder
+      build failure when training with `--no-kg` (kg_embed_dim=0).
 - [x] Generalized triggered-ability resolver — fallback dispatches unknown
       effects through `spell_effects.apply_spell_effect` so new keywords
       pick up effect handling automatically.
