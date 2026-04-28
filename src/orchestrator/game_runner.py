@@ -292,21 +292,22 @@ class GameRunner:
                 )
                 player_cards.append(card)
 
-            # Shuffle library for this player
-            random.shuffle(player_cards)
-
-            # Commander: keep the first commander in command zone
+            # Commander: pull the commander card (deck index 0 by convention)
+            # OUT of the deck BEFORE shuffling so it doesn't get randomised
+            # away.  Otherwise random.shuffle + player_cards.pop(0) would
+            # crown a random card as the "commander", breaking colour-identity
+            # checks for the rest of the game.
+            commander_card = None
             if self.config.format == "commander" and player_cards:
                 commander_card = player_cards.pop(0)
-                commander_card.zone = Zone.COMMAND_ZONE                # Mark the commander card instance explicitly
-                commander_card.card_data["is_commander"] = True                # assign to game state commanders map
-                # will be set after game_state is created
-                # use player_id for map lookup
-                # store temporary mapping in player object later
-                # (GameState.commanders is set after GameState instantiation)
-                # We'll finalize after game_state, but for now we can use state assigned below.
-                # We'll use game_state.commanders by updating after state initialization.
-                commander_holder = commander_card
+                commander_card.zone = Zone.COMMAND_ZONE
+                commander_card.card_data["is_commander"] = True
+
+            # Shuffle library (commander is held aside, not in player_cards yet)
+            random.shuffle(player_cards)
+
+            # Re-insert commander so all_cards/state.cards still contains it.
+            if commander_card is not None:
                 player_cards.insert(0, commander_card)
 
             player_state = next((p for p in players if p.player_id == pid), None)

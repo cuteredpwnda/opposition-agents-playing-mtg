@@ -29,31 +29,48 @@ def get_priority_order(game_state: GameState) -> list[str]:
 def _summarize_actions(actions, game_state: GameState, max_items: int = 10) -> str:
     """Render a compact one-line summary of legal actions for the log.
 
-    Groups by action type and lists the card names that the player could
-    cast / activate / play. Truncates to ``max_items`` distinct items.
+    Groups by ``(kind, card name)`` so that e.g. three identical
+    ``Activate(Mountain)`` actions render as ``Activate(Mountain) ×3``.
+    Truncates to ``max_items`` distinct entries.
     """
-    parts: list[str] = []
     cards_by_id = {c.instance_id: c for c in game_state.cards}
-    seen = 0
+    KIND_SHORT = {
+        "PLAY_LAND": "Play",
+        "CAST_SPELL": "Cast",
+        "ACTIVATE_ABILITY": "Activate",
+        "DECLARE_ATTACKER": "Attack",
+        "DECLARE_BLOCKER": "Block",
+    }
+    # Preserve insertion order while counting duplicates.
+    counts: dict[str, int] = {}
     for a in actions:
-        if seen >= max_items:
-            parts.append("…")
-            break
         kind = a.action_type.name if hasattr(a.action_type, "name") else str(a.action_type)
-        kind_short = {
-            "PLAY_LAND": "Play",
-            "CAST_SPELL": "Cast",
-            "ACTIVATE_ABILITY": "Activate",
-            "DECLARE_ATTACKER": "Attack",
-            "DECLARE_BLOCKER": "Block",
-        }.get(kind, kind.title())
+        kind_short = KIND_SHORT.get(kind, kind.title())
         cid = getattr(a, "card_instance_id", None)
         if cid and cid in cards_by_id:
-            parts.append(f"{kind_short}({cards_by_id[cid].name})")
+            label = f"{kind_short}({cards_by_id[cid].name})"
         else:
-            parts.append(kind_short)
-        seen += 1
+            label = kind_short
+        counts[label] = counts.get(label, 0) + 1
+
+    parts: list[str] = []
+    for i, (label, n) in enumerate(counts.items()):
+        if i >= max_items:
+            parts.append("…")
+            break
+        parts.append(label if n == 1 else f"{label} ×{n}")
     return ", ".join(parts)
+
+
+def _is_noise_only(actions) -> bool:
+    """True if the only non-pass action is CONCEDE — not worth logging."""
+    if not actions:
+        return True
+    for a in actions:
+        kind = a.action_type.name if hasattr(a.action_type, "name") else str(a.action_type)
+        if kind != "CONCEDE":
+            return False
+    return True
 
 
 def _sync_priority_player(game_state: GameState) -> None:
@@ -180,23 +197,7 @@ async def run_priority_loop(
         # log what the player could have done from the current board state.
         # Skip pure-pass turns to keep noise down.
         non_pass = [a for a in legal_actions if a.action_type != ActionType.PASS_PRIORITY]
-        # DEBUG: dump Atraxa main_1 land state
-        if "atraxa" in priority_player_id.lower() or (
-            len(non_pass) <= 1
-            and "MAIN" in str(getattr(game_state, "phase", ""))
-            and game_state.players[game_state.active_player_index].player_id == priority_player_id
-        ):
-            from src.engine.game_state import Zone
-            pp_obj = next((p for p in game_state.players if p.player_id == priority_player_id), None)
-            hand = [c for c in game_state.cards if c.zone == Zone.HAND and c.owner_id == priority_player_id]
-            lands_in_hand = [c.name for c in hand if c.is_land()]
-            game_state.log(
-                f"      [DEBUG] {priority_player_id} phase={game_state.phase} "
-                f"active={game_state.players[game_state.active_player_index].player_id} "
-                f"lpr={pp_obj.land_plays_remaining if pp_obj else '?'} "
-                f"lands_in_hand={lands_in_hand} stack_len={len(game_state.stack)}"
-            )
-        if non_pass:
+        if non_pass and not _is_noise_only(non_pass):
             pp = next(
                 (p for p in game_state.players if p.player_id == priority_player_id),
                 None,
