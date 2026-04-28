@@ -44,6 +44,12 @@ class EncoderTrainingConfig:
     checkpoint_dir: str = "checkpoints/encoder"
     log_interval: int = 100         # Steps between log messages
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
+    # Early-stop when avg total loss stays below this threshold for
+    # ``early_stop_patience`` consecutive epochs.  Mostly defends
+    # against degenerate cases where the loss converges to ~0 in
+    # epoch 1 and the next 99 epochs are wasted compute.
+    early_stop_loss: float = 1e-4
+    early_stop_patience: int = 3
 
 
 class StateDataset(Dataset):
@@ -105,6 +111,7 @@ def train_encoder(
         "Training state encoder: %d samples, %d epochs", len(dataset), config.num_epochs
     )
 
+    converged_epochs = 0
     for epoch in range(config.num_epochs):
         encoder.train()
         epoch_losses = {"total": 0.0, "reconstruction": 0.0, "kl": 0.0}
@@ -149,6 +156,19 @@ def train_encoder(
             path = checkpoint_dir / f"encoder_epoch_{epoch+1}.pt"
             torch.save(encoder.state_dict(), str(path))
             logger.info("Saved checkpoint: %s", path)
+
+        # Early-stop on degenerate near-zero loss to avoid wasting
+        # compute when there's effectively nothing left to learn.
+        if avg["total"] < config.early_stop_loss:
+            converged_epochs += 1
+            if converged_epochs >= config.early_stop_patience:
+                logger.info(
+                    "Early stop at epoch %d: avg_total=%.6f below %.6f for %d epochs",
+                    epoch, avg["total"], config.early_stop_loss, converged_epochs,
+                )
+                break
+        else:
+            converged_epochs = 0
 
     # Save final model
     torch.save(encoder.state_dict(), str(checkpoint_dir / "encoder_final.pt"))
