@@ -30,10 +30,22 @@ def move_card(
         card.summoning_sick = True
         card.attached_to = None
         card.counters.clear()
+        # CR 614: replacement effects leave with their source.
+        try:
+            from src.engine.replacement_effects import remove_replacements_for
+            remove_replacements_for(state, card.instance_id)
+        except Exception:
+            pass
 
     # Cards entering the battlefield are summoning-sick
     if to_zone == Zone.BATTLEFIELD:
         card.summoning_sick = True
+        # CR 614: scan for replacement effects on this permanent.
+        try:
+            from src.engine.replacement_effects import install_replacements_for
+            install_replacements_for(state, card)
+        except Exception:
+            pass
 
     # Human-readable, narrative log message based on transition.
     pname = _player_label(state, player_id) or _player_label(state, card.controller_id)
