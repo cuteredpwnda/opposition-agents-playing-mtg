@@ -111,12 +111,27 @@ class TestWinConditions:
         result = simulator.check_win_condition()
         assert result == GameResult.PLAYER1_WIN
     
-    def test_draw_on_max_turns(self, simulator):
-        """Test draw when max turns reached."""
+    def test_timeout_uses_tiebreaker_on_max_turns(self, simulator):
+        """Test timeout awards leader when max turns reached."""
         simulator.max_turns = 5
         game = simulator.setup_game()
         game.turn_number = 5
+        game.players[0].life_total = 17
+        game.players[1].life_total = 14
         
+        result = simulator.check_win_condition()
+        assert result == GameResult.PLAYER1_WIN
+
+    def test_draw_on_max_turns_if_fully_tied(self, simulator):
+        """Test true draw on max turns when all tie-breakers are equal."""
+        simulator.max_turns = 5
+        game = simulator.setup_game(starting_hand_size=0)
+        game.turn_number = 5
+
+        # Keep both players exactly tied across timeout score dimensions.
+        game.players[0].life_total = 20
+        game.players[1].life_total = 20
+
         result = simulator.check_win_condition()
         assert result == GameResult.DRAW
     
@@ -165,6 +180,22 @@ class TestPhaseExecution:
         
         assert len(actions) > 0
         assert "draws a card" in actions[0]
+
+    def test_draw_phase_empty_library_causes_loss(self, simulator):
+        """Test immediate loss when drawing from an empty library."""
+        game = simulator.setup_game()
+
+        # Empty active player's library.
+        active_id = game.active_player.player_id
+        for card in game.cards:
+            if card.owner_id == active_id and card.zone == Zone.LIBRARY:
+                card.zone = Zone.GRAVEYARD
+
+        actions = simulator.execute_phase(Phase.DRAW)
+
+        assert game.game_over
+        assert game.winner == game.players[1]
+        assert "empty library" in actions[0]
     
     def test_main_phase(self, simulator):
         """Test main phase calls coordinator."""

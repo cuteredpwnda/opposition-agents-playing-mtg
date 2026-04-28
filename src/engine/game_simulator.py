@@ -27,6 +27,9 @@ from src.engine.rules_engine import RulesEngine
 from src.engine.agent_strategies import Strategy
 from src.engine.knowledge_graph import MTGKnowledgeGraph
 from src.engine.game_logger import GameLogger
+from src.engine.zones import move_card
+from src.engine.mana import empty_mana_pool
+from src.engine import combat as combat_mod
 
 
 class GameResult(str, Enum):
@@ -85,17 +88,24 @@ class GameSimulator:
         self.phase_log: list[str] = []
         self.logger: Optional[GameLogger] = None
     
-    def setup_game(self, game_id: str = None) -> GameState:
+    def setup_game(self, game_id: str = None,
+                   deck1: Optional[list[dict]] = None,
+                   deck2: Optional[list[dict]] = None,
+                   starting_hand_size: int = 7,
+                   shuffle: bool = True) -> GameState:
         """Initialize a fresh game state.
-        
+
         Args:
             game_id: Optional ID for the game
-            
-        Returns:
-            Initialized GameState
+            deck1: Optional list of card dicts for player 1's library.
+                If omitted, a basic mono-red deck is generated.
+            deck2: Optional list of card dicts for player 2's library.
+            starting_hand_size: Number of cards to draw at game start (default 7)
+            shuffle: Whether to shuffle libraries before drawing opening hands
         """
         from uuid import uuid4
-        
+        import random
+
         self.game_id = game_id or str(uuid4())
         
         # Initialize logger
@@ -125,7 +135,15 @@ class GameSimulator:
         
         # Start at turn 1
         self.game.turn_number = 1
-        
+
+        # Build/shuffle libraries and draw opening hands
+        deck1 = deck1 if deck1 is not None else _build_basic_red_deck()
+        deck2 = deck2 if deck2 is not None else _build_basic_red_deck()
+        self._load_deck(player1.player_id, deck1, shuffle=shuffle,
+                        starting_hand_size=starting_hand_size)
+        self._load_deck(player2.player_id, deck2, shuffle=shuffle,
+                        starting_hand_size=starting_hand_size)
+
         # Initialize KG if available
         if self.kg:
             self.coordinator.setup_game(self.game, self.game_id)
@@ -138,7 +156,69 @@ class GameSimulator:
         self.phase_log.append(f"Game {self.game_id} initialized. {player1.name} ({player1.life_total}hp) vs {player2.name} ({player2.life_total}hp)")
         
         return self.game
-    
+
+    def _load_deck(self, player_id: str, deck: list[dict],
+                   shuffle: bool = True, starting_hand_size: int = 7) -> None:
+        """Create CardInstances for a player's deck, shuffle, draw opening hand."""
+        import random
+
+        cards: list[CardInstance] = []
+        for i, card_dict in enumerate(deck):
+            cards.append(CardInstance(
+                instance_id=f"{player_id}_{i}",
+                card_data=dict(card_dict),
+                zone=Zone.LIBRARY,
+                owner_id=player_id,
+                controller_id=player_id,
+                tapped=False,
+            ))
+        if shuffle:
+            random.shuffle(cards)
+        for c in cards:
+            self.game.cards.append(c)
+
+        # Draw opening hand
+        for c in cards[:starting_hand_size]:
+            c.zone = Zone.HAND
+
+    def _timeout_winner_id(self) -> Optional[str]:
+        """Choose a deterministic winner when max turn limit is reached.
+
+        Ordering is lexicographic by:
+        1) life total
+        2) battlefield permanents controlled
+        3) cards in hand
+        4) cards left in library
+
+        Returns None when still tied after all tie-breakers.
+        """
+        if not self.game or len(self.game.players) < 2:
+            return None
+
+        def score(player: PlayerState) -> tuple[int, int, int, int]:
+            pid = player.player_id
+            battlefield = sum(
+                1 for c in self.game.cards
+                if c.zone == Zone.BATTLEFIELD and c.controller_id == pid
+            )
+            hand = sum(
+                1 for c in self.game.cards
+                if c.zone == Zone.HAND and c.controller_id == pid
+            )
+            library = sum(
+                1 for c in self.game.cards
+                if c.zone == Zone.LIBRARY and c.owner_id == pid
+            )
+            return (player.life_total, battlefield, hand, library)
+
+        p1, p2 = self.game.players[0], self.game.players[1]
+        s1, s2 = score(p1), score(p2)
+        if s1 > s2:
+            return p1.player_id
+        if s2 > s1:
+            return p2.player_id
+        return None
+
     def check_win_condition(self) -> Optional[GameResult]:
         """Check if game has ended.
         
@@ -147,7 +227,19 @@ class GameSimulator:
         """
         if not self.game:
             return None
-        
+
+        # Engine may have flagged game_over via state-based actions
+        if self.game.game_over:
+            winner = self.game.winner
+            if winner is None:
+                return GameResult.DRAW
+            winner_id = getattr(winner, "player_id", winner)
+            if len(self.game.players) > 0 and winner_id == self.game.players[0].player_id:
+                return GameResult.PLAYER1_WIN
+            if len(self.game.players) > 1 and winner_id == self.game.players[1].player_id:
+                return GameResult.PLAYER2_WIN
+            return GameResult.DRAW
+
         p1_life = self.game.players[0].life_total if len(self.game.players) > 0 else 0
         p2_life = self.game.players[1].life_total if len(self.game.players) > 1 else 0
         
@@ -157,8 +249,13 @@ class GameSimulator:
         if p2_life <= 0 and p1_life > 0:
             return GameResult.PLAYER1_WIN
         
-        # Draw if max turns reached
+        # Max-turn timeout: award winner by deterministic tie-breaker.
         if self.game.turn_number >= self.max_turns:
+            winner_id = self._timeout_winner_id()
+            if winner_id == self.game.players[0].player_id:
+                return GameResult.PLAYER1_WIN
+            if winner_id == self.game.players[1].player_id:
+                return GameResult.PLAYER2_WIN
             return GameResult.DRAW
         
         return None
@@ -178,23 +275,56 @@ class GameSimulator:
         actions = []
         
         if phase == Phase.UNTAP:
-            # Untap permanents
+            # Untap permanents controlled by active player; clear summoning
+            # sickness for creatures that entered on a previous turn.
+            active_id = self.game.active_player.player_id
             for card in self.game.cards:
-                if card.zone == Zone.BATTLEFIELD and card.tapped:
-                    card.tapped = False
+                if card.zone != Zone.BATTLEFIELD:
+                    continue
+                # Untap if controlled by active player or if controller is
+                # unset (synthetic test cards / pre-game setup helpers).
+                if card.controller_id and card.controller_id != active_id:
+                    continue
+                card.tapped = False
+                if card.is_creature() and card.turn_entered < self.game.turn_number:
+                    card.summoning_sick = False
+            # Reset land plays for the active player
+            self.game.active_player.land_plays_remaining = 1
             actions.append("All permanents untapped")
             if self.logger:
                 self.logger.debug("Permanents untapped", turn=self.game.turn_number, phase=phase.name)
-        
+
         elif phase == Phase.UPKEEP:
             # Check upkeep triggers (placeholder)
             actions.append("Upkeep phase")
-        
+
         elif phase == Phase.DRAW:
-            # Active player draws a card
-            actions.append(f"{self.game.active_player.name} draws a card")
-            if self.logger:
-                self.logger.action(f"Draw a card", player=self.game.active_player.player_id, turn=self.game.turn_number, phase=phase.name)
+            # Active player draws a card from library to hand.
+            player = self.game.active_player
+            library = [c for c in self.game.cards
+                       if c.zone == Zone.LIBRARY and c.owner_id == player.player_id]
+            if library:
+                card = library[0]
+                move_card(self.game, card.instance_id, Zone.LIBRARY, Zone.HAND, player.player_id)
+                player.has_drawn_for_turn = True
+                actions.append(f"{player.name} draws a card ({card.name})")
+                if self.logger:
+                    self.logger.action(f"Draw a card ({card.name})",
+                                       player=player.player_id,
+                                       turn=self.game.turn_number,
+                                       phase=phase.name)
+            else:
+                # CR 104.3c / 704.5b: player who attempts to draw from an
+                # empty library loses the game.
+                self.game.game_over = True
+                opp_idx = 1 - self.game.active_player_index
+                self.game.winner = self.game.players[opp_idx]
+                actions.append(f"{player.name} attempts to draw from empty library and loses")
+                if self.logger:
+                    self.logger.result(f"{player.name} decks out",
+                                       player=player.player_id,
+                                       turn=self.game.turn_number,
+                                       phase=phase.name)
         
         elif phase == Phase.MAIN_1:
             # Log hand contents before playing
@@ -222,12 +352,16 @@ class GameSimulator:
                     self.logger.decision(action, turn=self.game.turn_number, phase=phase.name)
                 elif self.logger:
                     self.logger.action(action, turn=self.game.turn_number, phase=phase.name)
-        
+            # Resolve everything on the stack before leaving the main phase
+            self._resolve_stack_fully()
+
         elif phase == Phase.COMBAT_BEGIN:
+            # Begin combat: initialize combat state
+            combat_mod.begin_combat(self.game)
             actions.append("Combat phase begins")
             if self.logger:
                 self.logger.debug("Combat begins", turn=self.game.turn_number, phase=phase.name)
-        
+
         elif phase == Phase.COMBAT_ATTACKERS:
             # Declare attackers
             phase_actions = self.coordinator.execute_combat_phase(self.game)
@@ -235,14 +369,20 @@ class GameSimulator:
             for action in phase_actions:
                 if self.logger:
                     self.logger.action(action, turn=self.game.turn_number, phase=phase.name)
-        
+
         elif phase == Phase.COMBAT_BLOCKERS:
-            # Declare blockers (placeholder)
-            actions.append("Block phase")
-        
+            # Defending player declares blockers using a simple greedy heuristic.
+            phase_actions = self._execute_block_phase()
+            actions.extend(phase_actions)
+            for action in phase_actions:
+                if self.logger:
+                    self.logger.action(action, turn=self.game.turn_number, phase=phase.name)
+
         elif phase == Phase.COMBAT_DAMAGE:
-            # Damage resolution (placeholder)
-            actions.append("Damage resolved")
+            # Resolve combat damage
+            combat_mod.resolve_combat_damage(self.game)
+            self._check_sbas()
+            actions.append("Combat damage resolved")
         
         elif phase == Phase.COMBAT_END:
             actions.append("Combat phase ends")
@@ -273,19 +413,89 @@ class GameSimulator:
                     self.logger.decision(action, turn=self.game.turn_number, phase=phase.name)
                 elif self.logger:
                     self.logger.action(action, turn=self.game.turn_number, phase=phase.name)
-        
+            self._resolve_stack_fully()
+
         elif phase == Phase.END_STEP:
             # End-of-turn effects
             actions.append(f"{self.game.active_player.name}'s turn ends")
-        
+
         elif phase == Phase.CLEANUP:
-            # Cleanup: reset flags
+            # Cleanup: empty mana pools, enforce max hand size, reset per-turn flags
             for player in self.game.players:
+                empty_mana_pool(player)
+                # CR 514: discard down to max hand size during cleanup.
+                hand_cards = [
+                    c for c in self.game.cards
+                    if c.zone == Zone.HAND and c.controller_id == player.player_id
+                ]
+                excess = max(0, len(hand_cards) - player.max_hand_size)
+                if excess > 0:
+                    # Deterministic heuristic: discard highest CMC first.
+                    hand_cards.sort(key=lambda c: c.card_data.get("cmc", 0), reverse=True)
+                    for card in hand_cards[:excess]:
+                        move_card(self.game, card.instance_id, Zone.HAND, Zone.GRAVEYARD, player.player_id)
+                        actions.append(f"{player.name} discards {card.name}")
                 player.has_drawn_for_turn = False
                 player.land_plays_remaining = 1
             actions.append("Cleanup phase")
-        
+
+        # Always check state-based actions after a phase
+        self._check_sbas()
         self.phase_log.extend(actions)
+        return actions
+
+    def _resolve_stack_fully(self) -> None:
+        """Resolve every item on the stack (no priority responses in this
+        simplified sync simulator)."""
+        # Safety bound to avoid pathological loops from cascading triggers
+        guard = 0
+        while self.game.stack and guard < 256:
+            self.rules_engine.resolve_stack_item(self.game)
+            self._check_sbas()
+            if self.game.game_over:
+                return
+            guard += 1
+
+    def _check_sbas(self) -> None:
+        """Run state-based actions (e.g., creature death, life loss)."""
+        try:
+            self.rules_engine.check_state_based_actions(self.game)
+        except Exception:
+            # SBAs should never crash a game; log and continue
+            if self.logger:
+                self.logger.debug("SBA check raised", turn=self.game.turn_number)
+
+    def _execute_block_phase(self) -> list[str]:
+        """Greedy heuristic: defending player blocks each attacker with the
+        first available legal blocker (one blocker per attacker, no doubles)."""
+        actions: list[str] = []
+        if self.game.combat is None or not self.game.combat.attackers:
+            actions.append("No attackers to block")
+            return actions
+
+        defender_idx = 1 - self.game.active_player_index
+        defender = self.game.players[defender_idx]
+        available = [
+            c for c in self.game.cards
+            if c.zone == Zone.BATTLEFIELD
+            and c.controller_id == defender.player_id
+            and c.is_creature()
+            and not c.tapped
+        ]
+        assignments: dict[str, list[str]] = {}
+        for attacker_id in self.game.combat.attackers.keys():
+            attacker = next((c for c in self.game.cards if c.instance_id == attacker_id), None)
+            if attacker is None:
+                continue
+            blocker = next((b for b in available if combat_mod.can_block(attacker, b)), None)
+            if blocker is not None:
+                assignments[attacker_id] = [blocker.instance_id]
+                available.remove(blocker)
+                actions.append(f"{defender.name}: {blocker.name} blocks {attacker.name}")
+        if assignments:
+            combat_mod.declare_blockers(self.game, assignments)
+        else:
+            actions.append(f"{defender.name}: no blocks declared")
         return actions
     
     def advance_turn(self) -> None:
@@ -358,12 +568,15 @@ class GameSimulator:
             if result:
                 # Log game result
                 if self.logger:
+                    p1_id = self.agent1.player_id
+                    p2_id = self.agent2.player_id
+                    life_by_id = {p.player_id: p.life_total for p in self.game.players}
                     if result == GameResult.PLAYER1_WIN:
-                        winner = self.game.players[0].player_id
-                        loser = self.game.players[1].player_id
+                        winner = p1_id
+                        loser = p2_id
                     elif result == GameResult.PLAYER2_WIN:
-                        winner = self.game.players[1].player_id
-                        loser = self.game.players[0].player_id
+                        winner = p2_id
+                        loser = p1_id
                     else:
                         winner = "Draw"
                         loser = "Draw"
@@ -372,8 +585,8 @@ class GameSimulator:
                         "winner": winner,
                         "loser": loser,
                         "final_turn": self.game.turn_number,
-                        f"{self.game.players[0].player_id}_hp": self.game.players[0].life_total,
-                        f"{self.game.players[1].player_id}_hp": self.game.players[1].life_total
+                        f"{p1_id}_hp": life_by_id.get(p1_id),
+                        f"{p2_id}_hp": life_by_id.get(p2_id),
                     })
                 return result
             
@@ -426,3 +639,46 @@ class GameSimulator:
             Multi-line log of all phases and actions
         """
         return "\n".join(self.phase_log)
+
+
+# ---------------------------------------------------------------------------
+# Default deck (used when callers don't supply real Scryfall data).
+# Mono-red mountains + bears + bolts: enough to play actual games of MTG.
+# ---------------------------------------------------------------------------
+
+def _build_basic_red_deck() -> list[dict]:
+    """Build a 60-card basic mono-red deck: 24 Mountains + 24 vanilla 2/2 Goblins
+    + 12 Lightning-Bolt-style direct-damage spells.
+
+    All entries are plain dicts shaped like the Scryfall card object so the
+    rules engine can parse mana cost, type line, P/T and oracle text without
+    any external lookup.
+    """
+    mountain = {
+        "name": "Mountain",
+        "mana_cost": "",
+        "cmc": 0,
+        "type_line": "Basic Land — Mountain",
+        "oracle_text": "({T}: Add {R}.)",
+    }
+    goblin = {
+        "name": "Goblin Recruit",
+        "mana_cost": "{1}{R}",
+        "cmc": 2,
+        "type_line": "Creature — Goblin Warrior",
+        "oracle_text": "",
+        "power": "2",
+        "toughness": "2",
+    }
+    bolt = {
+        "name": "Lightning Bolt",
+        "mana_cost": "{R}",
+        "cmc": 1,
+        "type_line": "Instant",
+        "oracle_text": "Lightning Bolt deals 3 damage to any target.",
+    }
+    deck: list[dict] = []
+    deck.extend([dict(mountain) for _ in range(24)])
+    deck.extend([dict(goblin) for _ in range(24)])
+    deck.extend([dict(bolt) for _ in range(12)])
+    return deck

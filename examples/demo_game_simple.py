@@ -36,7 +36,7 @@ def play_simple_game():
     print(f"✓ {control_agent.player_id} ({control_agent.strategy.value})\n")
     
     # Create simulator
-    sim = GameSimulator(aggro_agent, control_agent, max_turns=5)
+    sim = GameSimulator(aggro_agent, control_agent, max_turns=40)
     
     # Setup game
     sim.setup_game()

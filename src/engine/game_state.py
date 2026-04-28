@@ -239,6 +239,7 @@ class PlayerState:
     commander_damage_received: dict[str, int] = field(default_factory=dict)
     has_drawn_for_turn: bool = False
     land_plays_remaining: int = 1
+    max_hand_size: int = 7
     passed_priority: bool = False
     is_human: bool = False
 

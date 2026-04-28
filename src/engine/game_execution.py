@@ -355,23 +355,39 @@ class GameCoordinator:
         
         # Fall back to simple heuristic
         hand_cards = agent.get_plays_from_hand(game)
-        if hand_cards:
-            playable = [c for c in hand_cards if agent.can_play_card(c, game)]
-            if playable:
-                playable.sort(key=lambda c: c.card_data.get("cmc", 0))
-                card = playable[0]
-                action = Action(
-                    action_type=ActionType.CAST_SPELL,
-                    player_id=agent.player_id,
-                    card_instance_id=card.instance_id
-                )
-                self.rules_engine.execute_action(game, action)
-                actions.append(f"{agent.player_id}: Play {card.card_data.get('name', 'card')}")
-            else:
-                actions.append(f"{agent.player_id}: Pass")
-        else:
+        # 1) Play a land first if we still have a land drop available
+        player = next((p for p in game.players if p.player_id == agent.player_id), None)
+        land_in_hand = next((c for c in hand_cards if c.is_land()), None)
+        if land_in_hand and player and player.land_plays_remaining > 0:
+            land_action = Action(
+                action_type=ActionType.PLAY_LAND,
+                player_id=agent.player_id,
+                card_instance_id=land_in_hand.instance_id,
+            )
+            self.rules_engine.execute_action(game, land_action)
+            actions.append(f"{agent.player_id}: Play {land_in_hand.card_data.get('name', 'land')}")
+            # Refresh hand list (land was moved out of hand)
+            hand_cards = agent.get_plays_from_hand(game)
+
+        # 2) Cast as many affordable non-land spells as we can this main phase
+        non_land = [c for c in hand_cards if not c.is_land()]
+        non_land.sort(key=lambda c: c.card_data.get("cmc", 0))
+        played_anything = bool(land_in_hand and player and player.land_plays_remaining == 0)
+        for card in non_land:
+            stack_size_before = len(game.stack)
+            action = Action(
+                action_type=ActionType.CAST_SPELL,
+                player_id=agent.player_id,
+                card_instance_id=card.instance_id,
+            )
+            self.rules_engine.execute_action(game, action)
+            if len(game.stack) > stack_size_before:
+                actions.append(f"{agent.player_id}: Cast {card.card_data.get('name', 'card')}")
+                played_anything = True
+
+        if not played_anything:
             actions.append(f"{agent.player_id}: Pass")
-        
+
         return actions
     
     def execute_combat_phase(self, game: GameState) -> list[str]:
@@ -383,15 +399,18 @@ class GameCoordinator:
         Returns:
             List of attack descriptions
         """
+        from src.engine.combat import can_attack
         actions = []
         agent = self.get_active_agent(game)
-        
-        # Get attacking creatures
+
+        # Eligible attackers: untapped, no summoning sickness (unless haste),
+        # not a defender, etc.
         our_creatures = [
             c for c in game.cards
             if c.zone == Zone.BATTLEFIELD
             and c.controller_id == agent.player_id
-            and not c.tapped
+            and c.is_creature()
+            and can_attack(c, game.turn_number)
         ]
         
         attackers_to_declare = []
@@ -424,15 +443,21 @@ class GameCoordinator:
         
         # Execute attacks if we have attackers to declare
         if attackers_to_declare:
+            opponent_id = (
+                self.agent2.player_id if agent.player_id == self.agent1.player_id
+                else self.agent1.player_id
+            )
             for creature in attackers_to_declare:
                 action = Action(
                     action_type=ActionType.DECLARE_ATTACKERS,
                     player_id=agent.player_id,
-                    card_instance_id=creature.instance_id
+                    card_instance_id=creature.instance_id,
+                    targets=[opponent_id],
                 )
                 self.rules_engine.execute_action(game, action)
-                creature.tapped = True  # Tap attacking creatures
-        
+                # `declare_attackers` already taps unless vigilance — don't
+                # double-tap.
+
         return actions
     
     def get_game_summary(self) -> str:

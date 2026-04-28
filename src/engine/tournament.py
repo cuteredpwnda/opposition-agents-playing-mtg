@@ -116,6 +116,10 @@ class Tournament:
             winner = agent1.player_id
         elif result == GameResult.PLAYER2_WIN:
             winner = agent2.player_id
+
+        life_by_id = {}
+        if sim.game:
+            life_by_id = {p.player_id: p.life_total for p in sim.game.players}
         
         record = GameRecord(
             player1=agent1.player_id,
@@ -125,8 +129,8 @@ class Tournament:
             winner=winner,
             result=result,
             turns=sim.game.turn_number if sim.game else 0,
-            p1_life_final=sim.game.players[0].life_total if sim.game else 0,
-            p2_life_final=sim.game.players[1].life_total if sim.game else 0,
+            p1_life_final=life_by_id.get(agent1.player_id, 0),
+            p2_life_final=life_by_id.get(agent2.player_id, 0),
         )
         
         self.games.append(record)

@@ -58,6 +58,35 @@ class GameRunner:
         self.engine = RulesEngine()
         self.self_play_collector = self_play_collector
 
+    def _resolve_timeout_winner(self, game_state: GameState) -> PlayerState | None:
+        """Pick a winner on max-turn timeout; return None if fully tied."""
+        if len(game_state.players) < 2:
+            return None
+
+        def score(player: PlayerState) -> tuple[int, int, int, int]:
+            pid = player.player_id
+            battlefield = sum(
+                1 for c in game_state.cards
+                if c.zone == Zone.BATTLEFIELD and c.controller_id == pid
+            )
+            hand = sum(
+                1 for c in game_state.cards
+                if c.zone == Zone.HAND and c.controller_id == pid
+            )
+            library = sum(
+                1 for c in game_state.cards
+                if c.zone == Zone.LIBRARY and c.owner_id == pid
+            )
+            return (player.life_total, battlefield, hand, library)
+
+        p1, p2 = game_state.players[0], game_state.players[1]
+        s1, s2 = score(p1), score(p2)
+        if s1 > s2:
+            return p1
+        if s2 > s1:
+            return p2
+        return None
+
     async def run_game(
         self,
         agents: dict[str, MTGAgent],
@@ -89,7 +118,14 @@ class GameRunner:
         # Max-turn guard for non-terminal games
         if not game_state.game_over:
             game_state.game_over = True
-            game_state.log("Game drawn: max turn limit reached")
+            timeout_winner = self._resolve_timeout_winner(game_state)
+            if timeout_winner is not None:
+                game_state.winner = timeout_winner
+                game_state.log(
+                    f"Game ended: max turn limit reached, winner by tie-break = {timeout_winner.player_id}"
+                )
+            else:
+                game_state.log("Game drawn: max turn limit reached (fully tied)")
 
         winner_name = game_state.winner.player_id if game_state.winner else None
 
@@ -242,6 +278,14 @@ class GameRunner:
                     from src.engine.zones import move_card
                     game_state = move_card(game_state, card_to_draw.instance_id, Zone.LIBRARY, Zone.HAND, player.player_id)
                     player.has_drawn_for_turn = True
+                else:
+                    # CR 104.3c / 704.5b: drawing from empty library loses.
+                    loser_idx = game_state.active_player_index
+                    winner_idx = (loser_idx + 1) % len(game_state.players)
+                    game_state.winner = game_state.players[winner_idx]
+                    game_state.game_over = True
+                    game_state.log(f"{player.player_id} attempted to draw from empty library and lost")
+                    return game_state
 
             # Combat phases
             if phase == Phase.COMBAT_BEGIN:
@@ -282,10 +326,27 @@ class GameRunner:
                 resolve_combat_damage(game_state)
             
             if phase == Phase.CLEANUP:
-                # Empty all players' mana pools
+                # Empty all players' mana pools and discard down to max hand size
                 from src.engine.mana import empty_mana_pool
+                from src.engine.zones import move_card
                 for player in game_state.players:
                     empty_mana_pool(player)
+                    hand_cards = [
+                        c for c in game_state.cards
+                        if c.zone == Zone.HAND and c.controller_id == player.player_id
+                    ]
+                    excess = max(0, len(hand_cards) - player.max_hand_size)
+                    if excess > 0:
+                        hand_cards.sort(key=lambda c: c.card_data.get("cmc", 0), reverse=True)
+                        for card in hand_cards[:excess]:
+                            game_state = move_card(
+                                game_state,
+                                card.instance_id,
+                                Zone.HAND,
+                                Zone.GRAVEYARD,
+                                player.player_id,
+                            )
+                            game_state.log(f"{player.name} discards {card.name} (cleanup)")
 
             # In main phases, use full priority loop (enables stack + instant-speed)
             if is_main_phase(phase):
