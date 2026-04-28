@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
 
-from src.engine.game_state import GameState, PlayerState, Zone, Phase, CardInstance
+from src.engine.game_state import GameState, PlayerState, Zone, Phase, CardInstance, TriggerType
 from src.engine.game_execution import AgentGamePlayer, GameCoordinator
 from src.engine.rules_engine import RulesEngine
 from src.engine.agent_strategies import Strategy
@@ -421,6 +421,7 @@ class GameSimulator:
         if phase == Phase.UNTAP:
             # Untap permanents controlled by active player; clear summoning
             # sickness for creatures that entered on a previous turn.
+            from .counters import apply_stun_on_untap
             active_id = self.game.active_player.player_id
             for card in self.game.cards:
                 if card.zone != Zone.BATTLEFIELD:
@@ -428,6 +429,9 @@ class GameSimulator:
                 # Untap if controlled by active player or if controller is
                 # unset (synthetic test cards / pre-game setup helpers).
                 if card.controller_id and card.controller_id != active_id:
+                    continue
+                # Stun counters (CR 701.49): skip untap and remove a stun.
+                if card.tapped and apply_stun_on_untap(card):
                     continue
                 card.tapped = False
                 if card.is_creature() and card.turn_entered < self.game.turn_number:
@@ -439,7 +443,9 @@ class GameSimulator:
                 self.logger.debug("Permanents untapped", turn=self.game.turn_number, phase=phase.name)
 
         elif phase == Phase.UPKEEP:
-            # Check upkeep triggers (placeholder)
+            # Fire "at the beginning of upkeep" triggers via phases hook.
+            from .phases import _scan_phase_triggers
+            _scan_phase_triggers(self.game, "upkeep", TriggerType.UPKEEP)
             actions.append("Upkeep phase")
 
         elif phase == Phase.DRAW:
@@ -560,7 +566,9 @@ class GameSimulator:
             self._resolve_stack_fully()
 
         elif phase == Phase.END_STEP:
-            # End-of-turn effects
+            # End-of-turn triggers via shared scanner.
+            from .phases import _scan_phase_triggers
+            _scan_phase_triggers(self.game, "end step", TriggerType.END_STEP)
             actions.append(f"{self.game.active_player.name}'s turn ends")
 
         elif phase == Phase.CLEANUP:

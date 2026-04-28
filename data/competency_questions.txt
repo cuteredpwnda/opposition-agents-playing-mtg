@@ -61,3 +61,39 @@ Given an opponent is playing a control archetype, what counterspells might they 
 Given cards already seen, what is the likely archetype of the opponent?
 What cards are typically in the hand of a player running a given archetype?
 What should I play around based on the opponent's open mana and archetype?
+
+# === Mechanics & Keyword Abilities (added v1.2) ===
+Does a given card have cycling, and what is the cycling cost?
+Which cards in a deck have landfall triggers?
+Which permanents enter the battlefield tapped?
+Which keyword abilities (CR 702.x) are present on a given card?
+What counter types can a given card create or interact with?
+Is a given keyword (e.g. Cycling, Ward, Prowess) implemented in the engine?
+What is the empirical card-pool coverage (% of Scryfall) of a given mechanic?
+Which triggered ability subtype (ETB, Dies, Attack, Upkeep, EndStep, Damage, Cast) does a given trigger belong to?
+Which replacement effect category (EntersTapped, WouldInstead, DamagePrevention, SkipStep) does a given effect belong to?
+Which special actions (CR 116) are legal for a player right now?
+
+# === Errata & Local Rulings Cache ===
+What are the local Wizards rulings for a given card (offline cache)?
+Does a given card have errata that differs from the printed text?
+Which rulings were published after a given date?
+For a given interaction, which rulings from either card apply?
+Is the local rulings cache up to date with the latest Scryfall bulk data?
+
+# === Engine Coverage / Roadmap ===
+Which mechanics in the card pool are NOT implemented in the engine?
+What is the implementation coverage weighted by card frequency?
+Which planned mechanics would unlock the most additional cards if implemented next?
+For a given decklist, what fraction of cards is fully supported by the engine?
+Which keywords have status 'partial' and what is missing?
+
+# === Mulligan & Opening Hand ===
+What is the optimal London-mulligan decision for a given hand?
+Given a kept hand of N cards, which cards should be put on the bottom?
+What is the probability of drawing into a key combo piece by turn T given a kept hand?
+
+# === Agent / LLM Metadata ===
+Which LLM model is controlling a given player slot?
+What is the parameter count of the agent's backing model?
+Which agent type (LLM, heuristic, random) is each player using in a given game?

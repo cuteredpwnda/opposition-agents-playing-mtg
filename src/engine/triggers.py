@@ -232,6 +232,48 @@ def check_cast_triggers(state: GameState, casting_player_id: str, spell_card: Ca
     return triggered
 
 
+def check_landfall_triggers(state: GameState, controller_id: str, land_card: CardInstance) -> list[Trigger]:
+    """Check for landfall triggers when a land enters the battlefield.
+
+    CR 702.124: "Landfall — Whenever a land enters the battlefield under
+    your control, ..."  We detect any permanent the casting player controls
+    whose oracle text mentions ``landfall`` or the explicit phrase
+    "whenever a land enters the battlefield under your control".
+    """
+    triggered: list[Trigger] = []
+    for card in state.cards:
+        if card.zone != Zone.BATTLEFIELD:
+            continue
+        if card.controller_id != controller_id:
+            continue
+        oracle_lower = card.oracle_text.lower()
+        if "landfall" not in oracle_lower and \
+                "whenever a land enters the battlefield under your control" not in oracle_lower:
+            continue
+        # Effect = text after the landfall keyword colon, or after the comma
+        effect = _extract_effect_landfall(card.oracle_text) or "landfall trigger"
+        triggered.append(Trigger(
+            source_card_id=card.instance_id,
+            controller_id=card.controller_id,
+            trigger_type=TriggerType.LANDFALL,
+            description=f"{card.name}: {effect}",
+        ))
+    return triggered
+
+
+def _extract_effect_landfall(oracle_text: str) -> str | None:
+    """Pull the effect after 'Landfall —' or after the trigger comma."""
+    m = re.search(r"landfall\s*[—\-:]\s*(.+?)(?:\.|$)", oracle_text, re.IGNORECASE)
+    if m:
+        return m.group(1).strip()
+    m = re.search(
+        r"whenever a land enters the battlefield under your control,?\s*(.+?)(?:\.|$)",
+        oracle_text, re.IGNORECASE,
+    )
+    if m:
+        return m.group(1).strip()
+    return None
+
 
 def _extract_effect_from_etb(oracle_text: str) -> str:
     """Extract the effect part from an ETB trigger.
@@ -376,13 +418,54 @@ def resolve_trigger(state: GameState, trigger: Trigger) -> GameState:
     
     # Create tokens: "create a 1/1 token", "create 2 2/2 tokens", etc.
     if "create" in description and "token" in description:
-        match = re.search(r"create (\d+) ([\d/]+)? ?[\w\s]*token", description, re.IGNORECASE)
-        if match:
-            count = int(match.group(1)) if match.group(1) else 1
-            power_toughness = match.group(2) if match.group(2) else "1/1"
-            state.log(f"[Trigger] {controller.name} creates {count} {power_toughness} token(s)")
-            # Token creation is simplified for now
-    
+        from src.engine import tokens as _tok
+        desc_l = description.lower()
+        # Count: "a"/"an" → 1, otherwise digit.
+        cm = re.search(r"create (a|an|\d+)", desc_l)
+        count = 1
+        if cm:
+            tok = cm.group(1)
+            count = 1 if tok in ("a", "an") else int(tok)
+        # Predefined token types first.
+        spawned = False
+        if "treasure" in desc_l:
+            for _ in range(count):
+                _tok.create_treasure_token(state, controller.player_id)
+            spawned = True
+        elif "food" in desc_l:
+            for _ in range(count):
+                _tok.create_food_token(state, controller.player_id)
+            spawned = True
+        elif "clue" in desc_l:
+            for _ in range(count):
+                _tok.create_clue_token(state, controller.player_id)
+            spawned = True
+        elif "blood" in desc_l:
+            for _ in range(count):
+                _tok.create_blood_token(state, controller.player_id)
+            spawned = True
+        if not spawned:
+            # Generic creature token: parse "X/Y <colors> <subtypes> creature token".
+            ptm = re.search(r"(\d+)/(\d+)\s+([\w\s]*?)\s*(?:creature\s+)?token", desc_l)
+            if ptm:
+                p = int(ptm.group(1))
+                t = int(ptm.group(2))
+                middle = ptm.group(3).strip()
+                # Extract color words and remaining as subtypes.
+                color_map = {"white": "W", "blue": "U", "black": "B", "red": "R", "green": "G"}
+                colors = [color_map[w] for w in middle.split() if w in color_map]
+                subtypes = [w.title() for w in middle.split() if w not in color_map and w]
+                if not subtypes:
+                    subtypes = ["Spirit"]  # fallback generic
+                for _ in range(count):
+                    _tok.create_creature_token(
+                        state, controller.player_id,
+                        power=p, toughness=t,
+                        subtypes=subtypes, colors=colors or None,
+                    )
+                spawned = True
+        if spawned:
+            state.log(f"[Trigger] {controller.name} creates {count} token(s)")    
     # Tap target permanent: "tap a creature", "tap target land", etc.
     if "tap" in description and "target" in description:
         # Find target permanent on battlefield

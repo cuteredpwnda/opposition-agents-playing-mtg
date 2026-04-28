@@ -87,6 +87,10 @@ class TriggerType(str, Enum):
     CREATURE_DIES = "creature_dies"
     LIFE_GAIN = "life_gain"
     COMBAT_DAMAGE = "combat_damage"
+    LANDFALL = "landfall"
+    UPKEEP = "upkeep"
+    END_STEP = "end_step"
+    BEGINNING_OF_COMBAT = "beginning_of_combat"
 
 
 @dataclass
@@ -243,6 +247,10 @@ class PlayerState:
     mulligans_taken: int = 0
     passed_priority: bool = False
     is_human: bool = False
+    # Player-level counters (CR 122)
+    poison_counters: int = 0
+    energy_counters: int = 0
+    experience_counters: int = 0
 
 
 @dataclass

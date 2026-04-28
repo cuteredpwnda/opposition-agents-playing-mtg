@@ -50,10 +50,23 @@ class OllamaAgent(MTGAgent):
         super().__init__(player_id, name)
         self.model = model
         self.base_url = base_url
-        self.http_client = httpx.Client(timeout=10.0)
+        # Default 120s — small Gemma models can take 30-60s on first cold call.
+        self.http_client = httpx.Client(timeout=120.0)
         self._ollama_available = False
         self._fallback_agent = None
-        
+
+        # Diagnostics: track LLM usage vs fallback
+        self.stats = {
+            "llm_calls_total": 0,
+            "llm_calls_success": 0,
+            "llm_calls_failed": 0,
+            "fallback_invocations": 0,
+            "actions_chosen": {"PASS_PRIORITY": 0, "CAST_SPELL": 0,
+                               "PLAY_LAND": 0, "DECLARE_ATTACKERS": 0,
+                               "ACTIVATE_ABILITY": 0, "OTHER": 0},
+            "mulligan_decisions": [],  # list of (mulligans_taken, kept)
+        }
+
         # Check if Ollama is available
         self._check_ollama()
 
@@ -84,14 +97,18 @@ class OllamaAgent(MTGAgent):
         """Use Ollama to select the best action."""
         if not legal_actions:
             return Action(action_type=ActionType.PASS_PRIORITY, player_id=self.player_id)
-        
+
         # Use fallback if Ollama isn't available
         if not self._ollama_available:
-            return await self._fallback_agent.decide_action(game_state, legal_actions)
-        
+            self.stats["fallback_invocations"] += 1
+            chosen = await self._fallback_agent.decide_action(game_state, legal_actions)
+            self._record_action(chosen)
+            return chosen
+
         # Build context for Ollama
         context = self._build_context(game_state, legal_actions)
-        
+        self.stats["llm_calls_total"] += 1
+
         # Call Ollama
         try:
             response = self.http_client.post(
@@ -101,23 +118,38 @@ class OllamaAgent(MTGAgent):
                     "prompt": f"{SYSTEM_PROMPT}\n\n{context}",
                     "stream": False,
                     "temperature": 0.2,  # Low temperature for consistent answers
+                    "keep_alive": "30m",  # Keep model loaded between calls
                 },
-                timeout=30.0,
+                timeout=120.0,
             )
-            
+
             if response.status_code == 200:
                 data = response.json()
                 response_text = data.get("response", "").strip()
-                
+
                 # Parse the action index
                 chosen_idx = self._parse_action_index(response_text, len(legal_actions))
-                return legal_actions[chosen_idx]
+                self.stats["llm_calls_success"] += 1
+                chosen = legal_actions[chosen_idx]
+                self._record_action(chosen)
+                return chosen
         except Exception as e:
             import sys
             print(f"[{self.player_id}] Ollama error: {e}", file=sys.stderr)
-        
+
         # Fallback to first playable action on error
-        return self._fallback_action(legal_actions)
+        self.stats["llm_calls_failed"] += 1
+        chosen = self._fallback_action(legal_actions)
+        self._record_action(chosen)
+        return chosen
+
+    def _record_action(self, action: Action) -> None:
+        """Update action-type histogram in stats."""
+        atype = action.action_type.name
+        if atype in self.stats["actions_chosen"]:
+            self.stats["actions_chosen"][atype] += 1
+        else:
+            self.stats["actions_chosen"]["OTHER"] += 1
 
     def _build_context(
         self, game_state: GameState, legal_actions: list[Action]
@@ -253,18 +285,23 @@ Respond with ONLY "KEEP" or "MULLIGAN"."""
                     "prompt": mulligan_prompt,
                     "stream": False,
                     "temperature": 0.3,
+                    "keep_alive": "30m",
                 },
-                timeout=15.0,
+                timeout=60.0,
             )
             if response.status_code == 200:
                 data = response.json()
                 text = data.get("response", "").strip().upper()
-                return "KEEP" in text
+                kept = "KEEP" in text
+                self.stats["mulligan_decisions"].append((mulligans_taken, kept))
+                return kept
         except Exception:
             pass
 
         # Fall back to parent class heuristic
-        return super().decide_mulligan(hand, mulligans_taken, max_mulligans)
+        kept = super().decide_mulligan(hand, mulligans_taken, max_mulligans)
+        self.stats["mulligan_decisions"].append((mulligans_taken, kept))
+        return kept
 
     def select_bottom_cards(self, hand, n: int) -> list:
         """Use Ollama to select which cards to put on the bottom.
@@ -295,7 +332,7 @@ List the card names in order, one per line, for the first {n} cards to BOTTOM:""
                     "stream": False,
                     "temperature": 0.3,
                 },
-                timeout=15.0,
+                timeout=60.0,
             )
             if response.status_code == 200:
                 data = response.json()

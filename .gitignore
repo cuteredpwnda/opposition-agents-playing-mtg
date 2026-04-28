@@ -27,6 +27,23 @@ data/card_cache.db
 data/combos.json
 data/comprehensive_rules.txt
 data/scryfall_bulk/
+data/scryfall/
+
+# Databases (any SQLite / DuckDB / Parquet artifacts)
+*.db
+*.sqlite
+*.sqlite3
+*.duckdb
+*.parquet
+
+# Large embeddings / dataset directories
+data/embeddings/
+data/datasets/
+
+# Graphify generated artifacts (regenerable via /graphify)
+graphify-out/graph.json
+graphify-out/.graphify_*.json
+graphify-out/cache/
 
 # Model weights & checkpoints
 models/*.pt

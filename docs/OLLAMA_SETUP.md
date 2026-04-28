@@ -27,6 +27,42 @@ This project uses Ollama for LLM-powered agent decision-making in Magic: The Gat
    
    This runs the API on `http://localhost:11434` by default
 
+### Keeping multiple models loaded in VRAM (recommended for ablations)
+
+By default Ollama unloads a model after ~5 min of idle and only keeps **one**
+model resident in VRAM. Ablations that pit two models against each other
+will then ping-pong load/unload on every turn, which is brutally slow.
+
+Set these environment variables **before** starting `ollama serve`:
+
+| Variable | Recommended | Purpose |
+|----------|-------------|---------|
+| `OLLAMA_MAX_LOADED_MODELS` | `3` | Allow 3 models in VRAM simultaneously |
+| `OLLAMA_NUM_PARALLEL`      | `2` | Allow 2 concurrent requests per model |
+| `OLLAMA_KEEP_ALIVE`        | `30m` | Keep models loaded 30 min after last call |
+
+**Windows (PowerShell, persistent):**
+```powershell
+[System.Environment]::SetEnvironmentVariable('OLLAMA_MAX_LOADED_MODELS', '3', 'User')
+[System.Environment]::SetEnvironmentVariable('OLLAMA_NUM_PARALLEL',      '2', 'User')
+[System.Environment]::SetEnvironmentVariable('OLLAMA_KEEP_ALIVE',        '30m', 'User')
+# Restart Ollama (tray -> Quit, then re-launch) for changes to take effect.
+```
+
+**Linux/macOS (`~/.bashrc` or systemd unit):**
+```bash
+export OLLAMA_MAX_LOADED_MODELS=3
+export OLLAMA_NUM_PARALLEL=2
+export OLLAMA_KEEP_ALIVE=30m
+```
+
+Verify with `ollama ps` — you should see multiple models in the `LOADED`
+column once two ablation calls have run.
+
+> Note: [src/agents/llm_agent.py](../src/agents/llm_agent.py) also passes
+> `keep_alive: "30m"` per request, but the `OLLAMA_MAX_LOADED_MODELS` cap
+> can only be raised at server start.
+
 4. **Install Python dependencies**
    ```bash
    pip install requests

@@ -61,6 +61,31 @@ def _get_effective_cost(state: GameState, player: "PlayerState", card) -> dict[s
     return cost
 
 
+def _parse_mana_cost_safe(text: str) -> dict[str, int]:
+    try:
+        return parse_mana_cost(text)
+    except Exception:
+        return {}
+
+
+def _can_afford(state: GameState, player, cost: dict[str, int]) -> bool:
+    if can_pay(player, cost):
+        return True
+    snapshot = dict(player.mana_pool)
+    auto_tap_for_cost(state, player, cost)
+    ok = can_pay(player, cost)
+    player.mana_pool = snapshot
+    return ok
+
+
+def _safe_power(card) -> int:
+    try:
+        return int(card.power) if card.power is not None else 0
+    except (TypeError, ValueError):
+        return 0
+
+
+
 class RulesEngine:
     """Validates and executes game actions according to MTG Comprehensive Rules."""
 
@@ -230,6 +255,156 @@ class RulesEngine:
                     )
                 )
 
+        # Cycling: any card in hand with "cycling {cost}" can be discarded
+        # to draw a card (CR 702.32). Available at instant speed any time
+        # the player has priority.
+        from .cycling import parse_cycling_cost, can_pay_cycling
+        for card in hand:
+            cyc_cost = parse_cycling_cost(card)
+            if cyc_cost is not None and can_pay_cycling(state, player, cyc_cost):
+                actions.append(
+                    Action(
+                        action_type=ActionType.SPECIAL_ACTION,
+                        player_id=player_id,
+                        card_instance_id=card.instance_id,
+                        metadata={"special": "cycle"},
+                    )
+                )
+
+        # Flashback (CR 702.34): cast eligible spells from graveyard for the
+        # flashback cost. Sorcery-speed for sorceries, instant-speed for
+        # instants.
+        from .equip import (
+            parse_flashback_cost, can_flashback, parse_equip_cost,
+            parse_crew_cost, parse_kicker_cost, kicker_cost_dict,
+        )
+        graveyard = [c for c in state.cards if c.zone == Zone.GRAVEYARD and c.owner_id == player_id]
+        for card in graveyard:
+            fb_cost = parse_flashback_cost(card)
+            if fb_cost is None:
+                continue
+            sorcery_speed = not card.is_instant() and "flash" not in (card.oracle_text or "").lower()
+            ok_timing = (
+                (state.players[state.active_player_index].player_id == player_id
+                 and is_main_phase(state.phase)
+                 and stack_is_empty(state))
+                if sorcery_speed
+                else True
+            )
+            if not ok_timing:
+                continue
+            if can_flashback(card, player, state):
+                actions.append(
+                    Action(
+                        action_type=ActionType.SPECIAL_ACTION,
+                        player_id=player_id,
+                        card_instance_id=card.instance_id,
+                        metadata={"special": "flashback"},
+                    )
+                )
+
+        # Equip {N} (CR 702.6): activated ability of an Equipment.
+        # Sorcery-speed only.
+        if (
+            state.players[state.active_player_index].player_id == player_id
+            and is_main_phase(state.phase)
+            and stack_is_empty(state)
+        ):
+            for equipment in battlefield:
+                eq_cost = parse_equip_cost(equipment)
+                if eq_cost is None:
+                    continue
+                cost = _parse_mana_cost_safe(eq_cost)
+                if not _can_afford(state, player, cost):
+                    continue
+                # Surface one action per legal target creature.
+                for target in battlefield:
+                    if not target.is_creature():
+                        continue
+                    if target.instance_id == equipment.instance_id:
+                        continue
+                    if equipment.attached_to == target.instance_id:
+                        continue
+                    actions.append(
+                        Action(
+                            action_type=ActionType.SPECIAL_ACTION,
+                            player_id=player_id,
+                            card_instance_id=equipment.instance_id,
+                            targets=[target.instance_id],
+                            metadata={"special": "equip"},
+                        )
+                    )
+
+            # Crew {N} (CR 702.121): tap creatures totalling N power.
+            for vehicle in battlefield:
+                crew_n = parse_crew_cost(vehicle)
+                if crew_n is None:
+                    continue
+                # Greedy crew set: smallest creatures first that hit N power.
+                creatures = sorted(
+                    [c for c in battlefield if c.is_creature() and not c.tapped
+                     and c.instance_id != vehicle.instance_id],
+                    key=lambda c: _safe_power(c),
+                )
+                picked: list[str] = []
+                total = 0
+                for c in creatures:
+                    if total >= crew_n:
+                        break
+                    picked.append(c.instance_id)
+                    total += _safe_power(c)
+                if total >= crew_n and picked:
+                    actions.append(
+                        Action(
+                            action_type=ActionType.SPECIAL_ACTION,
+                            player_id=player_id,
+                            card_instance_id=vehicle.instance_id,
+                            targets=picked,
+                            metadata={"special": "crew"},
+                        )
+                    )
+
+        # Kicker {cost} (CR 702.33): surface a *kicked* alternative for any
+        # castable spell with a kicker cost we can afford.
+        if (
+            state.players[state.active_player_index].player_id == player_id
+            and is_main_phase(state.phase)
+            and stack_is_empty(state)
+        ):
+            for card in hand:
+                if card.is_land() or card.is_instant():
+                    continue
+                kc = kicker_cost_dict(card)
+                if kc is None:
+                    continue
+                base_cost = _get_effective_cost(state, player, card)
+                merged = dict(base_cost)
+                for k, v in kc.items():
+                    merged[k] = merged.get(k, 0) + v
+                if can_pay_with_lands(state, player, merged):
+                    actions.append(
+                        Action(
+                            action_type=ActionType.CAST_SPELL,
+                            player_id=player_id,
+                            card_instance_id=card.instance_id,
+                            metadata={"kicked": True},
+                        )
+                    )
+
+        # Treasure: tap+sacrifice for {C} (or any color). Surface once per
+        # untapped Treasure on the battlefield as a mana ability.
+        for treasure in battlefield:
+            if "Treasure" not in treasure.type_line or treasure.tapped:
+                continue
+            actions.append(
+                Action(
+                    action_type=ActionType.SPECIAL_ACTION,
+                    player_id=player_id,
+                    card_instance_id=treasure.instance_id,
+                    metadata={"special": "sacrifice_treasure"},
+                )
+            )
+
         # Combat actions: declare attackers/blockers during combat phases
         from .game_state import Phase
         from .combat import can_attack, can_block
@@ -293,10 +468,34 @@ class RulesEngine:
                         state, action.card_instance_id, Zone.HAND, Zone.BATTLEFIELD,
                         action.player_id
                     )
-                    card.tapped = False
+                    # Replacement effect: "enters the battlefield tapped"
+                    if "enters the battlefield tapped" in card.oracle_text.lower() \
+                            or "enters tapped" in card.oracle_text.lower():
+                        card.tapped = True
+                        state.log(f"{card.name} enters tapped")
+                    else:
+                        card.tapped = False
                     player = next((p for p in state.players if p.player_id == action.player_id), None)
                     if player:
                         player.land_plays_remaining -= 1
+
+                    # Landfall: trigger on every permanent the player controls
+                    # whose oracle text contains "landfall" (CR 702.124).
+                    from .triggers import check_landfall_triggers
+                    landfall = check_landfall_triggers(state, action.player_id, card)
+                    for trig in landfall:
+                        stack_item = StackItem(
+                            source_card_id=trig.source_card_id,
+                            controller_id=trig.controller_id,
+                            is_spell=False,
+                            card_data={
+                                "name": f"[Landfall] {trig.description}",
+                                "type_line": "Ability",
+                            },
+                        )
+                        state.stack.append(stack_item)
+                        state.triggered_abilities.append(trig)
+                        state.log(f"[TRIGGER (Landfall)] {trig.description}")
             return state
         
         if action.action_type == ActionType.CAST_SPELL:
@@ -313,6 +512,13 @@ class RulesEngine:
                         return state
 
                     cost = _get_effective_cost(state, player, card)
+                    # Kicker: if action metadata says kicked, fold the kicker
+                    # cost into the effective cost (CR 702.33).
+                    if (action.metadata or {}).get("kicked"):
+                        from .equip import kicker_cost_dict
+                        kc = kicker_cost_dict(card) or {}
+                        for k, v in kc.items():
+                            cost[k] = cost.get(k, 0) + v
                     # Auto-tap untapped lands so naive agents don't have to
                     # explicitly activate mana abilities before each cast.
                     if not can_pay(player, cost):
@@ -443,6 +649,36 @@ class RulesEngine:
                             # Mana abilities resolve immediately
                             state.log(f"{card.name} mana ability activated")
             return state
+
+        if action.action_type == ActionType.SPECIAL_ACTION:
+            special = (action.metadata or {}).get("special")
+            if special == "cycle" and action.card_instance_id:
+                from .cycling import execute_cycle
+                card = next((c for c in state.cards if c.instance_id == action.card_instance_id), None)
+                player = next((p for p in state.players if p.player_id == action.player_id), None)
+                if card and player:
+                    state = execute_cycle(state, card, player)
+            elif special == "equip" and action.card_instance_id and action.targets:
+                from .equip import execute_equip
+                eq = next((c for c in state.cards if c.instance_id == action.card_instance_id), None)
+                tgt = next((c for c in state.cards if c.instance_id == action.targets[0]), None)
+                if eq and tgt:
+                    execute_equip(state, eq, tgt)
+            elif special == "crew" and action.card_instance_id and action.targets:
+                from .equip import execute_crew
+                vehicle = next((c for c in state.cards if c.instance_id == action.card_instance_id), None)
+                crew = [c for c in state.cards if c.instance_id in action.targets]
+                if vehicle and crew:
+                    execute_crew(state, vehicle, crew)
+            elif special == "flashback" and action.card_instance_id:
+                state = self._execute_flashback(state, action)
+            elif special == "sacrifice_treasure" and action.card_instance_id:
+                from .tokens import sacrifice_for_mana
+                tok = next((c for c in state.cards if c.instance_id == action.card_instance_id), None)
+                if tok:
+                    color = (action.metadata or {}).get("color", "C")
+                    sacrifice_for_mana(state, tok, color)
+            return state
         
         if action.action_type == ActionType.DECLARE_ATTACKERS:
             if action.card_instance_id and action.targets:
@@ -571,7 +807,11 @@ class RulesEngine:
             # If the spell wasn't already moved (e.g., counter spells don't
             # move themselves), send it to the graveyard now.
             if card.zone == Zone.STACK:
-                state = move_card(state, source_card_id, Zone.STACK, Zone.GRAVEYARD, card.owner_id)
+                # Flashback: exile instead of graveyard (CR 702.34).
+                dest = Zone.EXILE if card.card_data.get("flashback_exile") else Zone.GRAVEYARD
+                state = move_card(state, source_card_id, Zone.STACK, dest, card.owner_id)
+                if dest == Zone.EXILE:
+                    card.card_data.pop("flashback_exile", None)
             state.log(f"{card.name} resolves")
 
         return state
@@ -613,6 +853,44 @@ class RulesEngine:
             # it above, so just resolve directly.
             return self.resolve_spell(state, stack_item)
 
+    def _execute_flashback(self, state: GameState, action: Action) -> GameState:
+        """Cast a spell from graveyard via flashback (CR 702.34).
+
+        Flashback exiles the card on resolution instead of going to
+        graveyard. We mark it via card_data['flashback_exile'] so
+        ``resolve_spell`` does the right thing.
+        """
+        from .equip import parse_flashback_cost
+        from .zones import move_card
+
+        card = next((c for c in state.cards if c.instance_id == action.card_instance_id), None)
+        player = next((p for p in state.players if p.player_id == action.player_id), None)
+        if card is None or player is None:
+            return state
+        cost_text = parse_flashback_cost(card)
+        if cost_text is None:
+            return state
+        cost = parse_mana_cost(cost_text)
+        if not can_pay(player, cost):
+            auto_tap_for_cost(state, player, cost)
+        if not can_pay(player, cost):
+            state.log(f"{player.name} cannot pay flashback {cost_text} for {card.name}")
+            return state
+        pay_cost(player, cost)
+        card.card_data["flashback_exile"] = True
+        # Move from graveyard to stack.
+        move_card(state, card.instance_id, Zone.GRAVEYARD, Zone.STACK, action.player_id)
+        stack_item = StackItem(
+            source_card_id=card.instance_id,
+            controller_id=action.player_id,
+            is_spell=True,
+            targets=list(action.targets) if action.targets else auto_pick_targets(state, card, action.player_id),
+            card_data=card.card_data.copy(),
+        )
+        push_to_stack(state, stack_item)
+        state.log(f"{card.name} is flashed back")
+        return state
+
     def check_state_based_actions(self, state: GameState) -> list[str]:
         """CR 704 — check and apply state-based actions.
 
@@ -621,9 +899,13 @@ class RulesEngine:
         """
         from .zones import move_card
         from .triggers import check_death_triggers
-        
+        from .counters import apply_counter_sbas
+
         events: list[str] = []
-        
+
+        # Counter SBAs: cancel +1/+1 vs -1/-1, then poison-loss check.
+        events.extend(apply_counter_sbas(state))
+
         # Track which players survive
         died_this_check = []
 
@@ -640,15 +922,18 @@ class RulesEngine:
             if card.zone != Zone.BATTLEFIELD or not card.is_creature():
                 continue
 
-            toughness = _parse_int(card.toughness)
+            from .counters import effective_toughness
+            base_toughness = _parse_int(card.toughness)
+            eff_toughness = effective_toughness(card)
             indestructible = "indestructible" in (card.oracle_text or "").lower()
             creature_dies = False
 
-            if toughness is not None and card.damage_marked >= toughness and not indestructible:
+            # Lethal damage uses *effective* toughness (CR 704.5g).
+            if base_toughness is not None and card.damage_marked >= eff_toughness and not indestructible:
                 events.append(f"{card.name} dies (lethal damage)")
                 creature_dies = True
 
-            elif toughness is not None and toughness <= 0:
+            elif base_toughness is not None and eff_toughness <= 0:
                 events.append(f"{card.name} dies (0 toughness)")
                 creature_dies = True
             

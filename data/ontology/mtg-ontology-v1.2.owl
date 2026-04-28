@@ -1,0 +1,564 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  MTG Ontology v1.2 — Implementation-Calibrated Extension
+  ========================================================
+  Adds taxonomy for everything the engine actually models or has on
+  the near-term roadmap. Sourced from oracle-text mining over 37k
+  Scryfall cards (see reports/mechanics.md) and current code in
+  src/engine/. v1.1 remains the authoritative parent; v1.2 imports
+  it and only adds new classes, properties, individuals.
+
+  Highlights vs v1.1:
+    - 25+ keyword individuals: Cycling, Landfall, Prowess, Ward, Scry,
+      Surveil, Kicker, Flashback, Crew, Equip, Morph, Investigate,
+      Defender, Haste, Indestructible, Hexproof (already partial),
+      Protection, Partner, Mill, Treasure, Food, Conjure, Lord,
+      Anthem, Tribal.
+    - CounterType taxonomy with 14 named subclasses.
+    - ReplacementEffect subclasses: EntersTapped, WouldInstead,
+      SkipStep, DamagePrevention.
+    - TriggeredAbility subclasses: ETBTrigger, DiesTrigger,
+      AttackTrigger, BlockTrigger, CastTrigger, UpkeepTrigger,
+      EndStepTrigger, DrawStepTrigger, DamageTrigger, LifeGainTrigger,
+      LandfallTrigger.
+    - SpecialAction class + Cycle individual.
+    - implementationStatus property on every Keyword / Trigger / Effect
+      with values "implemented" | "partial" | "planned" | "not_planned".
+-->
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+         xmlns:rdfs="http://www.w3.org/2000/01/rdf-schema#"
+         xmlns:owl="http://www.w3.org/2002/07/owl#"
+         xmlns:mtg="http://purl.org/mtg/ontology#"
+         xmlns:xsd="http://www.w3.org/2001/XMLSchema#">
+
+  <owl:Ontology rdf:about="http://purl.org/mtg/ontology/v1.2">
+    <rdfs:label>Magic: The Gathering OWL Ontology v1.2 (Implementation-Calibrated)</rdfs:label>
+    <rdfs:comment>
+      Extends v1.1 with the keyword/counter/trigger taxonomy actually
+      observed in the Scryfall card pool plus implementation-status
+      flags for engine coverage tracking.
+    </rdfs:comment>
+    <owl:versionInfo>1.2.0</owl:versionInfo>
+    <owl:imports rdf:resource="http://purl.org/mtg/ontology"/>
+  </owl:Ontology>
+
+  <!-- ======================================================================== -->
+  <!-- METADATA: implementation-status property                                  -->
+  <!-- ======================================================================== -->
+
+  <owl:DatatypeProperty rdf:about="http://purl.org/mtg/ontology#implementationStatus">
+    <rdfs:comment>
+      Engine coverage flag: "implemented" | "partial" | "planned" | "not_planned".
+      Used by the roadmap renderer to compute coverage % per category.
+    </rdfs:comment>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+  </owl:DatatypeProperty>
+
+  <owl:DatatypeProperty rdf:about="http://purl.org/mtg/ontology#cardCoveragePct">
+    <rdfs:comment>Fraction of Scryfall cards (0.0-1.0) whose oracle text matches this mechanic.</rdfs:comment>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#float"/>
+  </owl:DatatypeProperty>
+
+  <owl:DatatypeProperty rdf:about="http://purl.org/mtg/ontology#crRule">
+    <rdfs:comment>Comprehensive Rules section (e.g. "702.32" for Cycling).</rdfs:comment>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+  </owl:DatatypeProperty>
+
+  <!-- ======================================================================== -->
+  <!-- TRIGGERED ABILITY SUBCLASSES (CR 603)                                    -->
+  <!-- ======================================================================== -->
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#ETBTrigger">
+    <rdfs:subClassOf rdf:resource="http://purl.org/mtg/ontology#TriggeredAbility"/>
+    <rdfs:label>Enters-the-Battlefield Trigger</rdfs:label>
+    <mtg:cardCoveragePct>0.127</mtg:cardCoveragePct>
+    <mtg:implementationStatus>implemented</mtg:implementationStatus>
+  </owl:Class>
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#AttackTrigger">
+    <rdfs:subClassOf rdf:resource="http://purl.org/mtg/ontology#TriggeredAbility"/>
+    <rdfs:label>Whenever ~ Attacks Trigger</rdfs:label>
+    <mtg:cardCoveragePct>0.048</mtg:cardCoveragePct>
+    <mtg:implementationStatus>partial</mtg:implementationStatus>
+  </owl:Class>
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#UpkeepTrigger">
+    <rdfs:subClassOf rdf:resource="http://purl.org/mtg/ontology#TriggeredAbility"/>
+    <rdfs:label>At the Beginning of Upkeep Trigger</rdfs:label>
+    <mtg:cardCoveragePct>0.040</mtg:cardCoveragePct>
+    <mtg:implementationStatus>planned</mtg:implementationStatus>
+  </owl:Class>
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#DiesTrigger">
+    <rdfs:subClassOf rdf:resource="http://purl.org/mtg/ontology#TriggeredAbility"/>
+    <rdfs:label>When ~ Dies Trigger</rdfs:label>
+    <mtg:cardCoveragePct>0.038</mtg:cardCoveragePct>
+    <mtg:implementationStatus>partial</mtg:implementationStatus>
+  </owl:Class>
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#CastTrigger">
+    <rdfs:subClassOf rdf:resource="http://purl.org/mtg/ontology#TriggeredAbility"/>
+    <rdfs:label>Whenever You Cast Trigger</rdfs:label>
+    <mtg:cardCoveragePct>0.033</mtg:cardCoveragePct>
+    <mtg:implementationStatus>partial</mtg:implementationStatus>
+  </owl:Class>
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#EndStepTrigger">
+    <rdfs:subClassOf rdf:resource="http://purl.org/mtg/ontology#TriggeredAbility"/>
+    <rdfs:label>At the Beginning of End Step Trigger</rdfs:label>
+    <mtg:cardCoveragePct>0.033</mtg:cardCoveragePct>
+    <mtg:implementationStatus>planned</mtg:implementationStatus>
+  </owl:Class>
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#DamageTrigger">
+    <rdfs:subClassOf rdf:resource="http://purl.org/mtg/ontology#TriggeredAbility"/>
+    <rdfs:label>Whenever ~ Deals Damage Trigger</rdfs:label>
+    <mtg:cardCoveragePct>0.028</mtg:cardCoveragePct>
+    <mtg:implementationStatus>planned</mtg:implementationStatus>
+  </owl:Class>
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#BlockTrigger">
+    <rdfs:subClassOf rdf:resource="http://purl.org/mtg/ontology#TriggeredAbility"/>
+    <rdfs:label>Whenever ~ Blocks Trigger</rdfs:label>
+    <mtg:cardCoveragePct>0.007</mtg:cardCoveragePct>
+    <mtg:implementationStatus>planned</mtg:implementationStatus>
+  </owl:Class>
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#LifeGainTrigger">
+    <rdfs:subClassOf rdf:resource="http://purl.org/mtg/ontology#TriggeredAbility"/>
+    <rdfs:label>Whenever You Gain Life Trigger</rdfs:label>
+    <mtg:implementationStatus>planned</mtg:implementationStatus>
+  </owl:Class>
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#LandfallTrigger">
+    <rdfs:subClassOf rdf:resource="http://purl.org/mtg/ontology#TriggeredAbility"/>
+    <rdfs:label>Landfall — Whenever a Land Enters Trigger</rdfs:label>
+    <mtg:crRule>702.124</mtg:crRule>
+    <mtg:cardCoveragePct>0.005</mtg:cardCoveragePct>
+    <mtg:implementationStatus>implemented</mtg:implementationStatus>
+  </owl:Class>
+
+  <!-- ======================================================================== -->
+  <!-- REPLACEMENT EFFECT SUBCLASSES (CR 614)                                   -->
+  <!-- ======================================================================== -->
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#EntersTapped">
+    <rdfs:subClassOf rdf:resource="http://purl.org/mtg/ontology#ReplacementEffect"/>
+    <rdfs:label>Enters the Battlefield Tapped</rdfs:label>
+    <mtg:cardCoveragePct>0.020</mtg:cardCoveragePct>
+    <mtg:implementationStatus>implemented</mtg:implementationStatus>
+  </owl:Class>
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#WouldInstead">
+    <rdfs:subClassOf rdf:resource="http://purl.org/mtg/ontology#ReplacementEffect"/>
+    <rdfs:label>If ~ Would ... Instead</rdfs:label>
+    <mtg:cardCoveragePct>0.019</mtg:cardCoveragePct>
+    <mtg:implementationStatus>planned</mtg:implementationStatus>
+  </owl:Class>
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#DamagePrevention">
+    <rdfs:subClassOf rdf:resource="http://purl.org/mtg/ontology#ReplacementEffect"/>
+    <rdfs:label>Prevent Damage</rdfs:label>
+    <mtg:cardCoveragePct>0.009</mtg:cardCoveragePct>
+    <mtg:implementationStatus>planned</mtg:implementationStatus>
+  </owl:Class>
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#SkipStep">
+    <rdfs:subClassOf rdf:resource="http://purl.org/mtg/ontology#ReplacementEffect"/>
+    <rdfs:label>Skip a Step / Phase / Turn</rdfs:label>
+    <mtg:cardCoveragePct>0.001</mtg:cardCoveragePct>
+    <mtg:implementationStatus>not_planned</mtg:implementationStatus>
+  </owl:Class>
+
+  <!-- ======================================================================== -->
+  <!-- STATIC ABILITY SUBCLASSES                                                -->
+  <!-- ======================================================================== -->
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#AnthemEffect">
+    <rdfs:subClassOf rdf:resource="http://purl.org/mtg/ontology#StaticAbility"/>
+    <rdfs:label>Anthem — Creatures You Control Get +X/+X</rdfs:label>
+    <mtg:cardCoveragePct>0.015</mtg:cardCoveragePct>
+    <mtg:implementationStatus>implemented</mtg:implementationStatus>
+  </owl:Class>
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#LordEffect">
+    <rdfs:subClassOf rdf:resource="http://purl.org/mtg/ontology#StaticAbility"/>
+    <rdfs:label>Lord — Other ~ You Control Get</rdfs:label>
+    <mtg:cardCoveragePct>0.006</mtg:cardCoveragePct>
+    <mtg:implementationStatus>partial</mtg:implementationStatus>
+  </owl:Class>
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#CostReduction">
+    <rdfs:subClassOf rdf:resource="http://purl.org/mtg/ontology#StaticAbility"/>
+    <rdfs:label>Cost Reduction — Costs {X} Less</rdfs:label>
+    <mtg:cardCoveragePct>0.016</mtg:cardCoveragePct>
+    <mtg:implementationStatus>planned</mtg:implementationStatus>
+  </owl:Class>
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#CostIncrease">
+    <rdfs:subClassOf rdf:resource="http://purl.org/mtg/ontology#StaticAbility"/>
+    <rdfs:label>Cost Increase — Costs {X} More</rdfs:label>
+    <mtg:cardCoveragePct>0.002</mtg:cardCoveragePct>
+    <mtg:implementationStatus>planned</mtg:implementationStatus>
+  </owl:Class>
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#ConditionalStatic">
+    <rdfs:subClassOf rdf:resource="http://purl.org/mtg/ontology#StaticAbility"/>
+    <rdfs:label>Conditional ("As long as ...") Static</rdfs:label>
+    <mtg:cardCoveragePct>0.037</mtg:cardCoveragePct>
+    <mtg:implementationStatus>partial</mtg:implementationStatus>
+  </owl:Class>
+
+  <!-- ======================================================================== -->
+  <!-- COUNTER TYPES (CR 122)                                                   -->
+  <!-- ======================================================================== -->
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#CounterType">
+    <rdfs:comment>Counters placed on permanents/players (CR 122).</rdfs:comment>
+    <mtg:crRule>122</mtg:crRule>
+  </owl:Class>
+
+  <mtg:CounterType rdf:about="http://purl.org/mtg/ontology#PlusOnePlusOneCounter">
+    <rdfs:label>+1/+1 Counter</rdfs:label>
+    <mtg:cardCoveragePct>0.104</mtg:cardCoveragePct>
+    <mtg:implementationStatus>implemented</mtg:implementationStatus>
+  </mtg:CounterType>
+  <mtg:CounterType rdf:about="http://purl.org/mtg/ontology#MinusOneMinusOneCounter">
+    <rdfs:label>-1/-1 Counter</rdfs:label>
+    <mtg:cardCoveragePct>0.011</mtg:cardCoveragePct>
+    <mtg:implementationStatus>partial</mtg:implementationStatus>
+  </mtg:CounterType>
+  <mtg:CounterType rdf:about="http://purl.org/mtg/ontology#LoyaltyCounter">
+    <rdfs:label>Loyalty Counter</rdfs:label>
+    <mtg:implementationStatus>implemented</mtg:implementationStatus>
+  </mtg:CounterType>
+  <mtg:CounterType rdf:about="http://purl.org/mtg/ontology#ChargeCounter">
+    <rdfs:label>Charge Counter</rdfs:label>
+    <mtg:cardCoveragePct>0.008</mtg:cardCoveragePct>
+    <mtg:implementationStatus>planned</mtg:implementationStatus>
+  </mtg:CounterType>
+  <mtg:CounterType rdf:about="http://purl.org/mtg/ontology#TimeCounter">
+    <rdfs:label>Time Counter (Suspend / Vanishing)</rdfs:label>
+    <mtg:cardCoveragePct>0.008</mtg:cardCoveragePct>
+    <mtg:implementationStatus>planned</mtg:implementationStatus>
+  </mtg:CounterType>
+  <mtg:CounterType rdf:about="http://purl.org/mtg/ontology#PoisonCounter">
+    <rdfs:label>Poison Counter</rdfs:label>
+    <mtg:cardCoveragePct>0.006</mtg:cardCoveragePct>
+    <mtg:implementationStatus>planned</mtg:implementationStatus>
+  </mtg:CounterType>
+  <mtg:CounterType rdf:about="http://purl.org/mtg/ontology#LoreCounter">
+    <rdfs:label>Lore Counter (Sagas)</rdfs:label>
+    <mtg:cardCoveragePct>0.005</mtg:cardCoveragePct>
+    <mtg:implementationStatus>planned</mtg:implementationStatus>
+  </mtg:CounterType>
+  <mtg:CounterType rdf:about="http://purl.org/mtg/ontology#StunCounter">
+    <rdfs:label>Stun Counter</rdfs:label>
+    <mtg:cardCoveragePct>0.004</mtg:cardCoveragePct>
+    <mtg:implementationStatus>planned</mtg:implementationStatus>
+  </mtg:CounterType>
+  <mtg:CounterType rdf:about="http://purl.org/mtg/ontology#EnergyCounter">
+    <rdfs:label>Energy Counter (player)</rdfs:label>
+    <mtg:cardCoveragePct>0.004</mtg:cardCoveragePct>
+    <mtg:implementationStatus>planned</mtg:implementationStatus>
+  </mtg:CounterType>
+  <mtg:CounterType rdf:about="http://purl.org/mtg/ontology#OilCounter">
+    <rdfs:label>Oil Counter</rdfs:label>
+    <mtg:implementationStatus>not_planned</mtg:implementationStatus>
+  </mtg:CounterType>
+  <mtg:CounterType rdf:about="http://purl.org/mtg/ontology#ShieldCounter">
+    <rdfs:label>Shield Counter</rdfs:label>
+    <mtg:implementationStatus>planned</mtg:implementationStatus>
+  </mtg:CounterType>
+  <mtg:CounterType rdf:about="http://purl.org/mtg/ontology#FinalityCounter">
+    <rdfs:label>Finality Counter</rdfs:label>
+    <mtg:implementationStatus>planned</mtg:implementationStatus>
+  </mtg:CounterType>
+  <mtg:CounterType rdf:about="http://purl.org/mtg/ontology#FadeCounter">
+    <rdfs:label>Fade Counter (Vanishing)</rdfs:label>
+    <mtg:implementationStatus>not_planned</mtg:implementationStatus>
+  </mtg:CounterType>
+  <mtg:CounterType rdf:about="http://purl.org/mtg/ontology#QuestCounter">
+    <rdfs:label>Quest Counter</rdfs:label>
+    <mtg:implementationStatus>not_planned</mtg:implementationStatus>
+  </mtg:CounterType>
+
+  <!-- ======================================================================== -->
+  <!-- KEYWORD ABILITIES — extension                                            -->
+  <!-- ======================================================================== -->
+
+  <!-- Already in v1.1: Flying, Shadow, Unblockable, Shroud, Hexproof, Menace,
+       Vigilance, Reach, FirstStrike, DoubleStrike, Lifelink, Deathtouch,
+       Trample, Flash. Add status flags + new keywords here. -->
+
+  <mtg:Keyword rdf:about="http://purl.org/mtg/ontology#Haste">
+    <rdfs:label>Haste</rdfs:label>
+    <mtg:keywordType>combat</mtg:keywordType>
+    <mtg:crRule>702.10</mtg:crRule>
+    <mtg:cardCoveragePct>0.018</mtg:cardCoveragePct>
+    <mtg:implementationStatus>implemented</mtg:implementationStatus>
+  </mtg:Keyword>
+
+  <mtg:Keyword rdf:about="http://purl.org/mtg/ontology#Defender">
+    <rdfs:label>Defender</rdfs:label>
+    <mtg:keywordType>combat</mtg:keywordType>
+    <mtg:crRule>702.3</mtg:crRule>
+    <mtg:cardCoveragePct>0.008</mtg:cardCoveragePct>
+    <mtg:implementationStatus>implemented</mtg:implementationStatus>
+  </mtg:Keyword>
+
+  <mtg:Keyword rdf:about="http://purl.org/mtg/ontology#Indestructible">
+    <rdfs:label>Indestructible</rdfs:label>
+    <mtg:keywordType>protection</mtg:keywordType>
+    <mtg:crRule>702.12</mtg:crRule>
+    <mtg:implementationStatus>implemented</mtg:implementationStatus>
+  </mtg:Keyword>
+
+  <mtg:Keyword rdf:about="http://purl.org/mtg/ontology#Protection">
+    <rdfs:label>Protection</rdfs:label>
+    <mtg:keywordType>protection</mtg:keywordType>
+    <mtg:crRule>702.16</mtg:crRule>
+    <mtg:cardCoveragePct>0.006</mtg:cardCoveragePct>
+    <mtg:implementationStatus>partial</mtg:implementationStatus>
+  </mtg:Keyword>
+
+  <mtg:Keyword rdf:about="http://purl.org/mtg/ontology#Ward">
+    <rdfs:label>Ward</rdfs:label>
+    <mtg:keywordType>protection</mtg:keywordType>
+    <mtg:crRule>702.21b</mtg:crRule>
+    <mtg:cardCoveragePct>0.005</mtg:cardCoveragePct>
+    <mtg:implementationStatus>implemented</mtg:implementationStatus>
+  </mtg:Keyword>
+
+  <mtg:Keyword rdf:about="http://purl.org/mtg/ontology#Prowess">
+    <rdfs:label>Prowess</rdfs:label>
+    <mtg:keywordType>combat</mtg:keywordType>
+    <mtg:crRule>702.108</mtg:crRule>
+    <mtg:implementationStatus>implemented</mtg:implementationStatus>
+  </mtg:Keyword>
+
+  <mtg:Keyword rdf:about="http://purl.org/mtg/ontology#Cycling">
+    <rdfs:label>Cycling</rdfs:label>
+    <mtg:keywordType>card_advantage</mtg:keywordType>
+    <mtg:crRule>702.32</mtg:crRule>
+    <mtg:cardCoveragePct>0.010</mtg:cardCoveragePct>
+    <mtg:implementationStatus>implemented</mtg:implementationStatus>
+  </mtg:Keyword>
+
+  <mtg:Keyword rdf:about="http://purl.org/mtg/ontology#Landfall">
+    <rdfs:label>Landfall</rdfs:label>
+    <mtg:keywordType>trigger_keyword</mtg:keywordType>
+    <mtg:crRule>702.124</mtg:crRule>
+    <mtg:cardCoveragePct>0.005</mtg:cardCoveragePct>
+    <mtg:implementationStatus>implemented</mtg:implementationStatus>
+  </mtg:Keyword>
+
+  <mtg:Keyword rdf:about="http://purl.org/mtg/ontology#Scry">
+    <rdfs:label>Scry</rdfs:label>
+    <mtg:keywordType>card_advantage</mtg:keywordType>
+    <mtg:crRule>701.18</mtg:crRule>
+    <mtg:cardCoveragePct>0.012</mtg:cardCoveragePct>
+    <mtg:implementationStatus>partial</mtg:implementationStatus>
+  </mtg:Keyword>
+
+  <mtg:Keyword rdf:about="http://purl.org/mtg/ontology#Surveil">
+    <rdfs:label>Surveil</rdfs:label>
+    <mtg:keywordType>card_advantage</mtg:keywordType>
+    <mtg:crRule>701.42</mtg:crRule>
+    <mtg:cardCoveragePct>0.005</mtg:cardCoveragePct>
+    <mtg:implementationStatus>partial</mtg:implementationStatus>
+  </mtg:Keyword>
+
+  <mtg:Keyword rdf:about="http://purl.org/mtg/ontology#Mill">
+    <rdfs:label>Mill</rdfs:label>
+    <mtg:keywordType>removal</mtg:keywordType>
+    <mtg:crRule>701.13</mtg:crRule>
+    <mtg:cardCoveragePct>0.015</mtg:cardCoveragePct>
+    <mtg:implementationStatus>partial</mtg:implementationStatus>
+  </mtg:Keyword>
+
+  <mtg:Keyword rdf:about="http://purl.org/mtg/ontology#Investigate">
+    <rdfs:label>Investigate</rdfs:label>
+    <mtg:keywordType>card_advantage</mtg:keywordType>
+    <mtg:crRule>701.40</mtg:crRule>
+    <mtg:cardCoveragePct>0.004</mtg:cardCoveragePct>
+    <mtg:implementationStatus>planned</mtg:implementationStatus>
+  </mtg:Keyword>
+
+  <mtg:Keyword rdf:about="http://purl.org/mtg/ontology#Treasure">
+    <rdfs:label>Treasure</rdfs:label>
+    <mtg:keywordType>token_predicate</mtg:keywordType>
+    <mtg:cardCoveragePct>0.010</mtg:cardCoveragePct>
+    <mtg:implementationStatus>planned</mtg:implementationStatus>
+  </mtg:Keyword>
+
+  <mtg:Keyword rdf:about="http://purl.org/mtg/ontology#Food">
+    <rdfs:label>Food</rdfs:label>
+    <mtg:keywordType>token_predicate</mtg:keywordType>
+    <mtg:cardCoveragePct>0.004</mtg:cardCoveragePct>
+    <mtg:implementationStatus>planned</mtg:implementationStatus>
+  </mtg:Keyword>
+
+  <mtg:Keyword rdf:about="http://purl.org/mtg/ontology#Equip">
+    <rdfs:label>Equip</rdfs:label>
+    <mtg:keywordType>activated_keyword</mtg:keywordType>
+    <mtg:crRule>702.6</mtg:crRule>
+    <mtg:cardCoveragePct>0.016</mtg:cardCoveragePct>
+    <mtg:implementationStatus>planned</mtg:implementationStatus>
+  </mtg:Keyword>
+
+  <mtg:Keyword rdf:about="http://purl.org/mtg/ontology#Enchant">
+    <rdfs:label>Enchant</rdfs:label>
+    <mtg:keywordType>targeting_keyword</mtg:keywordType>
+    <mtg:crRule>702.5</mtg:crRule>
+    <mtg:cardCoveragePct>0.033</mtg:cardCoveragePct>
+    <mtg:implementationStatus>partial</mtg:implementationStatus>
+  </mtg:Keyword>
+
+  <mtg:Keyword rdf:about="http://purl.org/mtg/ontology#Crew">
+    <rdfs:label>Crew</rdfs:label>
+    <mtg:keywordType>activated_keyword</mtg:keywordType>
+    <mtg:crRule>702.121</mtg:crRule>
+    <mtg:cardCoveragePct>0.005</mtg:cardCoveragePct>
+    <mtg:implementationStatus>planned</mtg:implementationStatus>
+  </mtg:Keyword>
+
+  <mtg:Keyword rdf:about="http://purl.org/mtg/ontology#Kicker">
+    <rdfs:label>Kicker</rdfs:label>
+    <mtg:keywordType>cost_modifier</mtg:keywordType>
+    <mtg:crRule>702.33</mtg:crRule>
+    <mtg:cardCoveragePct>0.006</mtg:cardCoveragePct>
+    <mtg:implementationStatus>planned</mtg:implementationStatus>
+  </mtg:Keyword>
+
+  <mtg:Keyword rdf:about="http://purl.org/mtg/ontology#Flashback">
+    <rdfs:label>Flashback</rdfs:label>
+    <mtg:keywordType>graveyard_recursion</mtg:keywordType>
+    <mtg:crRule>702.34</mtg:crRule>
+    <mtg:cardCoveragePct>0.006</mtg:cardCoveragePct>
+    <mtg:implementationStatus>planned</mtg:implementationStatus>
+  </mtg:Keyword>
+
+  <mtg:Keyword rdf:about="http://purl.org/mtg/ontology#Morph">
+    <rdfs:label>Morph</rdfs:label>
+    <mtg:keywordType>face_down</mtg:keywordType>
+    <mtg:crRule>702.37</mtg:crRule>
+    <mtg:implementationStatus>not_planned</mtg:implementationStatus>
+  </mtg:Keyword>
+
+  <mtg:Keyword rdf:about="http://purl.org/mtg/ontology#Partner">
+    <rdfs:label>Partner</rdfs:label>
+    <mtg:keywordType>commander_modifier</mtg:keywordType>
+    <mtg:crRule>702.124</mtg:crRule>
+    <mtg:implementationStatus>planned</mtg:implementationStatus>
+  </mtg:Keyword>
+
+  <mtg:Keyword rdf:about="http://purl.org/mtg/ontology#Conjure">
+    <rdfs:label>Conjure</rdfs:label>
+    <mtg:keywordType>card_creation</mtg:keywordType>
+    <mtg:implementationStatus>not_planned</mtg:implementationStatus>
+  </mtg:Keyword>
+
+  <mtg:Keyword rdf:about="http://purl.org/mtg/ontology#Landwalk">
+    <rdfs:label>Landwalk (legacy evasion)</rdfs:label>
+    <mtg:keywordType>evasion</mtg:keywordType>
+    <mtg:implementationStatus>not_planned</mtg:implementationStatus>
+  </mtg:Keyword>
+
+  <!-- ======================================================================== -->
+  <!-- SPECIAL ACTIONS (CR 116)                                                 -->
+  <!-- ======================================================================== -->
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#SpecialAction">
+    <rdfs:comment>Special actions don't use the stack (CR 116).</rdfs:comment>
+    <mtg:crRule>116</mtg:crRule>
+  </owl:Class>
+
+  <mtg:SpecialAction rdf:about="http://purl.org/mtg/ontology#CycleAction">
+    <rdfs:label>Cycle a Card</rdfs:label>
+    <mtg:crRule>702.32</mtg:crRule>
+    <mtg:implementationStatus>implemented</mtg:implementationStatus>
+  </mtg:SpecialAction>
+
+  <mtg:SpecialAction rdf:about="http://purl.org/mtg/ontology#TurnFaceUpAction">
+    <rdfs:label>Turn a Morph Face Up</rdfs:label>
+    <mtg:crRule>702.37</mtg:crRule>
+    <mtg:implementationStatus>not_planned</mtg:implementationStatus>
+  </mtg:SpecialAction>
+
+  <!-- ======================================================================== -->
+  <!-- ZONE TRANSITION OBJECT PROPERTIES                                        -->
+  <!-- ======================================================================== -->
+
+  <owl:ObjectProperty rdf:about="http://purl.org/mtg/ontology#triggersOn">
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#TriggeredAbility"/>
+    <rdfs:range rdf:resource="http://purl.org/mtg/ontology#TriggerEvent"/>
+    <rdfs:comment>Links a triggered ability to its trigger event.</rdfs:comment>
+  </owl:ObjectProperty>
+
+  <owl:ObjectProperty rdf:about="http://purl.org/mtg/ontology#hasCounter">
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Card"/>
+    <rdfs:range rdf:resource="http://purl.org/mtg/ontology#CounterType"/>
+    <rdfs:comment>This permanent has counters of the given type.</rdfs:comment>
+  </owl:ObjectProperty>
+
+  <owl:DatatypeProperty rdf:about="http://purl.org/mtg/ontology#counterCount">
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Card"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#int"/>
+    <rdfs:comment>Number of counters of a given type on this permanent.</rdfs:comment>
+  </owl:DatatypeProperty>
+
+  <!-- ======================================================================== -->
+  <!-- JUDGE / RULINGS LAYER                                                    -->
+  <!-- ======================================================================== -->
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#Ruling">
+    <rdfs:comment>An official Wizards ruling or errata, indexed by oracle_id.</rdfs:comment>
+  </owl:Class>
+
+  <owl:DatatypeProperty rdf:about="http://purl.org/mtg/ontology#rulingComment">
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Ruling"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+  </owl:DatatypeProperty>
+
+  <owl:DatatypeProperty rdf:about="http://purl.org/mtg/ontology#rulingPublishedAt">
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Ruling"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#date"/>
+  </owl:DatatypeProperty>
+
+  <owl:ObjectProperty rdf:about="http://purl.org/mtg/ontology#rulingAppliesTo">
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#Ruling"/>
+    <rdfs:range rdf:resource="http://purl.org/mtg/ontology#Card"/>
+  </owl:ObjectProperty>
+
+  <!-- ======================================================================== -->
+  <!-- LLM AGENT METADATA                                                       -->
+  <!-- ======================================================================== -->
+
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#Agent">
+    <rdfs:comment>A decision-maker controlling a player slot.</rdfs:comment>
+  </owl:Class>
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#LLMAgent">
+    <rdfs:subClassOf rdf:resource="http://purl.org/mtg/ontology#Agent"/>
+    <rdfs:comment>An agent backed by a local LLM (e.g. via Ollama).</rdfs:comment>
+  </owl:Class>
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#RandomAgent">
+    <rdfs:subClassOf rdf:resource="http://purl.org/mtg/ontology#Agent"/>
+  </owl:Class>
+  <owl:Class rdf:about="http://purl.org/mtg/ontology#HeuristicAgent">
+    <rdfs:subClassOf rdf:resource="http://purl.org/mtg/ontology#Agent"/>
+  </owl:Class>
+
+  <owl:DatatypeProperty rdf:about="http://purl.org/mtg/ontology#modelName">
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#LLMAgent"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+    <rdfs:comment>Ollama model identifier (e.g. "gemma4:e2b").</rdfs:comment>
+  </owl:DatatypeProperty>
+
+  <owl:DatatypeProperty rdf:about="http://purl.org/mtg/ontology#modelParamsB">
+    <rdfs:domain rdf:resource="http://purl.org/mtg/ontology#LLMAgent"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#float"/>
+    <rdfs:comment>Parameter count in billions.</rdfs:comment>
+  </owl:DatatypeProperty>
+
+</rdf:RDF>

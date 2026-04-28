@@ -1,0 +1,70 @@
+{
+  "model1": "gemma4:e2b",
+  "model2": "gemma4:e2b",
+  "model_wins": {
+    "gemma4:e2b": 1
+  },
+  "seat_wins": {
+    "first": 1
+  },
+  "draws": 0,
+  "avg_turns": 11.0,
+  "avg_time": 1094.9207258224487,
+  "games": [
+    {
+      "game_num": 1,
+      "model_first": "gemma4:e2b",
+      "model_second": "gemma4:e2b",
+      "winner_seat": "first",
+      "winner_model": "gemma4:e2b",
+      "turns": 11,
+      "elapsed_sec": 1094.9207258224487,
+      "stats_first": {
+        "model": "gemma4:e2b",
+        "seat": "first",
+        "llm_calls_total": 88,
+        "llm_calls_success": 88,
+        "llm_calls_failed": 0,
+        "fallback_invocations": 0,
+        "actions_chosen": {
+          "PASS_PRIORITY": 72,
+          "CAST_SPELL": 6,
+          "PLAY_LAND": 5,
+          "DECLARE_ATTACKERS": 5,
+          "ACTIVATE_ABILITY": 0,
+          "OTHER": 0
+        },
+        "mulligan_decisions": [
+          [
+            0,
+            true
+          ]
+        ]
+      },
+      "stats_second": {
+        "model": "gemma4:e2b",
+        "seat": "second",
+        "llm_calls_total": 88,
+        "llm_calls_success": 88,
+        "llm_calls_failed": 0,
+        "fallback_invocations": 0,
+        "actions_chosen": {
+          "PASS_PRIORITY": 60,
+          "CAST_SPELL": 7,
+          "PLAY_LAND": 4,
+          "DECLARE_ATTACKERS": 16,
+          "ACTIVATE_ABILITY": 0,
+          "OTHER": 1
+        },
+        "mulligan_decisions": [
+          [
+            0,
+            true
+          ]
+        ]
+      },
+      "final_log_lines": 424,
+      "log_path": "runs\\ablation\\llm_only\\game_001_gemma4-e2b_vs_gemma4-e2b.log"
+    }
+  ]
+}

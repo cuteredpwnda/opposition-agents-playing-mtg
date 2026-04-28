@@ -59,11 +59,15 @@ class JudgeAgent:
         rules_vectorstore: Any,  # FAISS or similar
         kg: MTGKnowledgeGraph,
         scryfall_client: Any | None = None,
+        local_rulings: Any | None = None,  # LocalRulingsCache
     ):
         self.llm = llm
         self.rules_rag = rules_vectorstore
         self.kg = kg
         self.scryfall = scryfall_client
+        # Optional zero-latency local cache; if set + populated, judge skips
+        # the per-ruling Scryfall HTTP call. See src/judge/errata_loader.py.
+        self.local_rulings = local_rulings
 
     async def rule_on(
         self, situation: str, game_state: GameState | None = None
@@ -72,10 +76,13 @@ class JudgeAgent:
         # 1. Retrieve relevant comprehensive rules sections
         relevant_rules = self.rules_rag.similarity_search(situation, k=10)
 
-        # 2. Card-specific rulings from Scryfall (if client available)
+        # 2. Card-specific rulings — prefer local cache, fall back to API
         card_rulings: list[dict] = []
-        if self.scryfall:
-            cards = self._extract_card_names(situation)
+        cards = self._extract_card_names(situation)
+        if self.local_rulings and getattr(self.local_rulings, "is_loaded", lambda: False)():
+            for card in cards:
+                card_rulings.extend(self.local_rulings.get_rulings(card))
+        elif self.scryfall:
             for card in cards:
                 try:
                     rulings = await self.scryfall.get_rulings(card)
