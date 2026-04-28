@@ -94,7 +94,7 @@
 
 \begin{abstract}
 \noindent
-\emph{Magic: The Gathering} (MTG) is, by several measures, the most combinatorially complex commercial card game ever published: more than 28{,}000 unique cards, a 260-page rule book, partial observability over 50--90 hidden cards, an unbounded action space, a turn-based stack with priority, and a state space conservatively estimated above $10^{800}$. We present \textsc{Opposition Agents Playing MTG}, an open-source research framework that combines (i) a from-scratch implementation of the Comprehensive Rules game engine, (ii) a Neo4j knowledge graph backed by an OWL~2 ontology of cards, mechanics, archetypes and combos, (iii) a four-component world model in the V+M+C tradition of \citet{ha2018world} extended with a Joint-Embedding Predictive Architecture (JEPA) head in the spirit of \citet{lecun2022path}, and (iv) Active-Inference LLM agents that fuse symbolic graph queries, latent imagination and free-energy-minimising action selection. We describe the system end-to-end, justify the design choices against the structure of the game, and report on a champion-vs-challenger self-play promotion loop with ELO tracking. The code, ontology, and this report are released under MIT.
+\emph{Magic: The Gathering} (MTG) is, by several measures, the most combinatorially complex commercial card game ever published: more than 28{,}000 unique cards, a 260-page rule book, partial observability over 50--90 hidden cards, an unbounded action space, a turn-based stack with priority, and a state space conservatively estimated above $10^{800}$. We present \textsc{Opposition Agents Playing MTG}, an open-source research framework that combines (i) a from-scratch implementation of the Comprehensive Rules game engine, (ii) a Neo4j property-graph database holding a knowledge graph (KG) backed by an OWL~2 (Web Ontology Language, version 2) ontology of cards, mechanics, archetypes and combos, (iii) a four-component world model in the Vision--Memory--Controller (V+M+C) tradition of \citet{ha2018world} extended with a Joint-Embedding Predictive Architecture (JEPA) head in the spirit of \citet{lecun2022path}, and (iv) Active-Inference Large-Language-Model (LLM) agents that fuse symbolic graph queries, latent imagination and free-energy-minimising action selection. The framework treats one seat of an MTG game as a Partially Observable Markov Decision Process (POMDP) embedded inside an $n$-player Markov game, and we derive each agent as an explicit approximation to that POMDP. We describe the system end-to-end, justify the design choices against the structure of the game, and report on a champion-vs-challenger self-play promotion loop with Elo (Elo, 1978) rating tracking. The code, ontology, and this report are released under the Massachusetts Institute of Technology (MIT) licence.
 \end{abstract}
 
 \vspace{0.5em}
@@ -104,7 +104,9 @@
 \section{Introduction}
 \label{sec:intro}
 
-Reinforcement-learning research on games has historically progressed through a sequence of increasingly hard environments: backgammon \citep{tesauro1995temporal}, chess and Go \citep{silver2017mastering, silver2018alphazero}, StarCraft II \citep{vinyals2019grandmaster}, and no-limit poker \citep{brown2018superhuman}. Each step pushed the community to invent new tools --- temporal-difference learning, deep value networks, self-play, counterfactual regret minimisation. \emph{Magic: The Gathering} sits beyond the union of these challenges (\Cref{tab:complexity}): its action space is unbounded, its rules are open-textured natural language printed on cards (the rule book itself defers card text), its hidden information includes the entire opponent's deck composition, and its mechanics are extended every quarter by the publisher. A single MTG card can override the rules of the game, and a single decision in combat may resolve dozens of triggered abilities in a player-chosen order.
+Reinforcement-learning (RL) research on games has historically progressed through a sequence of increasingly hard environments: backgammon \citep{tesauro1995temporal}, chess and Go \citep{silver2017mastering, silver2018alphazero}, StarCraft II \citep{vinyals2019grandmaster}, and no-limit Texas hold'em poker \citep{brown2018superhuman}. Each step pushed the community to invent new tools --- temporal-difference (TD) learning, deep value networks, self-play, counterfactual regret minimisation (CFR). \emph{Magic: The Gathering} (MTG) sits beyond the union of these challenges (\Cref{tab:complexity}): its action space is unbounded, its rules are open-textured natural language printed on cards (the comprehensive rule book itself defers to the per-card text in many places), its hidden information includes the entire opponent's deck composition, and its mechanics are extended every quarter by the publisher Wizards of the Coast. A single MTG card can override the rules of the game (e.g.\ \emph{Yixlid Jailer}, \emph{Blood Moon}, \emph{Cumulative Upkeep}), and a single decision in combat may resolve dozens of triggered abilities in a player-chosen order. The state space is open in the strict sense: every quarterly set adds previously-unseen card text whose semantics must be parsed at runtime, so any agent that hard-codes its action vocabulary cannot survive a set rotation.
+
+For a concrete sense of why this matters for an algorithmic agent: in a single midgame turn the active player may need to (i) decide whether to play a land, (ii) sequence two or three spells with mana cost, colour requirements and stack ordering, (iii) optionally activate any number of permanent abilities that themselves go on the stack, (iv) declare attackers under summoning-sickness and tapping rules, (v) respond to triggered abilities resolving in the order chosen by their controllers, and (vi) decide which damage to assign in combat under multi-blocker rules. Each of these is itself a sub-decision tree. The total number of legal actions per priority pass routinely exceeds 60 and, in pathological combo states, several hundred. A model-free policy that emits a fixed-size logit vector cannot represent this branching, and a tabular search procedure that enumerates the subtree cannot fit it into memory.
 
 \begin{table}[t]
 \centering
@@ -125,38 +127,82 @@ Rules update frequency & decades    & decades    & decades    & quarterly \\
 \end{tabularx}
 \end{table}
 
-A purely model-free deep-RL approach is therefore unattractive: the action space cannot be enumerated as a fixed-size logits vector, the observation space is symbolic and irregular, and every new set introduces previously-unseen card text whose semantics must be parsed at run time. Conversely, a purely symbolic LLM-prompting approach struggles with rules-correctness, hallucinated cards, and the long-horizon credit-assignment that competitive play requires.
+A purely model-free deep-RL approach is therefore unattractive: the action space cannot be enumerated as a fixed-size logit vector, the observation space is symbolic and irregular, and every new set introduces previously-unseen card text whose semantics must be parsed at run time. Conversely, a purely symbolic LLM-prompting approach struggles with rules-correctness, hallucinated cards, and the long-horizon credit-assignment that competitive play requires --- an LLM that simply names a move it would like to make has no guarantee that move is legal, that it resolves the way the LLM expects, or that it furthers a coherent multi-turn plan.
 
-Our position is that the structure of MTG demands a \emph{neuro-symbolic} stack: a verified rules engine to keep play legal, a knowledge graph to make card semantics queryable, a learned world model to enable imagination and planning over the resulting compressed state, and an LLM agent that orchestrates these components under an active-inference objective. \Cref{fig:stack} sketches the resulting five-layer architecture.
+Our position is that the structure of MTG demands a \emph{neuro-symbolic} stack: a verified rules engine to keep play legal, a knowledge graph to make card semantics queryable, a learned world model to enable imagination and planning over the resulting compressed state, and an LLM agent that orchestrates these components under an active-inference objective. \Cref{fig:stack} sketches the resulting architecture as a data-flow diagram, separating the \emph{symbolic} substrate (data sources, engine, knowledge graph) from the \emph{learned} substrate (world model, agent zoo) and showing where information actually crosses the boundary.
 
 \begin{figure}[t]
 \centering
 \begin{tikzpicture}[
-    node distance=4pt and 6pt,
-    layer/.style={draw, rounded corners=2pt, minimum width=11.5cm,
-                  minimum height=0.8cm, align=center, font=\small},
-    accent/.style={fill=blue!10},
-    base/.style={fill=gray!8}
+    >=stealth,
+    font=\footnotesize,
+    box/.style ={draw, rounded corners=2pt, align=center, minimum height=0.7cm,
+                 inner sep=4pt},
+    data/.style={box, fill=gray!8,   minimum width=2.5cm},
+    sym/.style ={box, fill=blue!8,   minimum width=3.4cm},
+    learn/.style={box, fill=orange!12, minimum width=3.4cm},
+    agent/.style={box, fill=green!10, minimum width=3.0cm, font=\scriptsize},
+    grp/.style ={draw, dashed, rounded corners=4pt, inner sep=8pt},
+    flow/.style={->, thick, blue!50!black},
+    backflow/.style={->, thick, dashed, red!60!black},
+    label/.style={font=\scriptsize\itshape, midway, fill=white, inner sep=1pt}
   ]
-  \node[layer, accent] (vis) {\textbf{Visualisation \& Human Interface} (CLI / Streamlit / API)};
-  \node[layer, accent, below=of vis] (orc)
-        {\textbf{LangGraph Orchestrator} \,\textbar\, LLM agents \,\textbar\, Active inference \,\textbar\, Judge};
-  \node[layer, accent, below=of orc] (wm)
-        {\textbf{World Model:} V (StateEncoder/VAE) + M (MDN-LSTM) + C (Controller) + JEPA + KG-Encoder};
-  \node[layer, accent, below=of wm] (kg)
-        {\textbf{Knowledge Graph:} Neo4j + n10s (OWL) + APOC + GraphSAGE embeddings};
-  \node[layer, base, below=of kg] (eng)
-        {\textbf{Game Engine:} zones, stack, priority, phases, combat, SBAs, triggers, replacements};
-  \node[layer, base, below=of eng] (data)
-        {\textbf{External Data:} Scryfall, Commander Spellbook, Comprehensive Rules};
 
-  \draw[<->, >=stealth, thick, gray] (vis.south)  -- (orc.north);
-  \draw[<->, >=stealth, thick, gray] (orc.south)  -- (wm.north);
-  \draw[<->, >=stealth, thick, gray] (wm.south)   -- (kg.north);
-  \draw[<->, >=stealth, thick, gray] (kg.south)   -- (eng.north);
-  \draw[<->, >=stealth, thick, gray] (eng.south)  -- (data.north);
+  % --- Column 1: external data sources --------------------------------
+  \node[data] (scry) at (0,0) {Scryfall\\(card DB)};
+  \node[data, below=4pt of scry] (rules) {Comprehensive\\Rules};
+  \node[data, below=4pt of rules] (sb)    {Commander\\Spellbook};
+  \node[data, below=4pt of sb]    (decks) {Decklists\\(\texttt{data/decks})};
+
+  % --- Column 2: symbolic substrate ----------------------------------
+  \node[sym, right=2.0cm of scry]  (kg)    {\textbf{Knowledge Graph}\\
+        Neo4j $\!+\!$ n10s (OWL2)\\$+\!$ APOC $+$ GraphSAGE};
+  \node[sym, below=12pt of kg]     (eng)   {\textbf{Game Engine}\\
+        zones / stack / priority\\phases / combat / triggers /\\state-based actions};
+  \node[sym, below=12pt of eng]    (rb)    {\textbf{Replay Buffer}\\trajectories $(s_t, a_t, r_t)$};
+
+  % --- Column 3: learned substrate -----------------------------------
+  \node[learn, right=1.8cm of kg]  (V)  {V: state encoder\\(Set-Transformer + KG ctx)};
+  \node[learn, below=8pt of V]     (M)  {M: MDN-LSTM dynamics\\$\!+\!$ JEPA target head};
+  \node[learn, below=8pt of M]     (C)  {C: controller\\(policy + value heads)};
+  \node[grp, fit=(V)(M)(C), label={[font=\small\bfseries]above:World Model}] (wm) {};
+
+  % --- Column 4: agents -----------------------------------------------
+  \node[agent, right=1.6cm of V]   (a1) {Random / Heuristic};
+  \node[agent, below=4pt of a1]    (a2) {KG-Heuristic};
+  \node[agent, below=4pt of a2]    (a3) {Ollama LLM};
+  \node[agent, below=4pt of a3]    (a4) {World-Model};
+  \node[agent, below=4pt of a4]    (a5) {Active Inference};
+  \node[agent, below=4pt of a5]    (a6) {LLM-Fusion};
+  \node[grp, fit=(a1)(a6), label={[font=\small\bfseries]above:Agent Zoo}] (agents) {};
+
+  % --- arrows: data into symbolic substrate ---------------------------
+  \draw[flow] (scry.east)  -- ++(0.6,0) |- (kg.west)  node[label,xshift=-0.3cm]{cards};
+  \draw[flow] (rules.east) -- ++(0.6,0) |- (eng.west) node[label,xshift=-0.3cm]{rules};
+  \draw[flow] (sb.east)    -- ++(0.6,0) |- (kg.west)  node[label,xshift=-0.3cm]{combos};
+  \draw[flow] (decks.east) -- ++(0.6,0) |- (eng.west) node[label,xshift=-0.3cm]{game cfg};
+
+  % --- engine <-> KG (lookup) ----------------------------------------
+  \draw[<->, thick, gray] (kg.south) -- (eng.north) node[label]{card lookup};
+
+  % --- engine -> replay buffer (trajectories) ------------------------
+  \draw[flow] (eng.south) -- (rb.north) node[label]{$(s_t,a_t,r_t)$};
+
+  % --- WM training: replay -> V/M/C ----------------------------------
+  \draw[flow] (rb.east) -- ++(0.6,0) |- (M.west) node[label,xshift=-0.3cm]{train};
+  \draw[flow] (kg.east) -- ++(0.5,0) |- (V.west) node[label,xshift=-0.3cm]{KG ctx};
+
+  % --- agent decide_action loop -------------------------------------
+  \draw[flow] (eng.east)   to[bend left=18] node[label]{state, legal\_actions} (a3.west);
+  \draw[backflow] (a3.west) to[bend left=18] node[label]{action} (eng.east);
+
+  % --- agents query WM -----------------------------------------------
+  \draw[flow, dotted] (a4.west) -- ++(-0.3,0) |- (C.east);
+  \draw[flow, dotted] (a6.west) -- ++(-0.3,0) |- (C.east);
+  \draw[flow, dotted] (a2.west) -- ++(-0.3,0) |- (kg.east);
+
 \end{tikzpicture}
-\caption{Five-layer architecture of the framework. Symbolic verification (engine, KG) sits below latent imagination (world model) which is wrapped by an LLM-driven orchestrator.}
+\caption{Data-flow architecture. \textbf{Grey} boxes are external data sources; \textbf{blue} the symbolic substrate (engine, knowledge graph, replay buffer); \textbf{orange} the learned world model (V+M+C with a JEPA target head and a knowledge-graph context channel); \textbf{green} the agent zoo. Solid arrows are forward data flow; the red dashed arrow is the agent's chosen action returned to the engine; dotted arrows mark the lookups an agent performs at decision time. The engine is the only component allowed to mutate game state; agents read but do not write.}
 \label{fig:stack}
 \end{figure}
 
@@ -165,10 +211,14 @@ Our position is that the structure of MTG demands a \emph{neuro-symbolic} stack:
   \item A \emph{from-scratch} Comprehensive-Rules MTG engine in Python with stack/priority, layered continuous effects, replacement effects, triggers and state-based actions, exposing a deterministic step API suitable for batched self-play.
   \item An \emph{ontology-grounded knowledge graph} of cards, mechanics, archetypes and combos, imported into Neo4j via the \texttt{n10s} OWL importer and made queryable from agents through a thin GraphRAG layer.
   \item A \emph{V+M+C+JEPA} world model where the state encoder fuses tokenised game state with a graph-context vector from the KG, the dynamics model is an MDN-LSTM over the latent, and a JEPA head provides a contrastive predictor for surprise scoring and dream rollouts.
-  \item An \emph{active-inference LLM-fusion agent} that chooses actions by minimising expected free energy combining pragmatic value, epistemic value, and a calibrated LLM prior; a self-play training loop with ELO ranking, opponent-pool sampling and champion-vs-challenger promotion is provided.
+  \item An \emph{active-inference LLM-fusion agent} that chooses actions by minimising expected free energy (EFE) combining pragmatic value, epistemic value, and a calibrated LLM prior; a self-play training loop with Elo rating, opponent-pool sampling and champion-vs-challenger promotion is provided.
 \end{enumerate}
 
-The framework is released as open source\footnote{\url{https://github.com/cuteredpwnda/opposition-agents-playing-mtg}} and the codebase is the canonical artifact accompanying this report.
+\paragraph{Why these four together.} Each contribution targets a specific failure mode of the others. The engine prevents the LLM from playing illegal moves and the world model from imagining inconsistent dynamics. The knowledge graph compresses the 28{,}000-card pool into a structure with a few hundred archetype clusters so that an agent can reason about ``what card type does this state want next'' without enumerating all candidates. The world model amortises the cost of multi-turn lookahead so that decisions remain well within a few hundred milliseconds even when planning ten turns deep. The active-inference fusion agent finally ties the three together with a single tunable objective --- expected free energy --- whose pragmatic and epistemic terms have a direct mapping onto MTG concepts of \emph{value} and \emph{information}.
+
+\paragraph{Scope and what we do \emph{not} do.} We do not solve MTG; we do not even target tournament-strength play. The contribution is a research substrate that is rules-correct on the implemented card pool, that maintains a queryable symbolic representation of card semantics, and that supports plug-in research on world models and inference-style agents on a problem qualitatively harder than the standard benchmarks. The empirical claims in \S\ref{sec:eval} are therefore framework-level (decks complete, agents converge faster than baselines, ablations show graded contributions) rather than absolute strength claims against human play.
+
+The framework is released as open source\footnote{\url{https://github.com/cuteredpwnda/opposition-agents-playing-mtg}} and the codebase is the canonical artifact accompanying this report. Section~\ref{sec:related} positions the work against prior literature; \S\ref{sec:theory} formalises the POMDP and the four learning principles (world models, FEP, knowledge-graph priors, constrained-decoding LLMs); \S\ref{sec:arch} walks the architecture top-down; \S\ref{sec:eval} presents the empirical protocol and preliminary results; \S\ref{sec:limits}--\ref{sec:future} discuss limitations and next steps.
 
 % =============================================================================
 \section{Related Work}
@@ -418,6 +468,7 @@ We deliberately do not claim ``state of the art'' numbers: we know of no compara
 % =============================================================================
 \section{Discussion and Limitations}
 \label{sec:discussion}
+\label{sec:limits}
 
 \paragraph{Scope.} The current engine targets a Standard subset and an extended Commander subset; banding, phasing, planeswalker loyalty abilities, and exotic targeting restrictions remain partial. The ontology v1.1 covers core mechanics but does not yet encode every keyword from every set --- a known limitation that motivates the OntologyExtender workflow (\Cref{sec:future}).
 
