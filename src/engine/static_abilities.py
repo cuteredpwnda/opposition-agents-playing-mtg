@@ -314,6 +314,21 @@ def get_effective_power_toughness(card: CardInstance, state: GameState) -> tuple
     power_mod += plus - minus
     toughness_mod += plus - minus
 
+    # Equipment attached to this creature contributes "Equipped creature
+    # gets +N/+M" to its P/T (CR 702.6).
+    for other in state.cards:
+        if other.zone != Zone.BATTLEFIELD:
+            continue
+        if other.attached_to != card.instance_id:
+            continue
+        m = re.search(
+            r"equipped creature gets \+(\d+)/\+(\d+)",
+            (other.oracle_text or "").lower(),
+        )
+        if m:
+            power_mod += int(m.group(1))
+            toughness_mod += int(m.group(2))
+
     return (base_power + power_mod, base_toughness + toughness_mod)
 
 
