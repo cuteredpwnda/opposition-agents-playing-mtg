@@ -599,7 +599,13 @@ class RulesEngine:
                     # Prowess (CR 702.108): non-creature spells boost
                     # prowess creatures controller controls.
                     apply_prowess_on_cast(state, action.player_id, card)
-                    state.log(f"{card.name} is cast" + (f" targeting {targets}" if targets else ""))
+                    caster = next(
+                        (p for p in state.players if p.player_id == action.player_id),
+                        None,
+                    )
+                    cname = (caster.name or caster.player_id) if caster else action.player_id
+                    target_phrase = f" targeting {targets}" if targets else ""
+                    state.log(f"{cname} casts {card.name}{target_phrase}")
             return state
         
         if action.action_type == ActionType.ACTIVATE_ABILITY:

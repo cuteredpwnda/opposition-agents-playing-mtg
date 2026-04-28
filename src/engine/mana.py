@@ -174,6 +174,8 @@ def tap_land_for_mana(
     color = _land_produces(card.card_data)
     if color:
         add_mana(player, color)
+        pname = player.name or player.player_id
+        state.log(f"{pname} taps {card.name} for {{{color}}}")
     return color
 
 

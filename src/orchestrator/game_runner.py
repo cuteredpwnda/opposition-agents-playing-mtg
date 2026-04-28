@@ -354,6 +354,14 @@ class GameRunner:
         from src.engine.game_state import ActionType
 
         # Actually play through each phase of the turn
+        # Banner at the top of every turn so the log reads like a real game.
+        active = game_state.active_player
+        active_label = active.name or active.player_id
+        game_state.log(
+            f"\n=== Turn {game_state.turn_number} \u2014 {active_label} "
+            f"(life={active.life_total}) ==="
+        )
+
         phase_idx = 0
         while phase_idx < len(PHASE_ORDER):
             if game_state.game_over:

@@ -164,7 +164,12 @@ async def run_priority_loop(
         if action.action_type == ActionType.PASS_PRIORITY:
             # Player passed priority
             passed_players.add(priority_player_id)
-            game_state.log(f"{priority_player_id} passes priority")
+            pp = next(
+                (p for p in game_state.players if p.player_id == priority_player_id),
+                None,
+            )
+            label = (pp.name or pp.player_id) if pp else priority_player_id
+            game_state.log(f"{label} passes priority")
             
             # Check if all players passed
             if all_players_passed(game_state, passed_players):

@@ -14,7 +14,15 @@ def push_to_stack(state: GameState, stack_item: StackItem) -> GameState:
     """Push a spell or ability onto the stack."""
     state.stack.append(stack_item)
     card_name = stack_item.card_data.get("name", "an ability")
-    state.log(f"{card_name} added to the stack")
+    controller = next(
+        (p for p in state.players if p.player_id == stack_item.controller_id),
+        None,
+    )
+    cname = (controller.name or controller.player_id) if controller else stack_item.controller_id
+    if cname:
+        state.log(f"{card_name} goes on the stack ({cname})")
+    else:
+        state.log(f"{card_name} goes on the stack")
     return state
 
 
