@@ -180,6 +180,22 @@ async def run_priority_loop(
         # log what the player could have done from the current board state.
         # Skip pure-pass turns to keep noise down.
         non_pass = [a for a in legal_actions if a.action_type != ActionType.PASS_PRIORITY]
+        # DEBUG: dump Atraxa main_1 land state
+        if "atraxa" in priority_player_id.lower() or (
+            len(non_pass) <= 1
+            and "MAIN" in str(getattr(game_state, "phase", ""))
+            and game_state.players[game_state.active_player_index].player_id == priority_player_id
+        ):
+            from src.engine.game_state import Zone
+            pp_obj = next((p for p in game_state.players if p.player_id == priority_player_id), None)
+            hand = [c for c in game_state.cards if c.zone == Zone.HAND and c.owner_id == priority_player_id]
+            lands_in_hand = [c.name for c in hand if c.is_land()]
+            game_state.log(
+                f"      [DEBUG] {priority_player_id} phase={game_state.phase} "
+                f"active={game_state.players[game_state.active_player_index].player_id} "
+                f"lpr={pp_obj.land_plays_remaining if pp_obj else '?'} "
+                f"lands_in_hand={lands_in_hand} stack_len={len(game_state.stack)}"
+            )
         if non_pass:
             pp = next(
                 (p for p in game_state.players if p.player_id == priority_player_id),

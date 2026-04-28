@@ -18,7 +18,7 @@
       "winner": "krenko_mob_boss_core",
       "winner_seat": "player1",
       "turns": 7,
-      "elapsed_sec": 0.67,
+      "elapsed_sec": 0.72,
       "agent_actions": {
         "player1": {
           "PASS_PRIORITY": 173,
