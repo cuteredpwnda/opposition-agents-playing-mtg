@@ -83,6 +83,63 @@ class TestGameSimulatorSetup:
         assert game1_id != game2_id
         assert game1.game_id == game1_id
 
+    def test_setup_game_applies_london_mulligan(self, simulator):
+        """Test opening hand size shrinks after a mulligan."""
+        spell_only_deck = [
+            {
+                "name": "Shock",
+                "mana_cost": "{R}",
+                "cmc": 1,
+                "type_line": "Instant",
+                "oracle_text": "Shock deals 2 damage to any target.",
+            }
+            for _ in range(60)
+        ]
+
+        game = simulator.setup_game(
+            deck1=spell_only_deck,
+            deck2=spell_only_deck,
+            shuffle=False,
+            mulligan_enabled=True,
+            max_mulligans=1,
+        )
+
+        p1 = game.players[0]
+        p1_hand = [
+            c for c in game.cards
+            if c.owner_id == p1.player_id and c.zone == Zone.HAND
+        ]
+        assert p1.mulligans_taken == 1
+        assert len(p1_hand) == 6
+
+    def test_setup_game_can_disable_mulligan(self, simulator):
+        """Test setup can skip mulligans and keep full opening hand."""
+        spell_only_deck = [
+            {
+                "name": "Shock",
+                "mana_cost": "{R}",
+                "cmc": 1,
+                "type_line": "Instant",
+                "oracle_text": "Shock deals 2 damage to any target.",
+            }
+            for _ in range(60)
+        ]
+
+        game = simulator.setup_game(
+            deck1=spell_only_deck,
+            deck2=spell_only_deck,
+            shuffle=False,
+            mulligan_enabled=False,
+        )
+
+        p1 = game.players[0]
+        p1_hand = [
+            c for c in game.cards
+            if c.owner_id == p1.player_id and c.zone == Zone.HAND
+        ]
+        assert p1.mulligans_taken == 0
+        assert len(p1_hand) == 7
+
 
 class TestWinConditions:
     """Test victory detection."""

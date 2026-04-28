@@ -240,6 +240,7 @@ class PlayerState:
     has_drawn_for_turn: bool = False
     land_plays_remaining: int = 1
     max_hand_size: int = 7
+    mulligans_taken: int = 0
     passed_priority: bool = False
     is_human: bool = False
 

@@ -92,7 +92,9 @@ class GameSimulator:
                    deck1: Optional[list[dict]] = None,
                    deck2: Optional[list[dict]] = None,
                    starting_hand_size: int = 7,
-                   shuffle: bool = True) -> GameState:
+                   shuffle: bool = True,
+                   mulligan_enabled: bool = True,
+                   max_mulligans: int = 3) -> GameState:
         """Initialize a fresh game state.
 
         Args:
@@ -102,6 +104,8 @@ class GameSimulator:
             deck2: Optional list of card dicts for player 2's library.
             starting_hand_size: Number of cards to draw at game start (default 7)
             shuffle: Whether to shuffle libraries before drawing opening hands
+            mulligan_enabled: Apply London mulligan when opening hand is 7
+            max_mulligans: Maximum mulligans each player may take
         """
         from uuid import uuid4
         import random
@@ -140,9 +144,13 @@ class GameSimulator:
         deck1 = deck1 if deck1 is not None else _build_basic_red_deck()
         deck2 = deck2 if deck2 is not None else _build_basic_red_deck()
         self._load_deck(player1.player_id, deck1, shuffle=shuffle,
-                        starting_hand_size=starting_hand_size)
+                        starting_hand_size=starting_hand_size,
+                        mulligan_enabled=mulligan_enabled,
+                        max_mulligans=max_mulligans)
         self._load_deck(player2.player_id, deck2, shuffle=shuffle,
-                        starting_hand_size=starting_hand_size)
+                        starting_hand_size=starting_hand_size,
+                        mulligan_enabled=mulligan_enabled,
+                        max_mulligans=max_mulligans)
 
         # Initialize KG if available
         if self.kg:
@@ -158,7 +166,9 @@ class GameSimulator:
         return self.game
 
     def _load_deck(self, player_id: str, deck: list[dict],
-                   shuffle: bool = True, starting_hand_size: int = 7) -> None:
+                   shuffle: bool = True, starting_hand_size: int = 7,
+                   mulligan_enabled: bool = True,
+                   max_mulligans: int = 3) -> None:
         """Create CardInstances for a player's deck, shuffle, draw opening hand."""
         import random
 
@@ -174,12 +184,78 @@ class GameSimulator:
             ))
         if shuffle:
             random.shuffle(cards)
-        for c in cards:
-            self.game.cards.append(c)
 
-        # Draw opening hand
-        for c in cards[:starting_hand_size]:
-            c.zone = Zone.HAND
+        # Opening hand: default simple draw for non-7 hand sizes, London
+        # mulligan for normal 7-card starts when enabled.
+        mulligans_taken = 0
+        if starting_hand_size == 7 and mulligan_enabled:
+            mulligans_taken = self._apply_london_mulligan(
+                cards,
+                shuffle=shuffle,
+                max_mulligans=max_mulligans,
+            )
+            player = next((p for p in self.game.players if p.player_id == player_id), None)
+            if player is not None:
+                player.mulligans_taken = mulligans_taken
+        else:
+            for c in cards[:starting_hand_size]:
+                c.zone = Zone.HAND
+
+        self.game.cards.extend(cards)
+
+    def _opening_hand_is_keepable(self, hand_cards: list[CardInstance]) -> bool:
+        """Simple deterministic keep heuristic for mulligans.
+
+        Keep hands with a reasonable land count and at least one non-land spell.
+        """
+        lands = sum(1 for c in hand_cards if c.is_land())
+        non_lands = len(hand_cards) - lands
+        return 2 <= lands <= 5 and non_lands >= 1
+
+    def _apply_london_mulligan(self,
+                               cards: list[CardInstance],
+                               shuffle: bool,
+                               max_mulligans: int) -> int:
+        """Apply London mulligan to a player's deck cards in-place.
+
+        Draw 7, optionally repeat up to max_mulligans, then put cards equal to
+        mulligans taken on the bottom of the library.
+        """
+        import random
+
+        mulligans_taken = 0
+        while True:
+            # Reset all cards to library before each mulligan decision.
+            for c in cards:
+                c.zone = Zone.LIBRARY
+
+            if shuffle:
+                random.shuffle(cards)
+
+            hand = cards[:7]
+            for c in hand:
+                c.zone = Zone.HAND
+
+            if mulligans_taken >= max_mulligans or self._opening_hand_is_keepable(hand):
+                break
+
+            mulligans_taken += 1
+
+        # Put one card on bottom per mulligan taken.
+        if mulligans_taken > 0:
+            hand = [c for c in cards if c.zone == Zone.HAND]
+
+            def bottom_priority(card: CardInstance) -> tuple[int, float]:
+                # Bottom expensive non-lands first, then lands.
+                return (0 if card.is_land() else 1, float(card.cmc or 0.0))
+
+            to_bottom = sorted(hand, key=bottom_priority, reverse=True)[:mulligans_taken]
+            for card in to_bottom:
+                card.zone = Zone.LIBRARY
+                cards.remove(card)
+                cards.append(card)
+
+        return mulligans_taken
 
     def _timeout_winner_id(self) -> Optional[str]:
         """Choose a deterministic winner when max turn limit is reached.

@@ -32,6 +32,8 @@ class GameConfig:
     format: str = "commander"  # "commander" | "standard"
     starting_life: int = 40
     max_turns: int = 100
+    mulligan_enabled: bool = True
+    max_mulligans: int = 3
 
 
 @dataclass
@@ -86,6 +88,51 @@ class GameRunner:
         if s2 > s1:
             return p2
         return None
+
+    def _opening_hand_is_keepable(self, hand_cards: list[CardInstance]) -> bool:
+        lands = sum(1 for c in hand_cards if c.is_land())
+        non_lands = len(hand_cards) - lands
+        return 2 <= lands <= 5 and non_lands >= 1
+
+    def _apply_london_mulligan(
+        self,
+        cards: list[CardInstance],
+        shuffle: bool,
+        max_mulligans: int,
+    ) -> int:
+        import random
+
+        mulligans_taken = 0
+        while True:
+            for c in cards:
+                if c.zone != Zone.COMMAND_ZONE:
+                    c.zone = Zone.LIBRARY
+
+            if shuffle:
+                random.shuffle(cards)
+
+            drawables = [c for c in cards if c.zone == Zone.LIBRARY]
+            hand = drawables[:7]
+            for c in hand:
+                c.zone = Zone.HAND
+
+            if mulligans_taken >= max_mulligans or self._opening_hand_is_keepable(hand):
+                break
+            mulligans_taken += 1
+
+        if mulligans_taken > 0:
+            hand = [c for c in cards if c.zone == Zone.HAND]
+
+            def bottom_priority(card: CardInstance) -> tuple[int, float]:
+                return (0 if card.is_land() else 1, float(card.cmc or 0.0))
+
+            to_bottom = sorted(hand, key=bottom_priority, reverse=True)[:mulligans_taken]
+            for card in to_bottom:
+                card.zone = Zone.LIBRARY
+                cards.remove(card)
+                cards.append(card)
+
+        return mulligans_taken
 
     async def run_game(
         self,
@@ -180,6 +227,7 @@ class GameRunner:
         # Load cards for each player (all data from pre-loaded database)
         all_cards: list[CardInstance] = []
         for pid, deck_data in decks.items():
+            player_cards: list[CardInstance] = []
             for i, card_dict in enumerate(deck_data):
                 card = CardInstance(
                     instance_id=f"{pid}_{i}",
@@ -188,15 +236,14 @@ class GameRunner:
                     owner_id=pid,
                     controller_id=pid,
                 )
-                all_cards.append(card)
+                player_cards.append(card)
 
             # Shuffle library for this player
-            library_cards = [c for c in all_cards if c.owner_id == pid]
-            random.shuffle(library_cards)
+            random.shuffle(player_cards)
 
             # Commander: keep the first commander in command zone
-            if self.config.format == "commander" and library_cards:
-                commander_card = library_cards.pop(0)
+            if self.config.format == "commander" and player_cards:
+                commander_card = player_cards.pop(0)
                 commander_card.zone = Zone.COMMAND_ZONE                # Mark the commander card instance explicitly
                 commander_card.card_data["is_commander"] = True                # assign to game state commanders map
                 # will be set after game_state is created
@@ -206,15 +253,23 @@ class GameRunner:
                 # We'll finalize after game_state, but for now we can use state assigned below.
                 # We'll use game_state.commanders by updating after state initialization.
                 commander_holder = commander_card
+                player_cards.insert(0, commander_card)
 
-            # Draw opening hand of 7
-            hand_size = 0
-            for card in library_cards:
-                if hand_size < 7:
+            player_state = next((p for p in players if p.player_id == pid), None)
+            if self.config.mulligan_enabled:
+                mulligans_taken = self._apply_london_mulligan(
+                    player_cards,
+                    shuffle=True,
+                    max_mulligans=self.config.max_mulligans,
+                )
+                if player_state is not None:
+                    player_state.mulligans_taken = mulligans_taken
+            else:
+                drawables = [c for c in player_cards if c.zone == Zone.LIBRARY]
+                for card in drawables[:7]:
                     card.zone = Zone.HAND
-                    hand_size += 1
-                else:
-                    card.zone = Zone.LIBRARY
+
+            all_cards.extend(player_cards)
 
         # Create game state
         game_state = GameState(
