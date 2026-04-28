@@ -351,6 +351,74 @@ class GameRunner:
 
         return game_state
 
+    def _tick_sagas(self, game_state: GameState) -> None:
+        """At the start of the active player's pre-combat main phase, add a
+        lore counter to each saga they control and fire the matching chapter
+        ability (CR 714.2/.3). Sacrifice the saga when its lore counter
+        exceeds its final chapter (CR 714.4)."""
+        import re as _re
+        from src.engine.game_state import StackItem, Trigger, TriggerType, Zone
+        from src.engine.zones import move_card
+
+        active_id = game_state.active_player.player_id
+        roman_to_int = {"i": 1, "ii": 2, "iii": 3, "iv": 4, "v": 5, "vi": 6}
+
+        for card in list(game_state.cards):
+            if card.zone != Zone.BATTLEFIELD or card.controller_id != active_id:
+                continue
+            type_line = (card.type_line or "").lower()
+            if "saga" not in type_line:
+                continue
+            oracle = card.oracle_text or ""
+            chapters: dict[int, str] = {}
+            for m in _re.finditer(
+                r"^\s*([IVX, ]+?)\s*[\u2014\-]\s*(.+?)$",
+                oracle,
+                _re.MULTILINE,
+            ):
+                roman_group = m.group(1).strip().lower()
+                effect = m.group(2).strip()
+                for tok in [t.strip() for t in roman_group.split(",")]:
+                    n = roman_to_int.get(tok)
+                    if n:
+                        chapters[n] = effect
+            if not chapters:
+                continue
+            card.counters["lore"] = card.counters.get("lore", 0) + 1
+            current = card.counters["lore"]
+            game_state.log(f"  \u271a {card.name}: lore counter added (chapter {current})")
+            if current in chapters:
+                effect = chapters[current]
+                trig = Trigger(
+                    source_card_id=card.instance_id,
+                    controller_id=card.controller_id,
+                    trigger_type=TriggerType.UPKEEP,
+                    description=effect,
+                )
+                game_state.triggered_abilities.append(trig)
+                item = StackItem(
+                    source_card_id=card.instance_id,
+                    controller_id=card.controller_id,
+                    is_spell=False,
+                    card_data={
+                        "name": f"[Saga] {card.name} chapter {current}: {effect}",
+                        "type_line": "Ability",
+                    },
+                )
+                game_state.stack.append(item)
+                game_state.log(f"[TRIGGER (SAGA)] {card.name} chapter {current}: {effect}")
+            final_chapter = max(chapters.keys())
+            if current > final_chapter:
+                move_card(game_state, card.instance_id, Zone.BATTLEFIELD,
+                          Zone.GRAVEYARD, card.owner_id)
+                game_state.log(f"  \u232b {card.name} is sacrificed (final chapter)")
+
+        while game_state.stack:
+            game_state = self.engine.resolve_stack_item(game_state)
+            self.engine.check_state_based_actions(game_state)
+            if game_state.game_over:
+                return
+
     async def _play_turn(
         self, game_state: GameState, agents: dict[str, MTGAgent]
     ) -> GameState:
@@ -455,16 +523,61 @@ class GameRunner:
 
             # In untap step, creatures remove summoning sickness (gained pre-eot)
             if phase == Phase.UNTAP:
+                from src.engine.counters import apply_stun_on_untap
                 for card in game_state.cards:
-                    if card.zone == Zone.BATTLEFIELD and card.is_creature():
+                    if card.zone != Zone.BATTLEFIELD:
+                        continue
+                    if card.is_creature():
                         # Creatures that entered in a previous turn lose summoning sickness
                         if card.summoning_sick and card.turn_entered < game_state.turn_number:
                             card.summoning_sick = False
-                        card.tapped = False  # Also untap all permanents
+                    # Only untap active player's permanents (CR 502.1).
+                    if card.controller_id != game_state.active_player.player_id:
+                        continue
+                    # Stun counter: remove one instead of untapping (CR 701.49).
+                    if apply_stun_on_untap(card):
+                        game_state.log(f"{card.name}: stun counter removed (skips untap)")
+                        continue
+                    card.tapped = False
                 
                 # Reset land play allocation for all players
                 for player in game_state.players:
                     player.land_plays_remaining = 1
+
+            # Upkeep + end step: fire phase-based triggers.
+            if phase == Phase.UPKEEP or phase == Phase.END_STEP:
+                from src.engine.triggers import check_phase_triggers
+                from src.engine.game_state import TriggerType, StackItem
+                ttype = TriggerType.UPKEEP if phase == Phase.UPKEEP else TriggerType.END_STEP
+                phase_triggers = check_phase_triggers(
+                    game_state, ttype, game_state.active_player.player_id
+                )
+                for trig in phase_triggers:
+                    src_card = next(
+                        (c for c in game_state.cards if c.instance_id == trig.source_card_id),
+                        None,
+                    )
+                    src_name = src_card.name if src_card else "Ability"
+                    item = StackItem(
+                        source_card_id=trig.source_card_id,
+                        controller_id=trig.controller_id,
+                        is_spell=False,
+                        card_data={
+                            "name": f"[Trigger] {src_name}: {trig.description}",
+                            "type_line": "Ability",
+                        },
+                    )
+                    game_state.stack.append(item)
+                    game_state.triggered_abilities.append(trig)
+                    game_state.log(
+                        f"[TRIGGER ({ttype.value.upper()})] {src_name}: {trig.description} added to stack"
+                    )
+                # Resolve any phase-based triggers immediately (LIFO).
+                while game_state.stack:
+                    game_state = self.engine.resolve_stack_item(game_state)
+                    self.engine.check_state_based_actions(game_state)
+                    if game_state.game_over:
+                        return game_state
 
             # In draw step, active player draws
             if phase == Phase.DRAW:
@@ -563,6 +676,14 @@ class GameRunner:
 
             # In main phases, use full priority loop (enables stack + instant-speed)
             if is_main_phase(phase):
+                # Saga: at the beginning of active player's pre-combat main,
+                # add a lore counter and fire the matching chapter ability
+                # (CR 714.2). We trigger this on MAIN_1 only.
+                if phase == Phase.MAIN_1:
+                    self._tick_sagas(game_state)
+                    if game_state.game_over:
+                        return game_state
+
                 # Initialize priority to active player
                 game_state.priority_player_index = game_state.active_player_index
                 

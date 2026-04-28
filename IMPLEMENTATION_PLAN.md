@@ -35,6 +35,94 @@ coverage** (Commander, multiplayer, exotic keywords).
 
 ---
 
+## Active Work Log — Engine Quality Pass (April 2026)
+
+Iterative bug-hunt + mechanic coverage session driven by inspection of
+`runs/edh_pod/pod_game_001.log`. New items append to the bottom; completed
+items stay for traceability.
+
+### Done
+
+- [x] Generalized triggered-ability resolver — fallback dispatches unknown
+      effects through `spell_effects.apply_spell_effect` so new keywords
+      pick up effect handling automatically.
+- [x] Upkeep + end-step phase triggers (`check_phase_triggers` wired in
+      `game_runner`).
+- [x] Combat damage triggers (`_fire_damage_triggers` in unblocked / trample /
+      post-block paths).
+- [x] Life-gain triggers (`_fire_lifegain_triggers` in `_apply_lifelink`).
+- [x] Effective P/T includes `eot_power_bonus` / `eot_toughness_bonus` and
+      combat log shows `(P/T)`.
+- [x] Cost-reduction parsing for `cost {N} less` static abilities.
+- [x] Stun counter SBA on untap.
+- [x] Saga chapter triggers (lore counters, sacrifice when last chapter
+      finishes).
+- [x] Foundry Street Denizen self-pump (`+1/+0` triggers reach effective P/T).
+- [x] Land-play frequency boost in random agent (Atraxa now plays lands).
+- [x] Grist & other permanent spells no longer auto-target on cast (only
+      instants/sorceries pick targets at cast time).
+- [x] Commander casting from command zone — verified already wired
+      (`Zone.HAND | Zone.COMMAND_ZONE` in castable filter); boosted random-agent
+      weight (10 → 30) so commanders actually get cast.
+- [x] **Modal cards** (`Choose one — • A • B`): `_split_modes` + `_pick_modes`
+      in `spell_effects.py` rank modes and resolve only the chosen clause(s).
+      `apply_spell_effect` now reads the stack item's own oracle text first
+      (modal sub-items carry just the chosen mode) so it can't recurse.
+- [x] **Token colors + ETB**: `tokens.create_token` now sets
+      `color_identity` and fires `check_enters_battlefield_triggers` so e.g.
+      red Goblin tokens trigger Foundry Street Denizen's "another red creature
+      enters" clause. `spell_effects.token` branch routes through the factory.
+- [x] **Echo (CR 702.50)**: trigger handler parses `Echo {N}{C}` from source
+      oracle and either pays via `auto_tap_for_cost` + `pay_cost` (cmc ≤ 3
+      and mana available) or sacrifices the creature.
+- [x] **Legal-action log line** in `priority_loop`: emits
+      `? <player> legal actions (N): Cast(Foo), Activate(Bar), …` whenever the
+      action set has anything beyond `PASS_PRIORITY`.
+
+### In progress
+
+_(none — pick from queue below)_
+
+### Queue — High Priority
+
+- [ ] **Equip / Crew activation** — surface as `ACTIVATE_ABILITY` actions and
+      wire attachment.
+- [ ] **Aura targeting on cast** — currently a permanent-spell so
+      `auto_pick_targets` returns `[]`; we need a special path that picks an
+      aura target before resolution.
+- [ ] **"Enters tapped" replacement** for lands/permanents that say so.
+- [ ] **Lord effects beyond +X/+X** — granting keywords by subtype
+      (e.g. "Goblins you control have haste").
+- [ ] **Activated mana abilities for non-land permanents** (Treasure / Sol Ring /
+      Birds of Paradise) surfaced as legal actions.
+- [ ] **Counterspell awareness** — heuristic agent should hold up `{U}` when
+      it has a counter in hand and the opponent casts a relevant spell.
+
+### Queue — Medium Priority
+
+- [ ] **Cycling, Channel, Flashback** activated abilities from non-battlefield
+      zones.
+- [ ] **Proliferate** target choice (currently always proliferates everything
+      we control — should also include planeswalkers we want to protect).
+- [ ] **Multi-mode targeting**: modal spells that target should let
+      `auto_pick_targets` re-evaluate per-mode (partially done — verify with
+      Charms / Commands).
+- [ ] **Replacement effects framework** — generalize beyond stun + ETB tapped.
+- [ ] **State-based actions for planeswalker loyalty 0** (already partial; add
+      legendary rule + token cleanup audit).
+
+### Queue — Low Priority / Polish
+
+- [ ] **Better mode picking**: inject board-state heuristics (e.g. don't pick
+      "destroy target creature" if no opp creatures with power ≥ 3).
+- [ ] **Echo cost decision**: currently a fixed cmc-≤-3 heuristic; let the
+      agent decide.
+- [ ] **Compress legal-action log** — collapse repeated `Activate(Mountain)`
+      mana-tap entries into `Activate(Mountain) ×3`.
+- [ ] **Per-turn JSONL action trace** alongside the human log for ML.
+
+---
+
 ## Table of Contents
 
 1. [Project Vision](#1-project-vision)

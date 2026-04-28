@@ -86,6 +86,35 @@ def _get_effective_cost(state: GameState, player: "PlayerState", card) -> dict[s
     # Commander tax: +2 generic for each previous time commander was cast from command zone
     if state.format == "commander" and card.zone == Zone.COMMAND_ZONE:
         cost["generic"] = cost.get("generic", 0) + (player.commander_tax * 2)
+
+    # Cost-reduction static abilities: scan controller's permanents for
+    # "<cards-you-cast> cost {N} less to cast" and subtract from generic.
+    # Conservative parser — only matches simple "cost {N} less" phrasing.
+    reduction = 0
+    type_line_l = (card.type_line or "").lower()
+    for perm in state.cards:
+        if perm.zone != Zone.BATTLEFIELD or perm.controller_id != player.player_id:
+            continue
+        ot = (perm.oracle_text or "").lower()
+        if "cost" not in ot or "less" not in ot:
+            continue
+        for m in re.finditer(
+            r"([\w\s,'\-/]*?)\s+(?:you cast\s+)?cost\s*\{(\d+)\}\s*less", ot
+        ):
+            scope = m.group(1).strip()
+            amount = int(m.group(2))
+            # Determine if this card matches the scope.
+            if not scope or "spells" in scope or "cards" in scope:
+                applies = True
+            else:
+                # Strip leading qualifiers.
+                scope_words = [w for w in re.split(r"[\s\-]+", scope)
+                               if w and w not in ("you", "cast", "your", "the")]
+                applies = all(w in type_line_l for w in scope_words)
+            if applies:
+                reduction += amount
+    if reduction:
+        cost["generic"] = max(0, cost.get("generic", 0) - reduction)
     return cost
 
 
@@ -700,6 +729,18 @@ class RulesEngine:
                     else:
                         target_phrase = ""
                     state.log(f"    \u25b6 {cname} casts {card.name}{target_phrase}")
+                    # Append the card's oracle text on a sub-line so the log
+                    # is self-contained for human review (no need to look the
+                    # card up). Newlines in the oracle become " | ".
+                    oracle = (card.oracle_text or "").strip()
+                    if oracle:
+                        flat = " | ".join(
+                            ln.strip() for ln in oracle.splitlines() if ln.strip()
+                        )
+                        # Truncate very long oracle texts (planeswalkers etc.)
+                        if len(flat) > 240:
+                            flat = flat[:237] + "..."
+                        state.log(f"        \u201c{flat}\u201d")
             return state
         
         if action.action_type == ActionType.ACTIVATE_ABILITY:

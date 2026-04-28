@@ -92,14 +92,134 @@ def parse_triggers(card: CardInstance) -> list[Trigger]:
     
     # Whenever you gain life
     if ("gain" in oracle and "life" in oracle) and ("when" in oracle or "whenever" in oracle):
-        triggers.append(Trigger(
-            source_card_id=card.instance_id,
-            controller_id=card.controller_id,
-            trigger_type=TriggerType.LIFE_GAIN,
-            description="whenever you gain life",
-        ))
-    
+        m = re.search(r"whenever (?:you|a player|an opponent)[^,]*gain[s]? (?:\d+ )?life,?\s*(.+?)(?:\.|$)",
+                      card.oracle_text, re.IGNORECASE)
+        if m:
+            triggers.append(Trigger(
+                source_card_id=card.instance_id,
+                controller_id=card.controller_id,
+                trigger_type=TriggerType.LIFE_GAIN,
+                description=m.group(1).strip(),
+            ))
+
+    # At the beginning of (your) upkeep
+    if "upkeep" in oracle and "beginning" in oracle:
+        m = re.search(
+            r"at the beginning of (?:your|each|the) [^,]*upkeep,?\s*(.+?)(?:\.|$)",
+            card.oracle_text, re.IGNORECASE,
+        )
+        if m:
+            triggers.append(Trigger(
+                source_card_id=card.instance_id,
+                controller_id=card.controller_id,
+                trigger_type=TriggerType.UPKEEP,
+                description=m.group(1).strip(),
+            ))
+
+    # At the beginning of (your/each) end step
+    if "end step" in oracle and "beginning" in oracle:
+        m = re.search(
+            r"at the beginning of (?:your|each|the) (?:next |precombat )?end step,?\s*(.+?)(?:\.|$)",
+            card.oracle_text, re.IGNORECASE,
+        )
+        if m:
+            triggers.append(Trigger(
+                source_card_id=card.instance_id,
+                controller_id=card.controller_id,
+                trigger_type=TriggerType.END_STEP,
+                description=m.group(1).strip(),
+            ))
+
+    # Whenever ~ deals (combat) damage to a player / creature
+    if ("deals" in oracle and "damage" in oracle) and "whenever" in oracle:
+        m = re.search(
+            r"whenever (?:this creature|[\w\s,'\-]*?) deals (?:combat )?damage to "
+            r"(?:a player|an opponent|a creature|any target),?\s*(.+?)(?:\.|$)",
+            card.oracle_text, re.IGNORECASE,
+        )
+        if m:
+            triggers.append(Trigger(
+                source_card_id=card.instance_id,
+                controller_id=card.controller_id,
+                trigger_type=TriggerType.DEALT_DAMAGE,
+                description=m.group(1).strip(),
+            ))
+
     return triggers
+
+
+def check_phase_triggers(state: GameState, trigger_type: TriggerType, active_player_id: str) -> list[Trigger]:
+    """Collect upkeep / end-step / beginning-of-combat triggers from all
+    permanents on the battlefield. Triggers that say "your" only fire for
+    the active player; "each" / "the" fire for everyone."""
+    out: list[Trigger] = []
+    for card in state.cards:
+        if card.zone != Zone.BATTLEFIELD:
+            continue
+        oracle = card.oracle_text or ""
+        if "beginning" not in oracle.lower():
+            continue
+        own = parse_triggers(card)
+        for t in own:
+            if t.trigger_type != trigger_type:
+                continue
+            ol = oracle.lower()
+            scope_match = re.search(
+                r"at the beginning of (your|each|the) [^,]*"
+                + ("upkeep" if trigger_type == TriggerType.UPKEEP else "end step"),
+                ol,
+            )
+            if scope_match:
+                scope = scope_match.group(1)
+                if scope == "your" and card.controller_id != active_player_id:
+                    continue
+            out.append(t)
+    return out
+
+
+def check_damage_triggers(
+    state: GameState, source: CardInstance, target_kind: str
+) -> list[Trigger]:
+    """Fire ``whenever <source> deals damage to <target_kind>`` triggers.
+
+    target_kind is one of: 'player', 'creature', 'any'.
+    """
+    out: list[Trigger] = []
+    own = parse_triggers(source)
+    for t in own:
+        if t.trigger_type != TriggerType.DEALT_DAMAGE:
+            continue
+        ol = source.oracle_text.lower()
+        if target_kind == "player" and "to a player" not in ol \
+                and "to an opponent" not in ol and "to any target" not in ol:
+            continue
+        if target_kind == "creature" and "to a creature" not in ol \
+                and "to any target" not in ol:
+            continue
+        out.append(t)
+    return out
+
+
+def check_lifegain_triggers(state: GameState, gaining_player_id: str) -> list[Trigger]:
+    """Whenever you/an opponent gain life — fire matching triggers."""
+    out: list[Trigger] = []
+    for card in state.cards:
+        if card.zone != Zone.BATTLEFIELD:
+            continue
+        ol = (card.oracle_text or "").lower()
+        if "gain" not in ol or "life" not in ol or "whenever" not in ol:
+            continue
+        own = [t for t in parse_triggers(card) if t.trigger_type == TriggerType.LIFE_GAIN]
+        if not own:
+            continue
+        # 'whenever you gain life' fires only for controller; 'whenever an
+        # opponent gains life' fires when a different player gained.
+        if "whenever you gain" in ol and card.controller_id != gaining_player_id:
+            continue
+        if "whenever an opponent gain" in ol and card.controller_id == gaining_player_id:
+            continue
+        out.extend(own)
+    return out
 
 
 # Cross-permanent ETB pattern. Captures:
@@ -469,7 +589,7 @@ def resolve_trigger(state: GameState, trigger: Trigger) -> GameState:
             opponent.life_total -= amount
             state.log(f"[Trigger] {opponent.name} takes {amount} damage")
     
-    if "opponent lose" in description and "life" in description:
+    if "opponent lose" in description and "life" in description and "each" not in description:
         match = re.search(r"lose (\d+) life", description)
         amount = int(match.group(1)) if match else 1
         if opponent:
@@ -549,5 +669,88 @@ def resolve_trigger(state: GameState, trigger: Trigger) -> GameState:
                 card.tapped = True
                 state.log(f"[Trigger] {card.name} is tapped")
                 break
-    
+
+    # Self-pump: "this creature gets +X/+Y until end of turn" — applies to the
+    # source of the trigger (Foundry Street Denizen, etc.). detect_effect_kind
+    # below would return "noop" because it expects "target creature".
+    self_pump = re.search(
+        r"(?:this (?:creature|permanent)|it)\s+gets\s+\+(\d+)/\+(\d+)",
+        description,
+    )
+    if self_pump:
+        dp, dt = int(self_pump.group(1)), int(self_pump.group(2))
+        source = next((c for c in state.cards if c.instance_id == trigger.source_card_id), None)
+        if source is not None and source.zone == Zone.BATTLEFIELD:
+            source.eot_power_bonus = int(getattr(source, "eot_power_bonus", 0) or 0) + dp
+            source.eot_toughness_bonus = int(getattr(source, "eot_toughness_bonus", 0) or 0) + dt
+            state.log(f"[Trigger] {source.name} gets +{dp}/+{dt} until end of turn")
+        return state
+
+    # Echo (CR 702.50): "At the beginning of your upkeep, if this came under
+    # your control since the beginning of your last upkeep, sacrifice it
+    # unless you pay its echo cost." We must actually pay or sacrifice on
+    # resolution.
+    if "echo cost" in description or ("sacrifice it unless you pay" in description
+                                       and "echo" in description):
+        source = next((c for c in state.cards if c.instance_id == trigger.source_card_id), None)
+        if source is not None and source.zone == Zone.BATTLEFIELD:
+            from src.engine.mana import auto_tap_for_cost, parse_mana_cost
+            from src.engine.zones import move_card
+            # Parse the echo cost from the source's oracle: "Echo {1}{R}".
+            ec_match = re.search(r"echo\s+((?:\{[^}]+\})+)",
+                                 (source.oracle_text or ""), re.IGNORECASE)
+            paid = False
+            if ec_match:
+                cost = parse_mana_cost(ec_match.group(1))
+                # Heuristic: pay echo only if it's cheap (cmc <= 3) AND we
+                # can afford it. Otherwise sacrifice — naive but safe.
+                cmc = sum(cost.values())
+                if cmc <= 3 and auto_tap_for_cost(state, controller, cost):
+                    from src.engine.mana import pay_cost
+                    pay_cost(controller, cost)
+                    paid = True
+                    state.log(f"[Trigger] {controller.name} pays echo cost for {source.name}")
+            if not paid:
+                move_card(
+                    state, source.instance_id, Zone.BATTLEFIELD,
+                    Zone.GRAVEYARD, source.owner_id,
+                )
+                state.log(f"[Trigger] {source.name} is sacrificed (echo unpaid)")
+        return state
+
+    # Generic fallback — let spell_effects.apply_spell_effect handle any
+    # effect kind we haven't already covered above (destroy / exile / fight /
+    # bounce / scry / mill / ramp / tutor / proliferate / +1+1 counter /
+    # anthem-pump / pump / drain_each / damage_each / discard / surveil ...).
+    try:
+        from src.engine import spell_effects
+        from src.engine.game_state import StackItem
+        kind = spell_effects.detect_effect_kind(description)
+        already_handled = {"draw", "lifegain", "damage", "discard", "token", "tap"}
+        if kind != "noop" and kind not in already_handled:
+            source = next((c for c in state.cards if c.instance_id == trigger.source_card_id), None)
+            synthetic = StackItem(
+                source_card_id=trigger.source_card_id,
+                controller_id=controller.player_id,
+                is_spell=False,
+                card_data={
+                    "name": (source.name if source else "Trigger"),
+                    "oracle_text": description,
+                },
+            )
+            # Auto-pick targets using the trigger description as oracle text.
+            if source is not None:
+                # Temporarily swap oracle so auto_pick_targets sees the right text.
+                original_oracle = source.card_data.get("oracle_text", "")
+                source.card_data["oracle_text"] = description
+                try:
+                    synthetic.targets = spell_effects.auto_pick_targets(
+                        state, source, controller.player_id
+                    )
+                finally:
+                    source.card_data["oracle_text"] = original_oracle
+            spell_effects.apply_spell_effect(state, synthetic)
+    except Exception as exc:  # pragma: no cover - defensive
+        state.log(f"[Trigger] fallback effect failed: {exc!r}")
+
     return state

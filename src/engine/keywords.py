@@ -187,12 +187,18 @@ def clear_eot_buffs(state: GameState) -> None:
 
 def effective_power(card: CardInstance) -> int:
     base = _parse_pt(card.power)
-    return base + card.counters.get("prowess_eot", 0) + card.counters.get("+1/+1", 0)
+    plus = card.counters.get("+1/+1", 0)
+    minus = card.counters.get("-1/-1", 0)
+    eot = int(getattr(card, "eot_power_bonus", 0) or 0)
+    return base + card.counters.get("prowess_eot", 0) + plus - minus + eot
 
 
 def effective_toughness(card: CardInstance) -> int:
     base = _parse_pt(card.toughness)
-    return base + card.counters.get("+1/+1", 0)
+    plus = card.counters.get("+1/+1", 0)
+    minus = card.counters.get("-1/-1", 0)
+    eot = int(getattr(card, "eot_toughness_bonus", 0) or 0)
+    return base + plus - minus + eot
 
 
 def _parse_pt(value) -> int:

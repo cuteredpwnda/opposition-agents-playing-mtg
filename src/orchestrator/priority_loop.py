@@ -26,6 +26,36 @@ def get_priority_order(game_state: GameState) -> list[str]:
     return player_ids[idx:] + player_ids[:idx]
 
 
+def _summarize_actions(actions, game_state: GameState, max_items: int = 10) -> str:
+    """Render a compact one-line summary of legal actions for the log.
+
+    Groups by action type and lists the card names that the player could
+    cast / activate / play. Truncates to ``max_items`` distinct items.
+    """
+    parts: list[str] = []
+    cards_by_id = {c.instance_id: c for c in game_state.cards}
+    seen = 0
+    for a in actions:
+        if seen >= max_items:
+            parts.append("…")
+            break
+        kind = a.action_type.name if hasattr(a.action_type, "name") else str(a.action_type)
+        kind_short = {
+            "PLAY_LAND": "Play",
+            "CAST_SPELL": "Cast",
+            "ACTIVATE_ABILITY": "Activate",
+            "DECLARE_ATTACKER": "Attack",
+            "DECLARE_BLOCKER": "Block",
+        }.get(kind, kind.title())
+        cid = getattr(a, "card_instance_id", None)
+        if cid and cid in cards_by_id:
+            parts.append(f"{kind_short}({cards_by_id[cid].name})")
+        else:
+            parts.append(kind_short)
+        seen += 1
+    return ", ".join(parts)
+
+
 def _sync_priority_player(game_state: GameState) -> None:
     """Ensure priority player is valid when players are removed mid-game."""
     if not game_state.players:
@@ -145,7 +175,22 @@ async def run_priority_loop(
             # This shouldn't happen; PASS_PRIORITY should always be legal
             game_state.log(f"ERROR: No legal actions for {priority_player_id}")
             return game_state
-        
+
+        # Log legal actions (other than PASS) so it's visible in the game
+        # log what the player could have done from the current board state.
+        # Skip pure-pass turns to keep noise down.
+        non_pass = [a for a in legal_actions if a.action_type != ActionType.PASS_PRIORITY]
+        if non_pass:
+            pp = next(
+                (p for p in game_state.players if p.player_id == priority_player_id),
+                None,
+            )
+            label = (pp.name or pp.player_id) if pp else priority_player_id
+            game_state.log(
+                f"      ? {label} legal actions ({len(non_pass)}): "
+                + _summarize_actions(non_pass, game_state)
+            )
+
 # Collector sees current state before action
         if collector is not None:
             collector.on_state(game_state, game_state.priority_player_index)

@@ -18,18 +18,18 @@
       "winner": "krenko_mob_boss_core",
       "winner_seat": "player1",
       "turns": 7,
-      "elapsed_sec": 0.37,
+      "elapsed_sec": 0.67,
       "agent_actions": {
         "player1": {
-          "PASS_PRIORITY": 108,
-          "CAST_SPELL": 4,
+          "PASS_PRIORITY": 173,
+          "CAST_SPELL": 5,
           "PLAY_LAND": 6,
-          "DECLARE_ATTACKERS": 8,
+          "DECLARE_ATTACKERS": 14,
           "ACTIVATE_ABILITY": 0,
-          "OTHER": 0
+          "OTHER": 5
         },
         "player2": {
-          "PASS_PRIORITY": 114,
+          "PASS_PRIORITY": 193,
           "CAST_SPELL": 0,
           "PLAY_LAND": 1,
           "DECLARE_ATTACKERS": 0,
@@ -37,20 +37,20 @@
           "OTHER": 0
         },
         "player3": {
-          "PASS_PRIORITY": 112,
-          "CAST_SPELL": 3,
-          "PLAY_LAND": 3,
-          "DECLARE_ATTACKERS": 0,
+          "PASS_PRIORITY": 148,
+          "CAST_SPELL": 6,
+          "PLAY_LAND": 4,
+          "DECLARE_ATTACKERS": 2,
           "ACTIVATE_ABILITY": 0,
-          "OTHER": 0
+          "OTHER": 42
         },
         "player4": {
-          "PASS_PRIORITY": 114,
-          "CAST_SPELL": 0,
+          "PASS_PRIORITY": 154,
+          "CAST_SPELL": 2,
           "PLAY_LAND": 6,
           "DECLARE_ATTACKERS": 0,
           "ACTIVATE_ABILITY": 0,
-          "OTHER": 0
+          "OTHER": 37
         }
       },
       "agent_llm_calls": {

@@ -147,6 +147,20 @@ def auto_pick_targets(
     ``PlayerState.player_id`` (``"player_2"`` etc.). The resolver
     distinguishes by lookup.
     """
+    # Permanent spells (creature, planeswalker, artifact, enchantment, land,
+    # battle) don't choose targets when *cast* — they just enter the
+    # battlefield. Their activated / triggered / loyalty abilities pick
+    # targets later, when those abilities go on the stack. Bailing out here
+    # prevents e.g. Grist from "targeting Mogg War Marshal" on cast just
+    # because its −2 loyalty text contains "destroy target creature".
+    type_line = (source_card.type_line or "").lower()
+    permanent_types = ("creature", "planeswalker", "artifact",
+                       "enchantment", "land", "battle")
+    is_permanent = any(t in type_line for t in permanent_types)
+    is_spell = "instant" in type_line or "sorcery" in type_line
+    if is_permanent and not is_spell:
+        return []
+
     kind = detect_effect_kind(source_card.oracle_text)
     opp = _opponent(state, controller_id)
     if not opp:
@@ -216,6 +230,74 @@ def _parse_amount(text: str, default: int = 1) -> int:
     return int(m.group(1)) if m else default
 
 
+# Mode kinds we consider "valuable" for greedy modal pick-rank.
+_MODE_KIND_RANK = {
+    "destroy": 9, "exile": 9, "counter": 8, "bounce": 7, "edict": 7,
+    "damage": 6, "drain_each": 6, "damage_each": 6,
+    "token": 5, "ramp": 5, "tutor": 5, "draw": 5,
+    "anthem_pump": 4, "pump": 3, "plus_counter": 4,
+    "lifegain": 2, "scry": 2, "surveil": 2, "tap": 2, "untap": 2,
+    "discard": 3, "mill": 2, "fight": 4, "proliferate": 3,
+    "noop": 0,
+}
+
+
+def _split_modes(oracle: str) -> list[str]:
+    """Split a modal spell into its individual mode clauses.
+
+    Modes are separated by a bullet ``•`` (sometimes ``·`` or ``|``).
+    The "Choose one — " preamble is stripped off the first mode.
+    Trailing entwine / fuse clauses are skipped.
+    """
+    # Common bullet separators on Scryfall oracle text.
+    parts = re.split(r"\s*[\u2022\u00b7|]\s*", oracle)
+    if len(parts) < 2:
+        return []
+    # First part is the preamble before the first bullet — drop it.
+    parts = [p.strip() for p in parts[1:] if p.strip()]
+    # Strip rider clauses ("Entwine {2}", "Fuse", reminder text in parens).
+    cleaned = []
+    for p in parts:
+        # Drop entwine/fuse riders that follow the last mode.
+        if p.lower().startswith("entwine") or p.lower().startswith("fuse"):
+            continue
+        # Strip trailing reminder text in parentheses.
+        p = re.sub(r"\(.*?\)", "", p).strip()
+        if p:
+            cleaned.append(p)
+    return cleaned
+
+
+def _pick_modes(
+    state: GameState,
+    source: CardInstance | None,
+    controller_id: str,
+    modes: list[str],
+    pick_count: int,
+) -> list[str]:
+    """Rank modes by `_MODE_KIND_RANK` and return the top ``pick_count``.
+
+    Filters out modes whose kind would have no legal effect (e.g. "destroy
+    target creature" with no opposing creatures).
+    """
+    scored: list[tuple[int, str]] = []
+    for m in modes:
+        kind = detect_effect_kind(m)
+        score = _MODE_KIND_RANK.get(kind, 0)
+        # Penalise modes that need a target we don't have.
+        if kind in ("destroy", "exile", "bounce", "tap", "fight"):
+            opp_creatures = _opponent_creatures(state, controller_id, source)
+            if not opp_creatures and "creature" in m.lower():
+                score -= 5
+        if kind == "counter":
+            top = state.stack[-1] if state.stack else None
+            if not top or not top.is_spell or top.controller_id == controller_id:
+                score -= 5
+        scored.append((score, m))
+    scored.sort(key=lambda t: t[0], reverse=True)
+    return [m for _, m in scored[:max(1, pick_count)]]
+
+
 def _find_card(state: GameState, instance_id: str) -> Optional[CardInstance]:
     return next((c for c in state.cards if c.instance_id == instance_id), None)
 
@@ -235,10 +317,52 @@ def apply_spell_effect(
     from .zones import move_card
 
     source = _find_card(state, stack_item.source_card_id) if stack_item.source_card_id else None
-    oracle = (source.oracle_text if source else stack_item.card_data.get("oracle_text", "")) or ""
+    # Prefer the stack item's own oracle text when set (modal sub-items
+    # carry only the chosen mode's clause). Falling back to source.oracle_text
+    # would re-trigger the modal split and recurse infinitely.
+    item_oracle = stack_item.card_data.get("oracle_text", "") if stack_item.card_data else ""
+    oracle = item_oracle or (source.oracle_text if source else "") or ""
     name = source.name if source else stack_item.card_data.get("name", "Spell")
     controller_id = stack_item.controller_id
     targets = list(stack_item.targets or [])
+
+    # Modal spells (CR 700.2): "Choose one — • A • B • C". Pick the mode(s)
+    # the controller would prefer and run only those clauses. Without this,
+    # the resolver sees the entire concatenated oracle and picks whichever
+    # detect_effect_kind matches first — usually the wrong mode.
+    oracle_lower_full = oracle.lower()
+    if "choose one" in oracle_lower_full or "choose two" in oracle_lower_full \
+            or "choose one or both" in oracle_lower_full:
+        modes = _split_modes(oracle)
+        if modes:
+            n_modes = 2 if ("choose two" in oracle_lower_full
+                            or "choose one or both" in oracle_lower_full) else 1
+            # Entwine lets you choose all modes; we don't pay extra here, so
+            # default to the standard pick count.
+            picks = _pick_modes(state, source, controller_id, modes, n_modes)
+            for mode_text in picks:
+                state.log(f"    \u2022 {name} — mode: {mode_text.strip()}")
+                sub_item = StackItem(
+                    source_card_id=stack_item.source_card_id,
+                    controller_id=controller_id,
+                    is_spell=False,
+                    card_data={
+                        "name": name,
+                        "oracle_text": mode_text,
+                    },
+                    targets=list(stack_item.targets or []),
+                )
+                # Pick fresh targets for the mode using its own text.
+                if source is not None and not sub_item.targets:
+                    original = source.card_data.get("oracle_text", "")
+                    source.card_data["oracle_text"] = mode_text
+                    try:
+                        sub_item.targets = auto_pick_targets(state, source, controller_id)
+                    finally:
+                        source.card_data["oracle_text"] = original
+                apply_spell_effect(state, sub_item)
+            return state
+
     kind = detect_effect_kind(oracle)
 
     if kind == "counter":
@@ -336,6 +460,7 @@ def apply_spell_effect(
         return state
 
     if kind == "token":
+        from . import tokens as _tok
         # "Create N X/Y <type> creature tokens" — minimal parser.
         m_count = re.search(r"create (\d+|a|an|two|three|four)", oracle.lower())
         word_to_int = {"a": 1, "an": 1, "two": 2, "three": 3, "four": 4}
@@ -344,33 +469,55 @@ def apply_spell_effect(
             count = int(raw) if raw.isdigit() else word_to_int.get(raw, 1)
         else:
             count = 1
+        # Predefined utility tokens.
+        ol = oracle.lower()
+        if "treasure" in ol:
+            for _ in range(count):
+                _tok.create_treasure_token(state, controller_id)
+            state.log(f"{name}: creates {count} Treasure token(s)")
+            return state
+        if "food" in ol:
+            for _ in range(count):
+                _tok.create_food_token(state, controller_id)
+            state.log(f"{name}: creates {count} Food token(s)")
+            return state
+        if "clue" in ol:
+            for _ in range(count):
+                _tok.create_clue_token(state, controller_id)
+            state.log(f"{name}: creates {count} Clue token(s)")
+            return state
+        if "blood" in ol:
+            for _ in range(count):
+                _tok.create_blood_token(state, controller_id)
+            state.log(f"{name}: creates {count} Blood token(s)")
+            return state
         m_pt = re.search(r"(\d+)/(\d+)", oracle)
-        if m_pt:
-            tp, tt = m_pt.group(1), m_pt.group(2)
-        else:
-            tp, tt = "1", "1"
-        # Try to identify the token's creature type ("Soldier", "Goblin", ...).
-        m_type = re.search(r"(\d+)/(\d+)\s+(?:white|blue|black|red|green|colorless)?\s*([A-Z][a-z]+)", source.oracle_text if source else "")
-        token_subtype = m_type.group(3) if m_type else "Spirit"
+        tp, tt = (int(m_pt.group(1)), int(m_pt.group(2))) if m_pt else (1, 1)
+        # Extract color words and subtype name from the X/Y ... token clause.
+        m_clause = re.search(
+            r"(\d+)/(\d+)\s+([\w\s,]*?)\s*(?:creature\s+)?token",
+            oracle.lower(),
+        )
+        color_map = {"white": "W", "blue": "U", "black": "B", "red": "R", "green": "G"}
+        token_colors: list[str] = []
+        token_subtype = "Spirit"
+        if m_clause:
+            middle = m_clause.group(3).strip()
+            words = re.split(r"[\s,]+", middle)
+            token_colors = [color_map[w] for w in words if w in color_map]
+            # First non-color, non-noise word becomes the subtype.
+            for w in words:
+                if w in color_map or w in ("and", "or", "the", ""):
+                    continue
+                token_subtype = w.title()
+                break
         for _ in range(count):
-            tok = CardInstance(
-                card_data={
-                    "name": f"{token_subtype} Token",
-                    "type_line": f"Token Creature \u2014 {token_subtype}",
-                    "mana_cost": "",
-                    "cmc": 0,
-                    "oracle_text": "",
-                    "power": tp,
-                    "toughness": tt,
-                    "is_token": True,
-                },
-                zone=Zone.BATTLEFIELD,
-                owner_id=controller_id,
-                controller_id=controller_id,
-                summoning_sick=True,
-                turn_entered=state.turn_number,
+            _tok.create_creature_token(
+                state, controller_id,
+                power=tp, toughness=tt,
+                subtypes=(token_subtype,),
+                colors=token_colors or None,
             )
-            state.cards.append(tok)
         state.log(f"{name}: creates {count} {tp}/{tt} {token_subtype} token(s)")
         return state
 

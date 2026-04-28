@@ -35,6 +35,31 @@ _KEYWORDS = (
 )
 
 
+def _fire_damage_triggers(state: GameState, source: CardInstance, target_kind: str) -> None:
+    """Push 'whenever ~ deals damage to a player/creature' triggers and
+    resolve them immediately so combat math reflects their effects."""
+    from .triggers import check_damage_triggers, resolve_trigger
+    from .game_state import StackItem
+    triggers = check_damage_triggers(state, source, target_kind)
+    for trig in triggers:
+        item = StackItem(
+            source_card_id=trig.source_card_id,
+            controller_id=trig.controller_id,
+            is_spell=False,
+            card_data={"name": f"[Trigger] {source.name}: {trig.description}",
+                       "type_line": "Ability"},
+        )
+        state.log(f"[TRIGGER (DAMAGE)] {source.name}: {trig.description} added to stack")
+        # Resolve directly (no priority window in this minimal engine).
+        state.triggered_abilities.append(trig)
+        resolve_trigger(state, trig)
+        try:
+            state.triggered_abilities.remove(trig)
+        except ValueError:
+            pass
+        state.log(f"[Trigger] {trig.description} resolves")
+
+
 def can_attack(card: CardInstance, turn_number: int) -> bool:
     if card is None or not card.is_creature():
         return False
@@ -92,7 +117,9 @@ def declare_attackers(
         if not has_kw(card, "vigilance"):
             card.tapped = True
         state.combat.attackers[attacker_id] = defender_id
-        state.log(f"{card.name} attacks {defender_id}")
+        ep = effective_power(card)
+        et = effective_toughness(card)
+        state.log(f"{card.name} ({ep}/{et}) attacks {defender_id}")
 
 
 def declare_blockers(
@@ -113,7 +140,10 @@ def declare_blockers(
             blocker = _get_card(state, bid)
             if blocker and can_block(attacker, blocker):
                 legal.append(bid)
-                state.log(f"{blocker.name} blocks {attacker.name}")
+                state.log(
+                    f"{blocker.name} ({effective_power(blocker)}/{effective_toughness(blocker)})"
+                    f" blocks {attacker.name} ({effective_power(attacker)}/{effective_toughness(attacker)})"
+                )
         # Enforce menace.
         if not menace_satisfied(attacker, len(legal)):
             state.log(f"{attacker.name} has menace and is blocked by only {len(legal)} — block illegal, ignored")
@@ -196,6 +226,7 @@ def _deal_step(
                     _apply_lifelink(state, attacker, atk_power)
                     _track_commander_damage(state, attacker, defender, atk_power)
                     state.log(f"{attacker.name} deals {atk_power} damage to {defender.name}")
+                    _fire_damage_triggers(state, attacker, "player")
             continue
 
         # Blocked — assign attacker damage across blockers in declared order.
@@ -219,7 +250,10 @@ def _deal_step(
                     defender.life_total -= remaining
                     damage_dealt_by_attacker += remaining
                     state.log(f"{attacker.name} tramples over for {remaining} to {defender.name}")
+                    _fire_damage_triggers(state, attacker, "player")
             _apply_lifelink(state, attacker, damage_dealt_by_attacker)
+            if damage_dealt_by_attacker > 0 and blockers:
+                _fire_damage_triggers(state, attacker, "creature")
 
         # Blockers strike back (subject to step filter).
         for blocker in blockers:
@@ -245,6 +279,19 @@ def _apply_lifelink(state: GameState, source: CardInstance, damage: int) -> None
     if controller:
         controller.life_total += damage
         state.log(f"{source.name} lifelink: {controller.name} gains {damage} life")
+        _fire_lifegain_triggers(state, controller.player_id)
+
+
+def _fire_lifegain_triggers(state: GameState, gaining_player_id: str) -> None:
+    from .triggers import check_lifegain_triggers, resolve_trigger
+    for trig in check_lifegain_triggers(state, gaining_player_id):
+        state.log(f"[TRIGGER (LIFE_GAIN)] {trig.description}")
+        state.triggered_abilities.append(trig)
+        resolve_trigger(state, trig)
+        try:
+            state.triggered_abilities.remove(trig)
+        except ValueError:
+            pass
 
 
 def _track_commander_damage(

@@ -29,6 +29,19 @@ class RandomAgent(MTGAgent):
         for action in legal_actions:
             if action.action_type == ActionType.CAST_SPELL:
                 weight = 10  # Strongly prefer casting creatures/spells
+                # Casting your commander from the command zone is almost
+                # always your best play — boost it heavily so naive agents
+                # don't leave their commander rotting in the command zone.
+                if action.card_instance_id:
+                    src = next(
+                        (c for c in game_state.cards
+                         if c.instance_id == action.card_instance_id),
+                        None,
+                    )
+                    if src is not None:
+                        from src.engine.game_state import Zone
+                        if src.zone == Zone.COMMAND_ZONE:
+                            weight = 30
             elif action.action_type == ActionType.DECLARE_ATTACKERS:
                 weight = 8   # High priority for attacking
 
@@ -38,7 +51,9 @@ class RandomAgent(MTGAgent):
                     weight += self._safe_int_score(self._score_attack_target(game_state, target_id))
 
             elif action.action_type == ActionType.PLAY_LAND:
-                weight = 5   # Prefer playing lands
+                # Playing a land is almost always correct in MTG. Use a high
+                # weight so the agent doesn't pass with lands rotting in hand.
+                weight = 25
             elif action.action_type == ActionType.ACTIVATE_ABILITY:
                 # Non-mana activated abilities only (mana abilities are handled
                 # implicitly during cost payment).  Don't outrank PASS — agents

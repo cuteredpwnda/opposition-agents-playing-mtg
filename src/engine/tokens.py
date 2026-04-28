@@ -35,6 +35,7 @@ def create_token(
     enters_tapped: bool = False,
 ) -> CardInstance:
     """Spawn a token directly onto ``controller_id``'s battlefield."""
+    color_list = list(colors or [])
     card_data = {
         "name": name,
         "type_line": type_line,
@@ -43,7 +44,10 @@ def create_token(
         "oracle_text": oracle_text,
         "is_token": True,
         "keywords": list(keywords or []),
-        "colors": list(colors or []),
+        "colors": color_list,
+        # color_identity drives ETB filters like "another red creature
+        # enters the battlefield" (Foundry Street Denizen, etc.).
+        "color_identity": color_list,
     }
     if power is not None:
         card_data["power"] = power
@@ -60,7 +64,34 @@ def create_token(
         turn_entered=state.turn_number,
     )
     state.cards.append(tok)
+    # Fire ETB triggers (CR 603.6a) — tokens enter the battlefield like any
+    # other permanent and trigger "whenever (another) X enters" abilities.
+    _fire_token_etb_triggers(state, tok)
     return tok
+
+
+def _fire_token_etb_triggers(state: GameState, tok: CardInstance) -> None:
+    """Push ETB triggers caused by ``tok`` entering the battlefield onto
+    the stack. Lazy-imported to avoid cycles with ``triggers``."""
+    try:
+        from .triggers import check_enters_battlefield_triggers
+        from .game_state import StackItem
+    except Exception:
+        return
+    etb = check_enters_battlefield_triggers(state, tok)
+    for trig in etb:
+        item = StackItem(
+            source_card_id=trig.source_card_id,
+            controller_id=trig.controller_id,
+            is_spell=False,
+            card_data={
+                "name": f"[Trigger] {trig.description}",
+                "type_line": "Ability",
+            },
+        )
+        state.stack.append(item)
+        state.triggered_abilities.append(trig)
+        state.log(f"[TRIGGER (ETB)] {trig.description} added to stack")
 
 
 # ---------------------------------------------------------------------------
