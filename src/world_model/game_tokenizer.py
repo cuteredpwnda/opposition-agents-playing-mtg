@@ -171,7 +171,7 @@ class GameTokenizer:
         """Encode a player's vital stats into a feature vector."""
         player = next((p for p in game_state.players if p.player_id == player_id), None)
         if player is None:
-            return np.zeros(12, dtype=np.float32)
+            return np.zeros(11, dtype=np.float32)
 
         mana_order = ["W", "U", "B", "R", "G", "C"]
         mana_values = [
