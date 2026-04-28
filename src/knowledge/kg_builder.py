@@ -173,12 +173,20 @@ class KGBuilder:
         else:
             return
 
+        # Stable id: use upstream id if present, otherwise hash of card set + source.
+        combo_id = str(combo.get("id") or "")
+        if not combo_id:
+            import hashlib
+            key = "|".join(sorted(n.lower() for n in names if n))
+            src = combo.get("source", "merged")
+            combo_id = f"{src}:{hashlib.sha1(key.encode('utf-8')).hexdigest()[:16]}"
+
         async with self.driver.session() as session:
             await session.run(
                 query,
-                combo_id=str(combo.get("id", "")),
+                combo_id=combo_id,
                 description=combo.get("description", ""),
-                result=", ".join(combo.get("produces", [])),
+                result=", ".join(combo.get("produces", combo.get("results", []) or [])),
                 card_names=names,
             )
 
