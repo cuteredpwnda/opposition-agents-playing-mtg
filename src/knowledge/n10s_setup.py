@@ -145,17 +145,25 @@ class N10sSetup:
                 "CREATE CONSTRAINT scryfall_id_unique IF NOT EXISTS "
                 "FOR (c:Card) REQUIRE c.scryfallId IS UNIQUE"
             )
-            # Full-text search index
-            await session.run(
-                "CALL db.index.fulltext.createNodeIndex("
-                "'cardSearch', ['Card'], ['cardName', 'oracleText', 'typeLine']"
-                ")"
-            )
+            # Full-text search index (idempotent — Neo4j 5+ syntax)
+            try:
+                await session.run(
+                    "CREATE FULLTEXT INDEX cardSearch IF NOT EXISTS "
+                    "FOR (c:Card) ON EACH [c.cardName, c.oracleText, c.typeLine]"
+                )
+            except Exception as e:
+                logger.debug("cardSearch fulltext index: %s", e)
             logger.info("Neo4j indexes created")
 
-    async def create_vector_index(self, dimensions: int = 384) -> None:
-        """Create Neo4j native vector index for card embeddings."""
+    async def create_vector_index(self, dimensions: int = 128) -> None:
+        """Create Neo4j native vector index for card embeddings (idempotent)."""
         async with self.driver.session() as session:
+            existing = await session.run(
+                "SHOW INDEXES YIELD name WHERE name = 'cardEmbeddings' RETURN name"
+            )
+            if [r async for r in existing]:
+                logger.info("Vector index 'cardEmbeddings' already exists")
+                return
             await session.run(
                 "CALL db.index.vector.createNodeIndex("
                 "'cardEmbeddings', 'Card', 'embedding', $dim, 'cosine'"

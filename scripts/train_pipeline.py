@@ -188,6 +188,16 @@ async def stage_3_train_graph_embeddings(
     _model, embeddings = train_graph_embedder(data, out_channels=embed_dim, epochs=epochs)
     save_embedding_cache(embeddings, name_to_idx)
     await write_embeddings_to_neo4j(embeddings, name_to_idx)
+
+    # Create vector index now that the embedding property is populated.
+    try:
+        from src.knowledge.n10s_setup import N10sSetup
+        setup = N10sSetup()
+        await setup.create_vector_index(dimensions=embed_dim)
+        await setup.driver.close()
+    except Exception as e:
+        logger.warning("Vector index creation skipped: %s", e)
+
     logger.info("Graph embeddings trained and cached (%d cards, %d dims)",
                 embeddings.size(0), embeddings.size(1))
     return True

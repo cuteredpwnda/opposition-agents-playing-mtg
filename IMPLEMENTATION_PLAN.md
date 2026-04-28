@@ -243,7 +243,12 @@ _(empty — promote from medium)_
 
 ### Queue — Medium Priority
 
-_(empty — see Done above)_
+- **Deck-Builder Agent (Phase G)** — self-improving brewer that builds,
+  playtests, and adapts decks via world-model + KG scoring. See
+  [Phase G](#phase-g-deck-builder-agent-self-improving-brewer) for the
+  10-task breakdown (G1-G10). Suggested kickoff: G1 (constraints) +
+  G3 (greedy builder) → smoke run with Standard pool, then G4-G5
+  (evaluator + mutation loop).
 
 ### Queue — Low Priority / Polish
 
@@ -818,6 +823,114 @@ every downstream training and benchmark signal is meaningful.
 - [x] Interactive card selection, target picking, combat choices
 - [ ] Game log with natural language descriptions
 - [ ] Card images from Scryfall
+
+---
+
+### Phase G: Deck-Builder Agent (Self-Improving Brewer)
+
+**Goal:** an agent that *constructs* decks from the card pool, playtests
+them in self-play, and iterates on the list based on win-rate +
+world-model value estimates. Two motivating outcomes:
+
+1. **Strong decks discovered automatically** — high win-rate, robust
+   against the agent zoo.
+2. **Convoluted but legal combo decks** — 20-card flowcharts that win
+   deterministically, surfaced by combining the KG's
+   `PART_OF_COMBO` / `SYNERGIZES_WITH` edges with a tutor/redundancy
+   bias.
+
+**Pipeline (each iteration ≈ one "brew → play → adapt" cycle):**
+
+1. **Seed.** Pick a starting list — random commander, archetype prior
+   from KG (`BELONGS_TO_ARCHETYPE`), or a user-supplied skeleton.
+2. **Build.** A `DeckBuilderAgent` proposes additions / cuts using a
+   scoring function over candidate cards
+   `score(c) = α·synergy(c | deck) + β·archetype_fit(c) + γ·KG_combo_completion(c) + δ·world_model_value(c)`.
+   Mana base, color identity, and singleton (Commander) constraints
+   are enforced as hard filters.
+3. **Playtest.** Run *N* quick self-play games (e.g., 30 × 8-turn caps)
+   against a panel of opponents from the agent zoo. Use the existing
+   `examples/play_edh_pod.py` runner with the agent registry.
+4. **Score.** Aggregate metrics: win-rate, mulligan rate, average
+   turn-of-first-threat, combos-completed, mana-flood / screw rates,
+   surprise (world-model prediction error).
+5. **Adapt.** Cards with low marginal contribution to wins (counterfactual
+   estimated by re-rolling) are swapped for high-`score(c)` candidates.
+   Use simulated annealing / evolutionary mutation; keep elite list.
+6. **Repeat** until improvement plateaus or budget exhausted; persist
+   best-of-generation to `runs/brews/{commander}_{gen}.txt` with a
+   match log.
+
+**File layout:**
+
+```
+src/agents/deck_builder/
+    __init__.py
+    agent.py             # DeckBuilderAgent — exposes brew(), iterate()
+    scorer.py            # Card-scoring features (synergy / KG / world-model)
+    constraints.py       # Color identity, singleton, mana-curve, format legality
+    mutation.py          # Swap proposal + simulated annealing schedule
+    evaluator.py         # Wraps PodGameRunner for batched playtests
+    archive.py           # Persist generations + winning brews
+scripts/
+    brew_decks.py        # CLI: brew_decks --commander "Atraxa" --generations 50
+tests/
+    test_deck_builder_constraints.py
+    test_deck_builder_scoring.py
+    test_deck_builder_evaluator.py
+```
+
+**Tasks (insert into Queue under Phase G when ready):**
+
+- [ ] **G1 — Constraint engine.** Color identity, singleton, mana-curve
+  bins, format legality (read from `LEGAL_IN`). Unit-test all four.
+- [ ] **G2 — Card scorer.** Pull synergy weights from
+  `MTGKnowledgeGraph.get_synergies_for` and combo completion from
+  `detect_near_combos`; mix with `WorldModel.value()` if a checkpoint
+  is available. Falls back gracefully when KG is offline.
+- [ ] **G3 — DeckBuilderAgent.** Greedy constructor: start from
+  commander → fill with top-scoring cards subject to constraints
+  → land base via mana-source heuristic.
+- [ ] **G4 — Batched evaluator.** Wraps the EDH pod runner to play
+  *N* games in parallel (asyncio.gather); returns aggregate metrics
+  + per-card "marginal win contribution" (how much win-rate drops
+  when card X is removed).
+- [ ] **G5 — Mutation loop.** Simulated annealing or
+  (μ + λ) evolutionary strategy over swap actions; checkpoints best
+  list per generation.
+- [ ] **G6 — Combo-flowchart bias.** Optional second objective:
+  maximise the *length* of a deterministic kill chain found via
+  `apoc.path.expandConfig` over `PART_OF_COMBO` / `ENABLES`. Surface
+  the resulting "20-card flowchart" deck as a separate archive bucket.
+- [ ] **G7 — KG feedback.** Decks that win at high rate write
+  `(card_a, card_b, weight += δ)` synergy edges back into Neo4j —
+  same hook the existing `KGEnrichment` already uses.
+- [ ] **G8 — Surprise mining.** When a brewed deck wins but the
+  world model assigned low value, log it to `runs/brews/surprises/`
+  for human inspection — these are candidates for "novel strategies".
+- [ ] **G9 — `scripts/brew_decks.py` CLI.**
+  `brew_decks --commander "Atraxa, Praetors' Voice" --generations 30 --pod-size 4`
+  + tournament round-robin between top-N brews.
+- [ ] **G10 — Tests + smoke runner.** Constraint tests (cheap),
+  scorer tests with a stubbed KG, full pipeline smoke at
+  `--generations 2 --games-per-eval 4`.
+
+**Non-goals for first cut:**
+
+- Sideboard construction (Modern/Legacy 15-card SB) — defer.
+- Price-aware budget brewing — easy follow-up via Scryfall `prices`
+  field.
+- Online learning of α/β/γ/δ weights — start hand-tuned; bandit
+  optimisation is a Phase G.2 task.
+
+**Risks:**
+
+- Evaluator cost: 30 games × 8 turns × 4 players is the budget
+  ceiling on a 12 GB GPU. Mitigation: keep playtests deterministic
+  (`--seed`), cache world-model encodings per `CardInstance`.
+- Reward hacking: decks that exploit engine bugs (e.g., infinite
+  loops the engine fails to terminate). Mitigation: hard turn caps
+  and treat unfinished games as draws.
 - [ ] Stack visualization
 - [ ] Save/load game states
 
