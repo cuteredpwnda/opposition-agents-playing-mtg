@@ -43,6 +43,25 @@ items stay for traceability.
 
 ### Done
 
+- [x] **Experiment harnesses** — two new entrypoints honour the
+      "always write a log file, never pipe live output" rule:
+      * `scripts/run_matchups.py` — every-pair (1v1) or rotating-pod
+        ablation; writes `<out>/run.log`, `games.csv`, `summary.json`,
+        and per-game `logs/game_NNNN.log`.
+      * `scripts/run_tournament.py` — Swiss-paired 1v1 with Buchholz
+        tiebreak, or pod tournament with random reseating each round.
+        Writes `run.log`, `rounds.csv`, `standings.csv`, `summary.json`.
+      Both default to `--max-turns 150` (commander games can run long).
+      Smoke runs verified end-to-end: 4-game 1v1 matchup +
+      3-round 4-agent Swiss + 2-game pod.
+- [x] **`llm_fusion` registered** — `LLMFusionAgent` (LLM + world model
+      + KG fusion) is now selectable via `make_agent("llm_fusion", …)` /
+      `--agents llm_fusion` from the harnesses.  Aliased as `fusion`.
+      `ollama` / `llm` aliases also added.
+- [x] **`docs/EXPERIMENTS.md`** — runbook for overnight training,
+      ablations, and tournaments with copy-paste PowerShell snippets,
+      tailing tips, and the canonical 4-ablation suite (LLM-only /
+      world-model-only / KG-only / fusion).
 - [x] **Combo outcome ontology** — combos now carry a human-readable
       `comboName` (`"Heliod, Sun-Crowned + Walking Ballista"`) and emit
       `:Outcome` nodes via a `:PRODUCES` edge.

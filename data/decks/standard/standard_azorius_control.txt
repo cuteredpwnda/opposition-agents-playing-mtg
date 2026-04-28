@@ -1,0 +1,22 @@
+# Azorius Control (Standard) — 60 cards
+# Counter, kill, draw. Showcases sweeper-based control and
+# planeswalker win conditions.
+
+4 Make Disappear
+3 No More Lies
+4 Get Lost
+4 Sunfall
+3 The Wandering Emperor
+2 Teferi, Hero of Dominaria
+3 Memory Deluge
+2 Farewell
+2 Three Steps Ahead
+2 Wedding Announcement
+4 Seachrome Coast
+4 Hallowed Fountain
+4 Restless Anchorage
+3 Adarkar Wastes
+2 Otawara, Soaring City
+2 Eiganjo, Seat of the Empire
+6 Island
+6 Plains

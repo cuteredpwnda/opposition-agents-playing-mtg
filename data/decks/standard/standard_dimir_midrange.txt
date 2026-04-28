@@ -1,0 +1,21 @@
+# Dimir Midrange (Standard) — 60 cards
+# Disruption + efficient threats. Showcases hand attack, removal,
+# and card-advantage value engines.
+
+4 Faerie Mastermind
+4 Gix, Yawgmoth Praetor
+4 Sheoldred, the Apocalypse
+3 Preacher of the Schism
+4 Go for the Throat
+3 Cut Down
+2 Duress
+2 Tishana's Tidebinder
+4 Deep-Cavern Bat
+3 Restless Reef
+4 Underground River
+4 Watery Grave
+3 Concealed Courtyard
+2 Otawara, Soaring City
+2 Takenuma, Abandoned Mire
+6 Island
+6 Swamp

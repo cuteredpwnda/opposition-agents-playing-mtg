@@ -1,0 +1,23 @@
+# Living End (Modern) — 60 cards
+# Cycle a fistful of huge creatures into the graveyard, then suspend
+# Living End to bring them all back at once. Showcases cycling, suspend,
+# and graveyard-as-resource interactions.
+
+4 Living End
+4 Street Wraith
+4 Architects of Will
+4 Deadshot Minotaur
+4 Monstrous Carabid
+4 Igneous Cur
+4 Striped Riverwinder
+2 Curator of Mysteries
+4 Violent Outburst
+4 Ardent Plea
+2 Force of Negation
+4 Shardless Agent
+4 Verdant Catacombs
+2 Bloodstained Mire
+4 Misty Rainforest
+2 Forest
+2 Island
+2 Swamp

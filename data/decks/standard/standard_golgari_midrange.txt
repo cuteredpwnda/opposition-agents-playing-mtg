@@ -1,0 +1,21 @@
+# Golgari Midrange (Standard) — 60 cards
+# Graveyard-leaning midrange. Showcases reanimator pressure,
+# discard, and 2-for-1 value creatures.
+
+4 Sheoldred, the Apocalypse
+4 Mosswood Dreadknight
+3 Preacher of the Schism
+4 Glissa Sunslayer
+2 Tear Asunder
+4 Go for the Throat
+2 Cut Down
+3 Duress
+2 The Cruelty of Gix
+4 Restless Cottage
+4 Overgrown Tomb
+4 Llanowar Wastes
+3 Underground Mortuary
+2 Boseiju, Who Endures
+2 Takenuma, Abandoned Mire
+6 Forest
+7 Swamp

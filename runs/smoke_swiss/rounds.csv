@@ -1,0 +1,7 @@
+round,game,agent_a,agent_b,winner_agent,turns,elapsed_sec,log_path,error
+1,1,active_inference,heuristic,active_inference,8,0.64,runs\smoke_swiss\logs\game_0001.log,
+1,2,random,kg_heuristic,random,4,0.07,runs\smoke_swiss\logs\game_0002.log,
+2,3,active_inference,random,active_inference,6,0.11,runs\smoke_swiss\logs\game_0003.log,
+2,4,kg_heuristic,heuristic,kg_heuristic,6,0.09,runs\smoke_swiss\logs\game_0004.log,
+3,5,active_inference,kg_heuristic,active_inference,8,0.21,runs\smoke_swiss\logs\game_0005.log,
+3,6,random,heuristic,heuristic,14,0.63,runs\smoke_swiss\logs\game_0006.log,

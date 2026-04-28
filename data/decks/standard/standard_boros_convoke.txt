@@ -1,0 +1,20 @@
+# Boros Convoke (Standard) — 60 cards
+# Token-flooding aggro using convoke creatures and Knight-Errant
+# of Eos. Showcases swarm tactics and convoke cost reduction.
+
+4 Knight-Errant of Eos
+4 Imodane's Recruiter
+4 Resolute Reinforcements
+4 Voldaren Epicure
+4 Warden of the Inner Sky
+3 Gleeful Demolition
+4 Case of the Gateway Express
+2 Reckless Handling
+3 Get Lost
+4 Sacred Foundry
+4 Inspiring Vantage
+3 Restless Bivouac
+2 Mountain Valley
+6 Plains
+5 Mountain
+4 Battlefield Forge

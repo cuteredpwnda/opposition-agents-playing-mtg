@@ -75,7 +75,14 @@ def _make_world_model(player_id: str, **kw: Any) -> MTGAgent:
     tokenizer = kw.pop("tokenizer", None)
     if world_model is None:
         ckpt = kw.pop("checkpoint", "checkpoints/jepa/jepa_final.pt")
-        world_model = WorldModel.load(ckpt)
+        from pathlib import Path as _P
+        if _P(ckpt).exists():
+            world_model = WorldModel.load(ckpt)
+        else:
+            # No checkpoint available — fall back to a default-initialised
+            # WorldModel.  The agent will play but with random weights;
+            # this lets harnesses run smoke tests before any training.
+            world_model = WorldModel()
     if tokenizer is None:
         card_model = CardEmbeddingModel()
         try:

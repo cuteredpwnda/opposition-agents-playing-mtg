@@ -1,0 +1,22 @@
+# Mono-Green Tron (Modern) — 60 cards
+# Big-mana ramp into Karn/Ulamog/Wurmcoil. Showcases land synergies.
+
+4 Ancient Stirrings
+4 Sylvan Scrying
+4 Chromatic Sphere
+4 Chromatic Star
+4 Expedition Map
+3 Oblivion Stone
+2 Karn Liberated
+2 Wurmcoil Engine
+2 Ulamog, the Ceaseless Hunger
+2 Walking Ballista
+1 Sundering Titan
+4 Urza's Tower
+4 Urza's Mine
+4 Urza's Power Plant
+2 Sanctum of Ugin
+4 Forest
+2 Ghost Quarter
+4 Relic of Progenitus
+4 Pithing Needle

@@ -12,6 +12,7 @@ This is the main entry point for using the world model.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Optional
 import os
@@ -26,6 +27,8 @@ from .controller import Controller, ControllerConfig
 from .dynamics_model import DynamicsModel, DynamicsModelConfig
 from .jepa_predictor import JEPAPredictor, JEPAPredictorConfig
 from .state_encoder import StateEncoder, StateEncoderConfig
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -410,8 +413,59 @@ class WorldModel(nn.Module):
 
     @classmethod
     def load(cls, path: str, device: str = "cpu") -> WorldModel:
-        """Load model from checkpoint."""
+        """Load model from checkpoint.
+
+        Tolerant to several legacy checkpoint shapes:
+
+        * ``{"config": WorldModelConfig, "state_dict": OrderedDict}`` —
+          the canonical full-model checkpoint produced by :meth:`save`.
+        * ``{"encoder": ..., "predictor": ..., "kg_encoder": ...}`` —
+          the JEPA-only checkpoint produced by ``train_pipeline``
+          stage 5.  Loaded into ``self.encoder`` / ``self.jepa_predictor``
+          and the rest of the model gets default-initialised weights.
+        * Any other dict — load whatever sub-state-dicts match by name
+          and warn about the rest, instead of raising ``KeyError``.
+        """
         checkpoint = torch.load(path, map_location=device, weights_only=False)
-        model = cls(checkpoint["config"])
-        model.load_state_dict(checkpoint["state_dict"])
+        config = checkpoint.get("config") if isinstance(checkpoint, dict) else None
+        model = cls(config) if config is not None else cls()
+
+        if not isinstance(checkpoint, dict):
+            return model.to(device)
+
+        # Canonical full-model checkpoint.
+        if "state_dict" in checkpoint:
+            model.load_state_dict(checkpoint["state_dict"])
+            return model.to(device)
+
+        # JEPA-only / partial checkpoint.  Try to load each sub-module's
+        # weights from a top-level key matching its attribute name.
+        loaded: list[str] = []
+        skipped: list[str] = []
+        for attr_name in ("encoder", "dynamics", "controller", "jepa_predictor", "kg_encoder"):
+            sub_state = checkpoint.get(attr_name)
+            if sub_state is None and attr_name == "jepa_predictor":
+                sub_state = checkpoint.get("predictor")
+            if sub_state is None:
+                continue
+            module = getattr(model, attr_name, None)
+            if module is None:
+                skipped.append(attr_name)
+                continue
+            try:
+                module.load_state_dict(sub_state, strict=False)
+                loaded.append(attr_name)
+            except Exception:
+                skipped.append(attr_name)
+
+        if loaded:
+            logger.info(
+                "WorldModel.load partial checkpoint: loaded=%s skipped=%s",
+                loaded, skipped,
+            )
+        else:
+            logger.warning(
+                "WorldModel.load: no recognised state in %s; "
+                "returning default-initialised model.", path,
+            )
         return model.to(device)

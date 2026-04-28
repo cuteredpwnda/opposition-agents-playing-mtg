@@ -1,0 +1,23 @@
+# Death's Shadow (Modern) — 60 cards
+# Trade life points for a giant 13/13. Showcases self-damage,
+# fetchlands, and discard-shock interaction.
+
+4 Death's Shadow
+4 Street Wraith
+4 Mishra's Bauble
+4 Thoughtseize
+4 Inquisition of Kozilek
+4 Fatal Push
+4 Stubborn Denial
+4 Tarmogoyf
+2 Snapcaster Mage
+3 Temur Battle Rage
+1 Become Immense
+4 Bloodstained Mire
+4 Polluted Delta
+4 Verdant Catacombs
+2 Watery Grave
+2 Underground Sea
+2 Blood Crypt
+2 Bayou
+2 Swamp

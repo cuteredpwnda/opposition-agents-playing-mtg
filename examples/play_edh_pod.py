@@ -4,7 +4,7 @@
 Runs a free-for-all Commander game with N (default 4) players, each
 piloting a different commander deck loaded from plaintext files written
 by ``scripts/build_deck_corpus.py`` (or hand-crafted under
-``data/decks/edh_pod/``).
+``data/decks/edh/``).
 
 Usage::
 
@@ -13,10 +13,10 @@ Usage::
 
     # custom decks + model
     python examples/play_edh_pod.py \\
-        --decks data/decks/edh_pod/krenko-mob-boss_core.txt \\
-                data/decks/edh_pod/atraxa-praetors-voice_core.txt \\
-                data/decks/edh_pod/urza-lord-high-artificer_core.txt \\
-                data/decks/edh_pod/meren-of-clan-nel-toth_core.txt \\
+        --decks data/decks/edh/krenko-mob-boss_core.txt \\
+                data/decks/edh/atraxa-praetors-voice_core.txt \\
+                data/decks/edh/urza-lord-high-artificer_core.txt \\
+                data/decks/edh/meren-of-clan-nel-toth_core.txt \\
         --model gemma --max-turns 25
 
 The runner uses :class:`GameConfig(format="commander", starting_life=40)`,
@@ -61,10 +61,10 @@ MODEL_ALIASES = {
 }
 
 DEFAULT_DECKS = [
-    "data/decks/edh_pod/krenko-mob-boss_core.txt",
-    "data/decks/edh_pod/atraxa-praetors-voice_core.txt",
-    "data/decks/edh_pod/urza-lord-high-artificer_core.txt",
-    "data/decks/edh_pod/meren-of-clan-nel-toth_core.txt",
+    "data/decks/edh/krenko-mob-boss_core.txt",
+    "data/decks/edh/atraxa-praetors-voice_core.txt",
+    "data/decks/edh/urza-lord-high-artificer_core.txt",
+    "data/decks/edh/meren-of-clan-nel-toth_core.txt",
 ]
 
 

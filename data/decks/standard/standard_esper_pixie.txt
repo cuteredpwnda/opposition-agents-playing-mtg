@@ -1,0 +1,24 @@
+# Esper Pixie (Standard) — 60 cards
+# Tempo deck built around bouncing your own permanents to trigger
+# Nowhere to Run / Optimistic Scavenger / Spell Pierce.
+# Showcases bounce-loop synergy and protection.
+
+4 Spyglass Siren
+4 Nowhere to Run
+4 Optimistic Scavenger
+4 Floodpits Drowner
+4 Stormchaser's Talent
+2 Three Steps Ahead
+4 Get Lost
+3 Seachrome Coast
+3 Concealed Courtyard
+2 Restless Anchorage
+2 Caves of Koilos
+2 Hallowed Fountain
+2 Watery Grave
+2 Godless Shrine
+2 Plains
+4 Island
+2 Swamp
+4 Cori-Steel Cutter
+6 Plains

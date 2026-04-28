@@ -1,0 +1,21 @@
+# Bant Toxic (Standard) — 60 cards
+# Infect-style poison aggro using toxic creatures and proliferate.
+# Showcases poison counters, +1/+1 counters, and proliferate triggers.
+
+4 Venerated Rotpriest
+4 Skrelv, Defector Mite
+4 Bloated Contaminator
+3 Tyvar's Stand
+4 Tamiyo's Safekeeping
+2 Glistening Dawn
+3 Blossoming Tortoise
+2 The Mycotyrant
+2 Tyvar, Jubilant Brawler
+4 Botanical Sanctum
+4 Hallowed Fountain
+4 Breeding Pool
+4 Temple Garden
+3 Restless Vinestalk
+4 Forest
+3 Plains
+6 Island

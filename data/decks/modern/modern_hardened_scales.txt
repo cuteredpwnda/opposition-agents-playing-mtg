@@ -1,0 +1,21 @@
+# Affinity / Hardened Scales Aggro (Modern) — 60 cards
+# Counters-matter aggro deck — Hardened Scales pumps Walking Ballista,
+# Arcbound Ravager, and the modular crew. Showcases +1/+1 counter
+# proliferation and modular triggers.
+
+4 Hardened Scales
+4 Walking Ballista
+4 Arcbound Ravager
+4 Steel Overseer
+4 Inkmoth Nexus
+4 Welding Jar
+4 Springleaf Drum
+4 Mox Opal
+4 Ornithopter
+4 Memnite
+3 Cranial Plating
+2 Glint-Nest Crane
+3 Darksteel Citadel
+4 Mountain
+4 Forest
+4 Botanical Sanctum

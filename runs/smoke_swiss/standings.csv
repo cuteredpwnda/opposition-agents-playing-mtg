@@ -1,0 +1,5 @@
+rank,agent,points,wins,draws,losses,games,buchholz
+1,active_inference,9.0,3,0,0,3,9.0
+2,heuristic,3.0,1,0,2,3,15.0
+3,kg_heuristic,3.0,1,0,2,3,15.0
+4,random,3.0,1,0,2,3,15.0

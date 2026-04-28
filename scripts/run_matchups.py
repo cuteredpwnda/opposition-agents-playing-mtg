@@ -8,17 +8,17 @@ seat order for fairness, and writes per-game CSV + summary JSON.
 Examples:
     # 1v1 ablation: random vs heuristic vs kg_heuristic, 8 games each pair
     python scripts/run_matchups.py \
-        --format standard --decks data/decks/modern_mono_red_burn.txt data/decks/modern_azorius_control.txt \
+        --format standard --decks data/decks/modern/modern_mono_red_burn.txt data/decks/modern/modern_azorius_control.txt \
         --agents random heuristic kg_heuristic --games 8 \
         --out runs/ablation_1v1
 
     # 4-player EDH pod, all four seats different agents
     python scripts/run_matchups.py \
         --format commander --pod \
-        --decks data/decks/edh_pod/krenko-mob-boss_core.txt \
-                data/decks/edh_pod/atraxa-praetors-voice_core.txt \
-                data/decks/edh_pod/urza-lord-high-artificer_core.txt \
-                data/decks/edh_pod/meren-of-clan-nel-toth_core.txt \
+        --decks data/decks/edh/krenko-mob-boss_core.txt \
+                data/decks/edh/atraxa-praetors-voice_core.txt \
+                data/decks/edh/urza-lord-high-artificer_core.txt \
+                data/decks/edh/meren-of-clan-nel-toth_core.txt \
         --agents heuristic kg_heuristic world_model llm_fusion --games 4 \
         --out runs/ablation_pod
 
@@ -140,13 +140,41 @@ async def play_one_game(
     seat_to_agent: dict[str, str] = {}
     seat_to_deck: dict[str, str] = {}
 
+    setup_error: str | None = None
     for i, (agent_name, deck_path) in enumerate(zip(agent_names, deck_paths), start=1):
         pid = f"player{i}"
-        deck_label, cards = load_deck(deck_path, format=format)
+        try:
+            deck_label, cards = load_deck(deck_path, format=format)
+        except Exception as e:
+            setup_error = f"deck load failed for {deck_path}: {e}"
+            deck_label, cards = deck_path.stem, []
         decks[pid] = cards
-        agents[pid] = _build_agent(agent_name, pid, seed=seed)
+        try:
+            agents[pid] = _build_agent(agent_name, pid, seed=seed)
+        except Exception as e:
+            setup_error = f"agent '{agent_name}' build failed: {e}"
+            logger.exception("agent build failed: %s", agent_name)
+            # Insert a RandomAgent as a stub so we still record a row;
+            # mark the game as errored so we don't count its outcome.
+            from src.agents.random_agent import RandomAgent
+            agents[pid] = RandomAgent(player_id=pid, name=f"{agent_name}-stub")
         seat_to_agent[pid] = agent_name
         seat_to_deck[pid] = deck_label
+
+    if setup_error is not None:
+        # Don't actually play — return an errored record.
+        return {
+            "game": game_idx,
+            "format": format,
+            "winner_seat": None,
+            "winner_agent": None,
+            "winner_deck": None,
+            "turns": 0,
+            "elapsed_sec": 0.0,
+            "seats": seat_to_agent,
+            "decks": seat_to_deck,
+            "error": setup_error,
+        }
 
     starting_life = 40 if format == "commander" else 20
     config = GameConfig(
@@ -223,7 +251,7 @@ async def run_matchups(args: argparse.Namespace) -> None:
 
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
-    log_dir = out_dir / "logs" if args.save_logs else None
+    log_dir = None if args.no_game_logs else out_dir / "logs"
 
     deck_paths = [Path(d) for d in args.decks]
     for p in deck_paths:
@@ -345,24 +373,61 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Run a 4-player pod instead of pairwise 1v1.")
     p.add_argument("--games", type=int, default=4,
                    help="Games per pairing (1v1) / rotations (pod).")
-    p.add_argument("--max-turns", type=int, default=40)
+    p.add_argument("--max-turns", type=int, default=150,
+                   help="Max turns per game.  Commander games routinely\n"
+                        "go past turn 30 and that is fine; default 150.")
     p.add_argument("--seed", type=int, default=None)
     p.add_argument("--out", default="runs/matchups",
-                   help="Output dir for CSV + JSON.")
-    p.add_argument("--save-logs", action="store_true",
-                   help="Save per-game gameplay log under <out>/logs/.")
+                   help="Output dir for CSV + JSON + logs.")
+    p.add_argument("--no-game-logs", action="store_true",
+                   help="Skip per-game game logs (still writes run.log + CSV).")
     p.add_argument("--verbose", action="store_true")
     return p
 
 
+class _Tee:
+    """Write to multiple streams (e.g. stdout + a log file)."""
+    def __init__(self, *streams):
+        self.streams = streams
+    def write(self, s):
+        for st in self.streams:
+            try:
+                st.write(s)
+            except Exception:
+                pass
+    def flush(self):
+        for st in self.streams:
+            try:
+                st.flush()
+            except Exception:
+                pass
+
+
 def main() -> None:
     args = build_parser().parse_args()
+
+    out_dir = Path(args.out)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    run_log_path = out_dir / "run.log"
+    run_log = run_log_path.open("w", encoding="utf-8")
+
+    # Tee stdout/stderr to <out>/run.log so users can `Get-Content -Wait`
+    # the file instead of piping the live process.
+    sys.stdout = _Tee(sys.__stdout__, run_log)
+    sys.stderr = _Tee(sys.__stderr__, run_log)
+
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.WARNING,
         format="%(asctime)s [%(levelname)s] %(name)s | %(message)s",
         datefmt="%H:%M:%S",
+        stream=sys.stdout,
     )
-    asyncio.run(run_matchups(args))
+    print(f"[run_matchups] writing log to {run_log_path}")
+    try:
+        asyncio.run(run_matchups(args))
+    finally:
+        run_log.flush()
+        run_log.close()
 
 
 if __name__ == "__main__":

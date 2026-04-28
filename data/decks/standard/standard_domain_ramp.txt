@@ -1,0 +1,24 @@
+# Domain Ramp (Standard) — 60 cards
+# Ramp into Atraxa via Leyline Binding-style fixing and triomes.
+# Showcases multicolour mana, lifegain triggers, and big finishers.
+
+4 Topiary Stomper
+4 Leyline Binding
+3 Herd Migration
+4 Cavern of Souls
+2 Sunfall
+4 Atraxa, Grand Unifier
+3 Zur, Eternal Schemer
+2 Up the Beanstalk
+3 Leyline of the Guildpact
+4 Plaza of Heroes
+4 Restless Anchorage
+2 Spara's Headquarters
+2 Xander's Lounge
+2 Ziatora's Proving Ground
+2 Raffine's Tower
+1 Jetmir's Garden
+4 Fabled Passage
+2 Indomitable Creativity
+4 Forest
+4 Plains

@@ -1,0 +1,57 @@
+{
+  "mode": "swiss",
+  "format": "standard",
+  "rounds": 3,
+  "agents": [
+    "random",
+    "heuristic",
+    "kg_heuristic",
+    "active_inference"
+  ],
+  "decks": [
+    "data\\decks\\modern_mono_red_burn.txt",
+    "data\\decks\\modern_azorius_control.txt"
+  ],
+  "standings": [
+    {
+      "rank": 1,
+      "agent": "active_inference",
+      "points": 9.0,
+      "wins": 3,
+      "draws": 0,
+      "losses": 0,
+      "games": 3,
+      "buchholz": 9.0
+    },
+    {
+      "rank": 2,
+      "agent": "heuristic",
+      "points": 3.0,
+      "wins": 1,
+      "draws": 0,
+      "losses": 2,
+      "games": 3,
+      "buchholz": 15.0
+    },
+    {
+      "rank": 3,
+      "agent": "kg_heuristic",
+      "points": 3.0,
+      "wins": 1,
+      "draws": 0,
+      "losses": 2,
+      "games": 3,
+      "buchholz": 15.0
+    },
+    {
+      "rank": 4,
+      "agent": "random",
+      "points": 3.0,
+      "wins": 1,
+      "draws": 0,
+      "losses": 2,
+      "games": 3,
+      "buchholz": 15.0
+    }
+  ]
+}

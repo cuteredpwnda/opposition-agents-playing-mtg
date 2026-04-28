@@ -1,0 +1,19 @@
+# Gruul Aggro (Standard) — 60 cards
+# Stompy red-green beats. Showcases haste creatures, fight-style
+# removal, and explosive curve.
+
+4 Heartfire Hero
+4 Manifold Mouse
+4 Slickshot Show-Off
+4 Questing Druid
+4 Reckless Stormseeker
+3 Burst Lightning
+3 Snakeskin Veil
+2 Tyvar's Stand
+2 Lightning Strike
+4 Stomping Ground
+4 Karplusan Forest
+3 Restless Ridgeline
+6 Mountain
+9 Forest
+4 Cori-Steel Cutter
