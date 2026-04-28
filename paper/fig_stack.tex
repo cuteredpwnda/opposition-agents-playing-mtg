@@ -90,23 +90,25 @@
   \coordinate (busBotR) at (14.0,-4.6);
 
   % engine -> agent (state, legal_actions):
-  % start ON the upper-east edge of the engine box, run east into the
-  % gap, up to the top bus, across, and down into the agent zoo.
+  % start ON the upper-east edge of the engine's bounding rectangle,
+  % run east into the gap, up to the top bus, across, down into agents.
+  \path (eng.north east) ++(0.7,0) coordinate (engNEgap);
+  \path (eng.south east) ++(0.7,0) coordinate (engSEgap);
   \draw[flow]
-      ([yshift= 0.2cm]eng.east) -- (7.2, 0.2)
+      (eng.north east) -- (engNEgap)
       -- (7.2, 4.6) -- (14.0, 4.6)
       node[elabel, pos=0.55, above=1pt]{state, legal\_actions}
       -- (a1.north);
 
   % agent -> engine (action):
   % start at the bottom of the agent column, down to the bottom bus,
-  % across, up the gap, and INTO the lower-east edge of the engine box.
+  % across, up the gap, and INTO the lower-east corner of the engine.
   \draw[backflow]
       (a6.south) -- (14.0,-4.6)
       -- (7.2,-4.6)
       node[elabel, pos=0.55, below=1pt]{action}
-      -- (7.2,-0.2)
-      -- ([yshift=-0.2cm]eng.east);
+      -- (engSEgap)
+      -- (eng.south east);
 
   % Dotted agent-side lookups (agent->KG, agent->C controller) are
   % omitted from the figure to keep it readable; they are described in
