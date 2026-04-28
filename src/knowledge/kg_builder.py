@@ -153,19 +153,23 @@ class KGBuilder:
         return len(combos)
 
     async def _merge_combo(self, combo: dict[str, Any]) -> None:
-        """Merge a single combo and its component card relationships."""
-        query = """
-        MERGE (combo:Combo {comboId: $combo_id})
-        SET combo.comboDescription = $description,
-            combo.result = $result
-        WITH combo
-        UNWIND $card_names AS cardName
-        MERGE (c:Card {cardName: cardName})
-        MERGE (c)-[:PART_OF_COMBO]->(combo)
+        """Merge a single combo and its component card relationships.
+
+        Creates a ``:Combo`` node carrying ``comboName`` (joined card
+        names — e.g. ``"Heliod, Sun-Crowned + Walking Ballista"``),
+        ``comboDescription`` (raw upstream description), and a flattened
+        ``result`` string for backwards compatibility.
+
+        Each output feature is also normalised through
+        :mod:`src.knowledge.combo_outcomes` and merged as an
+        ``:Outcome`` node so combos that share an outcome
+        (e.g. ``infinite_mana``) are connected through a shared node
+        for category-level queries.
         """
+        from src.knowledge.combo_outcomes import classify_features, combo_display_name
+
         card_names = combo.get("cards", combo.get("uses", []))
         if isinstance(card_names, list) and card_names:
-            # Handle both string lists and object lists
             names = [
                 c["card"]["name"] if isinstance(c, dict) else c
                 for c in card_names
@@ -181,13 +185,68 @@ class KGBuilder:
             src = combo.get("source", "merged")
             combo_id = f"{src}:{hashlib.sha1(key.encode('utf-8')).hexdigest()[:16]}"
 
+        # Spellbook stores ``produces`` as a list of dicts
+        # (``{"feature": {"name": str, ...}, "quantity": int}``).  Older
+        # entries / EDHREC entries use ``results`` (list[str] or empty).
+        produces_names: list[str] = []
+        for entry in (combo.get("produces") or combo.get("results") or []):
+            if isinstance(entry, str):
+                produces_names.append(entry)
+            elif isinstance(entry, dict):
+                feat = entry.get("feature") if isinstance(entry.get("feature"), dict) else None
+                if feat and feat.get("name"):
+                    produces_names.append(str(feat["name"]))
+                elif entry.get("name"):
+                    produces_names.append(str(entry["name"]))
+
+        outcomes = classify_features(produces_names)
+        outcome_payload = [
+            {
+                "outcomeId": oc.outcome_id,
+                "category": oc.category,
+                "magnitude": oc.magnitude,
+                "displayName": oc.display_name,
+                "feature": oc.feature,
+            }
+            for oc in outcomes
+        ]
+        categories = sorted({oc.category for oc in outcomes}) or ["other"]
+        magnitudes = sorted({oc.magnitude for oc in outcomes}) or ["finite"]
+        combo_name = combo_display_name(names)
+
+        query = """
+        MERGE (combo:Combo {comboId: $combo_id})
+        SET combo.comboName = $combo_name,
+            combo.comboDescription = $description,
+            combo.result = $result,
+            combo.outcomeCategories = $categories,
+            combo.outcomeMagnitudes = $magnitudes,
+            combo.cardCount = size($card_names)
+        WITH combo
+        UNWIND $card_names AS cardName
+        MERGE (c:Card {cardName: cardName})
+        MERGE (c)-[:PART_OF_COMBO]->(combo)
+        WITH combo
+        UNWIND $outcomes AS outcome
+        MERGE (o:Outcome {outcomeId: outcome.outcomeId})
+        SET o.category = outcome.category,
+            o.magnitude = outcome.magnitude,
+            o.displayName = outcome.displayName
+        MERGE (combo)-[r:PRODUCES]->(o)
+        SET r.feature = outcome.feature
+        """
+
         async with self.driver.session() as session:
             await session.run(
                 query,
                 combo_id=combo_id,
+                combo_name=combo_name,
                 description=combo.get("description", ""),
-                result=", ".join(combo.get("produces", combo.get("results", []) or [])),
+                result=", ".join(produces_names),
+                categories=categories,
+                magnitudes=magnitudes,
                 card_names=names,
+                outcomes=outcome_payload,
             )
 
     # -----------------------------------------------------------------------

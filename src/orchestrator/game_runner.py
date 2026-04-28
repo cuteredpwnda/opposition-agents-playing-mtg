@@ -62,6 +62,48 @@ class GameRunner:
         self.card_db = card_db or CardDatabase()
         self.engine = RulesEngine()
         self.self_play_collector = self_play_collector
+        self._tools_kg = None  # cached MTGKnowledgeGraph for tools.set_kg
+
+    def _wire_external_tools(self, agents: dict[str, "MTGAgent"]) -> None:
+        """Best-effort: hand the live KG / judge to ``src.agents.tools``
+        so LangChain-style ``query_knowledge_graph`` / ``judge_question``
+        tools resolve to real data while the game runs.
+
+        Silent on failure — agents that need the KG already fall back
+        to non-KG behaviour, and we don't want a game to crash because
+        Neo4j is offline.
+        """
+        # Reuse a KG handle from any agent that already has one.
+        kg_handle = None
+        for agent in agents.values():
+            cand = getattr(agent, "_kg", None) or getattr(agent, "kg", None)
+            if cand is not None:
+                kg_handle = cand
+                break
+
+        if kg_handle is None:
+            try:
+                from src.knowledge.knowledge_graph import MTGKnowledgeGraph
+                kg_handle = MTGKnowledgeGraph()
+                self._tools_kg = kg_handle  # so we can close it later if needed
+            except Exception as e:
+                logger.debug("KG unreachable; tools.set_kg skipped: %s", e)
+                return
+
+        try:
+            from src.agents import tools as agent_tools
+            agent_tools.set_kg(kg_handle)
+        except Exception as e:
+            logger.debug("set_kg failed: %s", e)
+
+        # Optional: wire judge if available.
+        try:
+            from src.agents import tools as agent_tools
+            if hasattr(agent_tools, "set_judge"):
+                from src.judge.judge import Judge  # type: ignore
+                agent_tools.set_judge(Judge())
+        except Exception:
+            pass
 
     def _resolve_timeout_winner(self, game_state: GameState) -> PlayerState | None:
         """Pick a winner on max-turn timeout; return None if fully tied."""
@@ -207,6 +249,12 @@ class GameRunner:
         """
         game_state = self._setup_game(agents, decks)
         logger.info(f"Game started: {list(agents.keys())}")
+
+        # Make the KG / judge handles available to LangChain-style tools
+        # (``src.agents.tools``) for the duration of this game.  Best-effort:
+        # if the KG isn't reachable we just skip — agents that need it will
+        # fall back to non-KG behaviour.
+        self._wire_external_tools(agents)
 
         while not game_state.game_over and game_state.turn_number <= self.config.max_turns:
             game_state = await self._play_turn(game_state, agents)

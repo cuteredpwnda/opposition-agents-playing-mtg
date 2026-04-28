@@ -145,6 +145,17 @@ class N10sSetup:
                 "CREATE CONSTRAINT scryfall_id_unique IF NOT EXISTS "
                 "FOR (c:Card) REQUIRE c.scryfallId IS UNIQUE"
             )
+            # Combo + outcome uniqueness (added with the outcome ontology
+            # so MERGE on (:Combo {comboId}) / (:Outcome {outcomeId})
+            # stays O(1)).
+            await session.run(
+                "CREATE CONSTRAINT combo_id_unique IF NOT EXISTS "
+                "FOR (c:Combo) REQUIRE c.comboId IS UNIQUE"
+            )
+            await session.run(
+                "CREATE CONSTRAINT outcome_id_unique IF NOT EXISTS "
+                "FOR (o:Outcome) REQUIRE o.outcomeId IS UNIQUE"
+            )
             # Full-text search index (idempotent — Neo4j 5+ syntax)
             try:
                 await session.run(
