@@ -12,6 +12,17 @@ from __future__ import annotations
 
 from src.engine.game_state import GameState, ActionType
 from src.engine.stack import is_empty as stack_is_empty, resolve_top
+from src.engine.mana import potential_mana
+
+
+def _format_mana(pool: dict[str, int]) -> str:
+    """Render a mana dict as ``{W}{U}{B}…`` ordered WUBRGC, or ``∅`` if empty."""
+    parts: list[str] = []
+    for c in "WUBRGC":
+        n = pool.get(c, 0)
+        for _ in range(n):
+            parts.append("{" + c + "}")
+    return "".join(parts) if parts else "∅"
 
 
 def get_priority_order(game_state: GameState) -> list[str]:
@@ -193,19 +204,28 @@ async def run_priority_loop(
             game_state.log(f"ERROR: No legal actions for {priority_player_id}")
             return game_state
 
-        # Log legal actions (other than PASS) so it's visible in the game
-        # log what the player could have done from the current board state.
-        # Skip pure-pass turns to keep noise down.
+        # Log legal actions every time a player gets priority. CR mandates
+        # that legality is re-evaluated after every game event, so the log
+        # mirrors that. We always emit a line — even when the only options
+        # are pass / concede — so the trace stays auditable.
         non_pass = [a for a in legal_actions if a.action_type != ActionType.PASS_PRIORITY]
-        if non_pass and not _is_noise_only(non_pass):
-            pp = next(
-                (p for p in game_state.players if p.player_id == priority_player_id),
-                None,
+        pp = next(
+            (p for p in game_state.players if p.player_id == priority_player_id),
+            None,
+        )
+        label = (pp.name or pp.player_id) if pp else priority_player_id
+        open_mana = (
+            _format_mana(potential_mana(game_state, pp)) if pp is not None else "∅"
+        )
+        if not non_pass or _is_noise_only(non_pass):
+            game_state.log(
+                f"      ? {label} legal actions: NONE  [open mana: {open_mana}]"
             )
-            label = (pp.name or pp.player_id) if pp else priority_player_id
+        else:
             game_state.log(
                 f"      ? {label} legal actions ({len(non_pass)}): "
                 + _summarize_actions(non_pass, game_state)
+                + f"  [open mana: {open_mana}]"
             )
 
 # Collector sees current state before action
