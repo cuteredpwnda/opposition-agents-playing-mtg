@@ -29,17 +29,33 @@ def parse_triggers(card: CardInstance) -> list[Trigger]:
     triggers = []
     
     # Enter the Battlefield / When X enters (most common early trigger)
-    # Matches: "When X enters", "When X enters the battlefield", "enters with", etc.
-    if ("enter" in oracle and ("when" in oracle or "whenever" in oracle)):
-        # Or more lenient: "whenever this creature enters the battlefield"
-        if "when" in oracle and "enter" in oracle:
-            effect = _extract_effect_from_etb(card.oracle_text)
-            triggers.append(Trigger(
-                source_card_id=card.instance_id,
-                controller_id=card.controller_id,
-                trigger_type=TriggerType.ENTERS_BATTLEFIELD,
-                description=effect,
-            ))
+    # Matches: "When [this/CARDNAME] enters the battlefield". We must NOT
+    # treat "Whenever ANOTHER ... enters" as a self-ETB — that's a
+    # cross-permanent trigger handled in check_enters_battlefield_triggers.
+    # We split the oracle into clauses and look for a self-ETB clause.
+    self_etb_clause = None
+    for clause in re.split(r"[.\n]", card.oracle_text):
+        cl = clause.lower().strip()
+        if not cl or "enter" not in cl:
+            continue
+        if not (cl.startswith("when") or cl.startswith("whenever")):
+            continue
+        # Skip cross-permanent triggers ("whenever another ... enters",
+        # "whenever a creature enters", etc.).
+        if "another" in cl:
+            continue
+        if re.search(r"whenever (a|an|each|one or more) [\w\s/+\-]*?enter", cl):
+            continue
+        self_etb_clause = clause
+        break
+    if self_etb_clause is not None:
+        effect = _extract_effect_from_etb(self_etb_clause)
+        triggers.append(Trigger(
+            source_card_id=card.instance_id,
+            controller_id=card.controller_id,
+            trigger_type=TriggerType.ENTERS_BATTLEFIELD,
+            description=effect,
+        ))
     
     # Whenever this creature attacks
     if "attack" in oracle and ("whenever" in oracle):
@@ -86,49 +102,108 @@ def parse_triggers(card: CardInstance) -> list[Trigger]:
     return triggers
 
 
+# Cross-permanent ETB pattern. Captures:
+#   group(1) = "another" (optional) — restricts to other permanents
+#   group(2) = optional modifier string ("red", "artifact", "red artifact",
+#              "non-token", "+1/+1 counter" filler etc.)
+#   group(3) = noun ("creature", "artifact", "permanent", "land", ...)
+# Followed by "enter" and optionally "under your control".
+_ETB_OTHER_RE = re.compile(
+    r"whenever\s+(another\s+|a\s+|an\s+)"
+    r"([\w\-/+\s]*?)"
+    r"\b(creature|permanent|artifact|enchantment|land|planeswalker|token)s?\s+"
+    r"(?:you control\s+)?enters?"
+    r"(?:\s+the battlefield)?"
+    r"(\s+under your control)?",
+    re.IGNORECASE,
+)
+
+_COLOR_WORDS = {"white": "W", "blue": "U", "black": "B", "red": "R", "green": "G"}
+
+
+def _entering_matches_filter(entering: CardInstance, modifier: str, noun: str) -> bool:
+    """Does ``entering`` satisfy the filter '<modifier> <noun>'?"""
+    type_line = entering.type_line.lower()
+    noun_l = noun.lower()
+    if noun_l == "permanent":
+        if "land" not in type_line and "creature" not in type_line and \
+           "artifact" not in type_line and "enchantment" not in type_line and \
+           "planeswalker" not in type_line and "battle" not in type_line:
+            return False
+    elif noun_l == "token":
+        if not entering.card_data.get("is_token"):
+            return False
+    else:
+        if noun_l not in type_line:
+            return False
+    # Color / type modifiers (best-effort).
+    mods = [m for m in re.split(r"[\s\-]+", modifier.lower()) if m]
+    color_id = [c.lower() for c in (entering.card_data.get("color_identity") or [])]
+    for m in mods:
+        if m in ("non", "a", "an", "the", "of", "or", "and", ""):
+            continue
+        if m == "nontoken":
+            if entering.card_data.get("is_token"):
+                return False
+            continue
+        if m in _COLOR_WORDS:
+            if _COLOR_WORDS[m].lower() not in color_id:
+                return False
+            continue
+        # Treat as a subtype/type token (e.g. "artifact", "goblin").
+        if m not in type_line:
+            return False
+    return True
+
+
 def check_enters_battlefield_triggers(state: GameState, entering_card: CardInstance) -> list[Trigger]:
-    """Check which cards on battlefield have ETB triggers.
-    
-    When a creature enters, check all permanents (including the new one)
-    for "enters the battlefield" triggers.
+    """Return triggers that fire because ``entering_card`` just ETBed.
+
+    Handles the entering card's own ETB triggers AND every other
+    permanent's "whenever (another) [<modifier>] <type> enters [under your
+    control]" trigger, with controller / color / type filtering.
     """
-    triggered = []
-    
-    # Check all permanents for ETB abilities
+    triggered: list[Trigger] = []
+
     for card in state.cards:
         if card.zone != Zone.BATTLEFIELD:
             continue
-        
-        # Skip the card that just entered (it has its own checks)
         if card.instance_id == entering_card.instance_id:
             continue
-        
-        # Check if this card has an ETB trigger that cares about others entering
-        # (e.g., "whenever another creature enters")
-        if "another creature enter" in card.oracle_text.lower():
-            effect = _extract_effect_from_etb(card.oracle_text)
+        oracle = card.oracle_text or ""
+        if "enter" not in oracle.lower() or "whenever" not in oracle.lower():
+            continue
+        for clause in re.split(r"[.\n]", oracle):
+            m = _ETB_OTHER_RE.search(clause)
+            if not m:
+                continue
+            quantifier = (m.group(1) or "").strip().lower()
+            modifier = (m.group(2) or "").strip()
+            noun = m.group(3)
+            under_your_control = bool(m.group(4))
+            # "another" requires same controller as the watcher AND not self.
+            if quantifier == "another":
+                if entering_card.controller_id != card.controller_id:
+                    continue
+            elif under_your_control:
+                if entering_card.controller_id != card.controller_id:
+                    continue
+            if not _entering_matches_filter(entering_card, modifier, noun):
+                continue
+            effect = _extract_effect_from_etb(clause)
             triggered.append(Trigger(
                 source_card_id=card.instance_id,
                 controller_id=card.controller_id,
                 trigger_type=TriggerType.ENTERS_BATTLEFIELD,
-                description=effect or "whenever another creature enters",
+                description=effect or clause.strip(),
             ))
-        
-        # Check for "whenever a creature enters" (triggers on all creatures)
-        if "whenever a creature enter" in card.oracle_text.lower():
-            effect = _extract_effect_from_etb(card.oracle_text)
-            triggered.append(Trigger(
-                source_card_id=card.instance_id,
-                controller_id=card.controller_id,
-                trigger_type=TriggerType.ENTERS_BATTLEFIELD,
-                description=effect or "whenever a creature enters",
-            ))
-    
-    # Also check the entering card itself for ETB triggers
+            break  # one match per clause
+
+    # The entering card's own ETB triggers (already filter "another" out).
     own_triggers = parse_triggers(entering_card)
     etb_triggers = [t for t in own_triggers if t.trigger_type == TriggerType.ENTERS_BATTLEFIELD]
     triggered.extend(etb_triggers)
-    
+
     return triggered
 
 

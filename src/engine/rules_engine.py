@@ -526,7 +526,47 @@ class RulesEngine:
                     if not can_pay(player, cost):
                         return state
 
+                    # Additional costs (CR 601.2f). We currently support the
+                    # most common pattern: "As an additional cost to cast
+                    # this spell, sacrifice <a/an/N> <type>." The agent
+                    # consents to the cost by casting the spell at all; we
+                    # pick the cheapest valid permanent automatically.
+                    extra_sacs = _parse_additional_sac_cost(card.oracle_text or "")
+                    sac_targets: list[str] = []
+                    for required_type, count in extra_sacs:
+                        candidates = [
+                            c for c in state.cards
+                            if c.zone == Zone.BATTLEFIELD
+                            and c.controller_id == player.player_id
+                            and c.instance_id != card.instance_id
+                            and required_type.lower() in c.type_line.lower()
+                        ]
+                        # Prefer cheapest, prefer non-creatures (keep board).
+                        candidates.sort(
+                            key=lambda c: (c.is_creature(), int(c.card_data.get("cmc", 0) or 0))
+                        )
+                        if len(candidates) < count:
+                            state.log(
+                                f"    {card.name} cannot be cast: need to sacrifice "
+                                f"{count} {required_type}, only {len(candidates)} available"
+                            )
+                            return state
+                        sac_targets.extend(c.instance_id for c in candidates[:count])
+
                     pay_cost(player, cost)
+
+                    # Pay additional sacrifice cost(s) now.
+                    for sid in sac_targets:
+                        scard = next((c for c in state.cards if c.instance_id == sid), None)
+                        if scard is None:
+                            continue
+                        state.log(
+                            f"    \u2716 {player.name} sacrifices {scard.name} "
+                            f"(additional cost of {card.name})"
+                        )
+                        state = move_card(
+                            state, sid, Zone.BATTLEFIELD, Zone.GRAVEYARD, player.player_id
+                        )
 
                     # Commander tax is applied when casting from command zone
                     if state.format == "commander" and card.zone == Zone.COMMAND_ZONE:
@@ -604,8 +644,34 @@ class RulesEngine:
                         None,
                     )
                     cname = (caster.name or caster.player_id) if caster else action.player_id
-                    target_phrase = f" targeting {targets}" if targets else ""
-                    state.log(f"{cname} casts {card.name}{target_phrase}")
+                    if targets:
+                        readable: list[str] = []
+                        for tid in targets:
+                            tcard = next((c for c in state.cards if c.instance_id == tid), None)
+                            if tcard is not None:
+                                tplayer = next(
+                                    (p for p in state.players
+                                     if p.player_id == tcard.controller_id),
+                                    None,
+                                )
+                                tlabel = (tplayer.name or tplayer.player_id) if tplayer else tcard.controller_id
+                                readable.append(f"{tcard.name} ({tlabel})")
+                                continue
+                            tplayer = next(
+                                (p for p in state.players if p.player_id == tid),
+                                None,
+                            )
+                            if tplayer is not None:
+                                readable.append(
+                                    f"{tplayer.name or tplayer.player_id} "
+                                    f"(life={tplayer.life_total})"
+                                )
+                                continue
+                            readable.append(tid)
+                        target_phrase = " targeting " + ", ".join(readable)
+                    else:
+                        target_phrase = ""
+                    state.log(f"    \u25b6 {cname} casts {card.name}{target_phrase}")
             return state
         
         if action.action_type == ActionType.ACTIVATE_ABILITY:
@@ -808,17 +874,48 @@ class RulesEngine:
                 state.triggered_abilities.append(trigger)
         
         else:
-            # Non-creature spell: apply its effect, then move to graveyard.
-            state = apply_spell_effect(state, stack_item)
-            # If the spell wasn't already moved (e.g., counter spells don't
-            # move themselves), send it to the graveyard now.
-            if card.zone == Zone.STACK:
-                # Flashback: exile instead of graveyard (CR 702.34).
-                dest = Zone.EXILE if card.card_data.get("flashback_exile") else Zone.GRAVEYARD
-                state = move_card(state, source_card_id, Zone.STACK, dest, card.owner_id)
-                if dest == Zone.EXILE:
-                    card.card_data.pop("flashback_exile", None)
-            state.log(f"{card.name} resolves")
+            type_line = (card.card_data.get("type_line") or "").lower()
+            is_permanent = any(t in type_line for t in
+                               ("artifact", "enchantment", "planeswalker", "battle", "land"))
+            if is_permanent:
+                # Permanent spell: enters the battlefield (CR 608.3).
+                state = move_card(
+                    state, source_card_id, Zone.STACK, Zone.BATTLEFIELD,
+                    card.owner_id,
+                )
+                card.summoning_sick = True
+                card.turn_entered = state.turn_number
+                # Auras attach to their target if one was chosen.
+                if "aura" in type_line and stack_item.targets:
+                    card.attached_to = stack_item.targets[0]
+                # ETB triggers fire for any permanent.
+                etb_triggers = check_enters_battlefield_triggers(state, card)
+                for trigger in etb_triggers:
+                    trigger_stack_item = StackItem(
+                        source_card_id=trigger.source_card_id,
+                        controller_id=trigger.controller_id,
+                        is_spell=False,
+                        card_data={
+                            "name": f"[Trigger] {trigger.description}",
+                            "type_line": "Ability",
+                        },
+                    )
+                    state.stack.append(trigger_stack_item)
+                    state.log(f"[TRIGGER (ETB)] {trigger.description} added to stack")
+                    state.triggered_abilities.append(trigger)
+                state.log(f"    ◀ {card.name} resolves")
+            else:
+                # Instant / Sorcery: apply effect, then to graveyard.
+                state = apply_spell_effect(state, stack_item)
+                # If the spell wasn't already moved (e.g., counter spells
+                # don't move themselves), send it to the graveyard now.
+                if card.zone == Zone.STACK:
+                    # Flashback: exile instead of graveyard (CR 702.34).
+                    dest = Zone.EXILE if card.card_data.get("flashback_exile") else Zone.GRAVEYARD
+                    state = move_card(state, source_card_id, Zone.STACK, dest, card.owner_id)
+                    if dest == Zone.EXILE:
+                        card.card_data.pop("flashback_exile", None)
+                state.log(f"    ◀ {card.name} resolves")
 
         return state
 

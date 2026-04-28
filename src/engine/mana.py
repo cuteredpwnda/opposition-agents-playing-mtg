@@ -175,7 +175,7 @@ def tap_land_for_mana(
     if color:
         add_mana(player, color)
         pname = player.name or player.player_id
-        state.log(f"{pname} taps {card.name} for {{{color}}}")
+        state.log(f"    \u25cb {pname} taps {card.name} for {{{color}}}")
     return color
 
 

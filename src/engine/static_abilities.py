@@ -55,7 +55,29 @@ def parse_static_abilities(card: CardInstance) -> list[StaticAbility]:
 def _parse_static_ability_line(card: CardInstance, line: str) -> StaticAbility | None:
     """Parse a single line of oracle text into a static ability."""
     lower_line = line.lower()
-    
+
+    # Pattern: "<Subtype> creatures you control get +X/+Y" e.g.
+    # "Goblin creatures you control get +1/+1 and have haste."
+    sub_match = re.search(
+        r"\b([a-z]+)\s+creatures?\s+you\s+control\s+(?:get|have)\s+([+\-]?\d+)/([+\-]?\d+)",
+        lower_line,
+    )
+    if sub_match and sub_match.group(1) not in ("non", "all", "other", "the", "your"):
+        subtype = sub_match.group(1)
+        # Filter out reserved type-line words that are NOT subtypes ("token"
+        # is treated as a generic type, etc.). Whitelist anything else.
+        if subtype not in ("a", "an"):
+            return StaticAbility(
+                source_card_id=card.instance_id,
+                controller_id=card.controller_id,
+                scope="subtype_creatures_you_control",
+                effect_type="power_toughness",
+                power_mod=int(sub_match.group(2)),
+                toughness_mod=int(sub_match.group(3)),
+                subtype_filter=subtype,
+                description=line,
+            )
+
     # Pattern: "Creatures you control get +X/+Y" or "All creatures get +X/+Y"
     match = re.search(
         r"(?:(?:(\w+\s+(?:you\s+)?control)|(?:all\s+)?(\w+))\s+)?(?:get|have)\s+([+\-]?\d+)/([+\-]?\d+)",
@@ -202,6 +224,17 @@ def _ability_affects_card(state: GameState, ability: StaticAbility, source_card:
     if ability.scope == "creatures_you_control":
         return (target_card.controller_id == source_card.controller_id and 
                 target_card.is_creature())
+
+    # Subtype-restricted creatures you control (e.g. Goblin, Elf, Soldier).
+    if ability.scope == "subtype_creatures_you_control":
+        if target_card.controller_id != source_card.controller_id:
+            return False
+        if not target_card.is_creature():
+            return False
+        sub = (ability.subtype_filter or "").lower()
+        if not sub:
+            return False
+        return sub in target_card.type_line.lower()
     
     # Artifacts you control
     if ability.scope == "artifacts_you_control":
@@ -243,7 +276,16 @@ def get_effective_power_toughness(card: CardInstance, state: GameState) -> tuple
         if ability.effect_type == "power_toughness":
             power_mod += ability.power_mod
             toughness_mod += ability.toughness_mod
-    
+
+    # End-of-turn pump bonuses (set by spell_effects.pump / anthem_pump).
+    power_mod += int(getattr(card, "eot_power_bonus", 0) or 0)
+    toughness_mod += int(getattr(card, "eot_toughness_bonus", 0) or 0)
+    # +1/+1 counters live in card.counters.
+    plus = int(card.counters.get("+1/+1", 0) or 0)
+    minus = int(card.counters.get("-1/-1", 0) or 0)
+    power_mod += plus - minus
+    toughness_mod += plus - minus
+
     return (base_power + power_mod, base_toughness + toughness_mod)
 
 

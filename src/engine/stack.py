@@ -20,9 +20,9 @@ def push_to_stack(state: GameState, stack_item: StackItem) -> GameState:
     )
     cname = (controller.name or controller.player_id) if controller else stack_item.controller_id
     if cname:
-        state.log(f"{card_name} goes on the stack ({cname})")
+        state.log(f"    \u2192 {card_name} on the stack [{cname}]")
     else:
-        state.log(f"{card_name} goes on the stack")
+        state.log(f"    \u2192 {card_name} on the stack")
     return state
 
 

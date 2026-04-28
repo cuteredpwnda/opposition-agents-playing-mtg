@@ -40,7 +40,10 @@ class RandomAgent(MTGAgent):
             elif action.action_type == ActionType.PLAY_LAND:
                 weight = 5   # Prefer playing lands
             elif action.action_type == ActionType.ACTIVATE_ABILITY:
-                weight = 4   # Tap lands for mana (increased priority)
+                # Non-mana activated abilities only (mana abilities are handled
+                # implicitly during cost payment).  Don't outrank PASS — agents
+                # shouldn't burn cards' once-per-turn taps with no plan.
+                weight = 1
             elif action.action_type == ActionType.PASS_PRIORITY:
                 weight = 1   # Pass is last resort
             elif action.action_type == ActionType.CONCEDE:

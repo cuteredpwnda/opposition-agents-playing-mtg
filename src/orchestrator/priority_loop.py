@@ -169,18 +169,17 @@ async def run_priority_loop(
                 None,
             )
             label = (pp.name or pp.player_id) if pp else priority_player_id
-            game_state.log(f"{label} passes priority")
+            game_state.log(f"      · {label} passes")
             
             # Check if all players passed
             if all_players_passed(game_state, passed_players):
                 # All players passed in sequence
                 if stack_is_empty(game_state):
                     # Stack is empty, priority loop ends
-                    game_state.log("All players passed, stack empty → end of priority loop")
                     return game_state
                 else:
                     # Stack has items, resolve top
-                    game_state.log("All players passed, stack non-empty → resolving top of stack")
+                    game_state.log("      · all pass → resolving stack")
                     
                     # Resolve top of stack using the new resolve_stack_item method
                     game_state = rules_engine.resolve_stack_item(game_state)

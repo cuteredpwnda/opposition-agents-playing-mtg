@@ -80,21 +80,53 @@ def extract_cost(cost_text: str) -> str:
 
 def is_mana_ability(effect: str) -> bool:
     """Check if ability is a mana ability (can be used anytime).
-    
+
     Mana abilities are simple:
-    - Add mana
+    - Add mana (CR 605.1)
     - Don't have targets
     - Don't cause other abilities to trigger
+
+    A mana ability can express its production either with explicit mana
+    symbols (``Add {R}{R}``) *or* with English phrasing that has no symbol
+    at all (``Add one mana of any color``, ``Add two mana in any
+    combination of colors``).  Both forms must be recognized; otherwise
+    cards like Command Tower or Fellwar Stone are treated as ordinary
+    activated abilities and naive agents waste priority on them.
     """
-    effect_lower = effect.lower()
-    
-    # Simple heuristic: if it just adds mana, it's a mana ability
-    if "add" in effect_lower and any(mana in effect_lower for mana in ["{w}", "{u}", "{b}", "{r}", "{g}", "{c}"]):
-        # Check it doesn't have other effects
-        if "," not in effect and "and" not in effect:
-            return True
-    
-    return False
+    effect_lower = effect.lower().strip()
+
+    if "add" not in effect_lower:
+        return False
+
+    # Form 1: "add {R}", "add {2}{U}", "add {C}{C}", ...
+    has_mana_symbol = any(
+        sym in effect_lower for sym in ("{w}", "{u}", "{b}", "{r}", "{g}", "{c}")
+    )
+
+    # Form 2: "add one mana of any color", "add two mana ...", "add X mana ...".
+    # Accept any "add <quantity> mana" phrasing.
+    word_quantities = (
+        "one", "two", "three", "four", "five", "six", "seven", "eight",
+        "nine", "ten", "x",
+    )
+    has_word_mana = any(
+        f"add {q} mana" in effect_lower for q in word_quantities
+    ) or "add that much mana" in effect_lower or "add an amount of mana" in effect_lower
+
+    if not (has_mana_symbol or has_word_mana):
+        return False
+
+    # Reject anything that bundles a non-mana rider (drawing, damage, life,
+    # creating tokens, sacrificing, etc.).  These are *not* mana abilities
+    # under CR 605.1 even if they happen to add mana.
+    disqualifiers = (
+        "draw", "damage", "life", "discard", "sacrifice", "create",
+        "destroy", "exile", "counter", "scry", "search",
+    )
+    if any(d in effect_lower for d in disqualifiers):
+        return False
+
+    return True
 
 
 def get_legal_activated_abilities(state: GameState, card: CardInstance, player_id: str) -> list[Ability]:

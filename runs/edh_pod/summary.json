@@ -17,40 +17,40 @@
       },
       "winner": "krenko_mob_boss_core",
       "winner_seat": "player1",
-      "turns": 7,
-      "elapsed_sec": 0.15,
+      "turns": 26,
+      "elapsed_sec": 0.43,
       "agent_actions": {
         "player1": {
-          "PASS_PRIORITY": 32,
-          "CAST_SPELL": 1,
-          "PLAY_LAND": 2,
-          "DECLARE_ATTACKERS": 0,
+          "PASS_PRIORITY": 133,
+          "CAST_SPELL": 4,
+          "PLAY_LAND": 7,
+          "DECLARE_ATTACKERS": 9,
           "ACTIVATE_ABILITY": 0,
-          "OTHER": 0
+          "OTHER": 2
         },
         "player2": {
-          "PASS_PRIORITY": 33,
-          "CAST_SPELL": 1,
+          "PASS_PRIORITY": 144,
+          "CAST_SPELL": 0,
           "PLAY_LAND": 1,
           "DECLARE_ATTACKERS": 0,
-          "ACTIVATE_ABILITY": 0,
+          "ACTIVATE_ABILITY": 1,
           "OTHER": 0
         },
         "player3": {
-          "PASS_PRIORITY": 31,
-          "CAST_SPELL": 2,
-          "PLAY_LAND": 1,
-          "DECLARE_ATTACKERS": 0,
-          "ACTIVATE_ABILITY": 0,
-          "OTHER": 0
+          "PASS_PRIORITY": 128,
+          "CAST_SPELL": 4,
+          "PLAY_LAND": 5,
+          "DECLARE_ATTACKERS": 1,
+          "ACTIVATE_ABILITY": 2,
+          "OTHER": 13
         },
         "player4": {
-          "PASS_PRIORITY": 32,
+          "PASS_PRIORITY": 130,
           "CAST_SPELL": 1,
-          "PLAY_LAND": 1,
-          "DECLARE_ATTACKERS": 0,
-          "ACTIVATE_ABILITY": 0,
-          "OTHER": 0
+          "PLAY_LAND": 6,
+          "DECLARE_ATTACKERS": 1,
+          "ACTIVATE_ABILITY": 1,
+          "OTHER": 13
         }
       },
       "agent_llm_calls": {

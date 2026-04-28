@@ -45,6 +45,10 @@ def detect_effect_kind(oracle_text: str) -> str:
     text = (oracle_text or "").lower()
     if "counter target spell" in text or "counter target" in text:
         return "counter"
+    if "proliferate" in text:
+        return "proliferate"
+    if re.search(r"put\s+(?:a|one|two|three|\d+)\s+\+1/\+1\s+counter", text):
+        return "plus_counter"
     if "exile target" in text:
         return "exile"
     if "destroy target" in text:
@@ -54,10 +58,23 @@ def detect_effect_kind(oracle_text: str) -> str:
     if (re.search(r"return target .* to (its|their) owner['\u2019]s hand", text)
             or ("return target" in text and "hand" in text)):
         return "bounce"
+    if "untap target" in text or re.search(r"untap (all|each)", text):
+        return "untap"
     if "tap target" in text:
         return "tap"
+    if "each opponent loses" in text and "life" in text:
+        return "drain_each"
+    if "each opponent" in text and "damage" in text:
+        return "damage_each"
     if "deal" in text and "damage" in text:
         return "damage"
+    if "sacrifice" in text and "target" not in text:
+        # Self-sac as cost is handled at cast time; here "each player
+        # sacrifices" is the on-resolve case.
+        if "each" in text or "all" in text:
+            return "edict"
+    if "target" in text and "sacrifice" in text:
+        return "edict"
     if "mill" in text or ("put" in text and "top" in text and "graveyard" in text):
         return "mill"
     if "create" in text and "token" in text:
@@ -70,10 +87,16 @@ def detect_effect_kind(oracle_text: str) -> str:
         return "draw"
     if "search your library" in text and "land" in text:
         return "ramp"
+    if "search your library" in text:
+        return "tutor"
     if "discard" in text:
         return "discard"
     if "gain" in text and "life" in text:
         return "lifegain"
+    if re.search(r"creatures? you control get \+\d+/\+\d+", text):
+        return "anthem_pump"
+    if re.search(r"target creature gets \+\d+/\+\d+", text):
+        return "pump"
     return "noop"
 
 # ---------------------------------------------------------------------------
@@ -426,6 +449,7 @@ def apply_spell_effect(
 
     if kind == "ramp":
         # Search library for up to N basic lands, put onto battlefield tapped.
+        from .zones import shuffle_library
         count = 2 if "two" in oracle.lower() else _parse_amount(oracle, default=1)
         library = [
             c for c in state.cards
@@ -434,7 +458,157 @@ def apply_spell_effect(
         for c in library[:count]:
             move_card(state, c.instance_id, Zone.LIBRARY, Zone.BATTLEFIELD, controller_id)
             c.tapped = True
+        # CR 701.20: searching a library shuffles it.
+        shuffle_library(state, controller_id)
         state.log(f"{name}: {controller_id} ramps {min(count, len(library))} land(s)")
+        return state
+
+    if kind == "tutor":
+        # Generic tutor: pull the highest-CMC non-land card to hand.
+        from .zones import shuffle_library
+        library = [
+            c for c in state.cards
+            if c.zone == Zone.LIBRARY and c.owner_id == controller_id and not c.is_land()
+        ]
+        if library:
+            library.sort(key=lambda c: c.cmc or 0, reverse=True)
+            picked = library[0]
+            move_card(state, picked.instance_id, Zone.LIBRARY, Zone.HAND, controller_id)
+            state.log(f"{name}: tutors up {picked.name}")
+        shuffle_library(state, controller_id)
+        return state
+
+    if kind == "plus_counter":
+        amt_match = re.search(
+            r"put\s+(a|one|two|three|four|\d+)\s+\+1/\+1\s+counter", oracle.lower()
+        )
+        word = {"a": 1, "one": 1, "two": 2, "three": 3, "four": 4}
+        amount = 1
+        if amt_match:
+            raw = amt_match.group(1)
+            amount = int(raw) if raw.isdigit() else word.get(raw, 1)
+        # Default target: our biggest creature; or the explicit target.
+        creatures: list[CardInstance] = []
+        if targets:
+            for tid in targets:
+                tc = _find_card(state, tid)
+                if tc and tc.zone == Zone.BATTLEFIELD and tc.is_creature():
+                    creatures.append(tc)
+        else:
+            mine = [
+                c for c in state.cards
+                if c.zone == Zone.BATTLEFIELD
+                and c.controller_id == controller_id and c.is_creature()
+            ]
+            if mine:
+                creatures.append(max(mine, key=_power))
+        for tc in creatures:
+            tc.counters["+1/+1"] = tc.counters.get("+1/+1", 0) + amount
+            state.log(f"{name}: puts {amount} +1/+1 counter(s) on {tc.name}")
+        return state
+
+    if kind == "proliferate":
+        # CR 701.27: choose any number of permanents/players with counters,
+        # add one of each kind they already have. Greedy: do all of ours.
+        bumped = 0
+        for c in state.cards:
+            if c.zone != Zone.BATTLEFIELD or c.controller_id != controller_id:
+                continue
+            for kctype in list(c.counters.keys()):
+                if c.counters[kctype] > 0:
+                    c.counters[kctype] += 1
+                    bumped += 1
+        state.log(f"{name}: proliferates ({bumped} counter(s) added)")
+        return state
+
+    if kind == "untap":
+        if targets:
+            for tid in targets:
+                tc = _find_card(state, tid)
+                if tc and tc.zone == Zone.BATTLEFIELD:
+                    tc.tapped = False
+                    state.log(f"{name} untaps {tc.name}")
+        else:
+            # "Untap all permanents you control"
+            n = 0
+            for c in state.cards:
+                if (c.zone == Zone.BATTLEFIELD
+                        and c.controller_id == controller_id and c.tapped):
+                    c.tapped = False
+                    n += 1
+            state.log(f"{name} untaps {n} permanent(s)")
+        return state
+
+    if kind == "edict":
+        # "Each player sacrifices a creature" — keep it simple: each player
+        # sacrifices their lowest-power creature.
+        for p in state.players:
+            mine = [
+                c for c in state.cards
+                if c.zone == Zone.BATTLEFIELD
+                and c.controller_id == p.player_id and c.is_creature()
+            ]
+            if not mine:
+                continue
+            victim = min(mine, key=_power)
+            move_card(
+                state, victim.instance_id, Zone.BATTLEFIELD,
+                Zone.GRAVEYARD, victim.owner_id,
+            )
+            state.log(f"{name}: {p.name} sacrifices {victim.name}")
+        return state
+
+    if kind == "damage_each":
+        amount = _parse_amount(oracle, default=1)
+        for p in state.players:
+            if p.player_id == controller_id:
+                continue
+            p.life_total -= amount
+            state.log(f"{name} deals {amount} damage to {p.name}")
+        return state
+
+    if kind == "drain_each":
+        amount = _parse_amount(oracle, default=1)
+        gained = 0
+        for p in state.players:
+            if p.player_id == controller_id:
+                continue
+            p.life_total -= amount
+            gained += amount
+            state.log(f"{name}: {p.name} loses {amount} life")
+        # "and you gain that much life" — common rider; only apply if present.
+        if "you gain" in oracle.lower():
+            you = _find_player(state, controller_id)
+            if you:
+                you.life_total += gained
+                state.log(f"{name}: {you.name} gains {gained} life")
+        return state
+
+    if kind == "anthem_pump":
+        m = re.search(r"\+(\d+)/\+(\d+)", oracle)
+        if m:
+            dp, dt = int(m.group(1)), int(m.group(2))
+            n = 0
+            for c in state.cards:
+                if (c.zone == Zone.BATTLEFIELD
+                        and c.controller_id == controller_id and c.is_creature()):
+                    # Until end of turn: stash on the card; cleanup clears later.
+                    c.eot_power_bonus = c.__dict__.get("eot_power_bonus", 0) + dp
+                    c.eot_toughness_bonus = c.__dict__.get("eot_toughness_bonus", 0) + dt
+                    n += 1
+            state.log(f"{name}: pumps {n} creature(s) +{dp}/+{dt} EOT")
+        return state
+
+    if kind == "pump":
+        m = re.search(r"\+(\d+)/\+(\d+)", oracle)
+        if m and targets:
+            dp, dt = int(m.group(1)), int(m.group(2))
+            for tid in targets:
+                tc = _find_card(state, tid)
+                if tc and tc.zone == Zone.BATTLEFIELD:
+                    tc.eot_power_bonus = tc.__dict__.get("eot_power_bonus", 0) + dp
+                    tc.eot_toughness_bonus = tc.__dict__.get("eot_toughness_bonus", 0) + dt
+                    state.log(f"{name}: {tc.name} gets +{dp}/+{dt} EOT")
         return state
 
     if kind == "lifegain":
@@ -461,5 +635,5 @@ def apply_spell_effect(
 
     # noop / unrecognised — just log
     if oracle.strip():
-        state.log(f"{name} resolves (no effect implemented)")
+        state.log(f"    \u25c0 {name} resolves (no effect implemented)")
     return state

@@ -261,14 +261,19 @@ class GameRunner:
                 if not self.card_db.card_exists(card_name):
                     self.card_db.add_card(card_name, card_dict)
 
-        # Create players list
+        # Create players list. Use the agent's display name (if any) as the
+        # PlayerState name so the human-readable game log shows deck/seat
+        # labels like "Krenko · player1 casts Goblin Lackey" rather than
+        # the raw player_id everywhere.
         player_ids = list(agents.keys())
         players: list[PlayerState] = []
         for pid in player_ids:
+            agent_name = getattr(agents.get(pid), "name", "") or ""
+            display = agent_name if agent_name and agent_name != pid else pid
             players.append(
                 PlayerState(
                     player_id=pid,
-                    name=pid,
+                    name=display,
                     life_total=self.config.starting_life,
                 )
             )
@@ -357,10 +362,79 @@ class GameRunner:
         # Banner at the top of every turn so the log reads like a real game.
         active = game_state.active_player
         active_label = active.name or active.player_id
+        bar = "═" * 70
+        game_state.log(f"\n╔{bar}╗")
         game_state.log(
-            f"\n=== Turn {game_state.turn_number} \u2014 {active_label} "
-            f"(life={active.life_total}) ==="
+            f"║  Turn {game_state.turn_number:>3}  —  {active_label}  "
+            f"(life {active.life_total})"
         )
+        game_state.log(f"╚{bar}╝")
+        # Board snapshot for every player, so it's clear what's in play.
+        for p in game_state.players:
+            hand_n = sum(1 for c in game_state.cards
+                         if c.zone == Zone.HAND and c.controller_id == p.player_id)
+            lib_n = sum(1 for c in game_state.cards
+                        if c.zone == Zone.LIBRARY and c.controller_id == p.player_id)
+            gy_n = sum(1 for c in game_state.cards
+                       if c.zone == Zone.GRAVEYARD and c.controller_id == p.player_id)
+            bf = [c for c in game_state.cards
+                  if c.zone == Zone.BATTLEFIELD and c.controller_id == p.player_id]
+            lands = [c for c in bf if "Land" in (c.card_data.get("type_line") or "")]
+            others = [c for c in bf if c not in lands]
+
+            def _fmt_perm(c) -> str:
+                tag = "T" if c.tapped else "U"
+                pt = ""
+                if c.is_creature():
+                    try:
+                        from src.engine.static_abilities import get_effective_power_toughness
+                        eff_p, eff_t = get_effective_power_toughness(c, game_state)
+                        base_p = c.card_data.get("power", "?")
+                        base_t = c.card_data.get("toughness", "?")
+                        try:
+                            base_p_int = int(base_p)
+                            base_t_int = int(base_t)
+                            if (eff_p, eff_t) != (base_p_int, base_t_int):
+                                pt = f" {eff_p}/{eff_t} (base {base_p}/{base_t})"
+                            else:
+                                pt = f" {eff_p}/{eff_t}"
+                        except (TypeError, ValueError):
+                            pt = f" {base_p}/{base_t}"
+                    except Exception:
+                        pwr = c.card_data.get("power", "?")
+                        tgh = c.card_data.get("toughness", "?")
+                        pt = f" {pwr}/{tgh}"
+                return f"{c.name}{pt}[{tag}]"
+
+            land_part = (f"{len(lands)} lands "
+                         f"({sum(1 for l in lands if not l.tapped)} untapped)")
+            you_label = p.name or p.player_id
+            game_state.log(
+                f"  • {you_label}: life {p.life_total}, "
+                f"hand {hand_n}, lib {lib_n}, gy {gy_n} | {land_part}"
+            )
+            if others:
+                # Group identical permanents for compactness.
+                from collections import Counter as _Counter
+                grouped = _Counter(_fmt_perm(c) for c in others)
+                line = ", ".join(
+                    (n if k == 1 else f"{k}× {n}") for n, k in grouped.items()
+                )
+                game_state.log(f"      board: {line}")
+            # Hand contents — useful for debugging logs by hand. Sorted for
+            # determinism; truncated to 12 entries to keep the snapshot tidy.
+            hand_cards = [c for c in game_state.cards
+                          if c.zone == Zone.HAND and c.controller_id == p.player_id]
+            if hand_cards:
+                from collections import Counter as _Counter
+                names = _Counter(c.name for c in hand_cards)
+                items = sorted(names.items())
+                hand_line = ", ".join(
+                    (n if k == 1 else f"{k}× {n}") for n, k in items[:12]
+                )
+                if len(items) > 12:
+                    hand_line += f", … (+{len(items) - 12} more)"
+                game_state.log(f"      hand: {hand_line}")
 
         phase_idx = 0
         while phase_idx < len(PHASE_ORDER):
@@ -369,7 +443,15 @@ class GameRunner:
             
             phase = PHASE_ORDER[phase_idx]
             game_state.phase = phase
-            game_state.log(f"--- {phase.value.upper()} ---")
+            # Skip the visual noise of empty steps; only log phases that
+            # players regularly interact with.
+            VERBOSE_PHASES = {
+                Phase.MAIN_1, Phase.MAIN_2, Phase.COMBAT_BEGIN,
+                Phase.COMBAT_ATTACKERS, Phase.COMBAT_BLOCKERS,
+                Phase.COMBAT_DAMAGE, Phase.DRAW, Phase.END_STEP,
+            }
+            if phase in VERBOSE_PHASES:
+                game_state.log(f"  ┌─ {phase.value.upper()} ─")
 
             # In untap step, creatures remove summoning sickness (gained pre-eot)
             if phase == Phase.UNTAP:
@@ -444,6 +526,22 @@ class GameRunner:
                 # Empty all players' mana pools and discard down to max hand size
                 from src.engine.mana import empty_mana_pool
                 from src.engine.zones import move_card
+                # End-of-turn cleanup: damage wears off, "until end of turn"
+                # P/T bonuses expire (CR 514.2). Vehicles revert via
+                # equip.clear_crew_eot.
+                for c in game_state.cards:
+                    if c.zone != Zone.BATTLEFIELD:
+                        continue
+                    c.damage_marked = 0
+                    if hasattr(c, "eot_power_bonus"):
+                        c.eot_power_bonus = 0
+                    if hasattr(c, "eot_toughness_bonus"):
+                        c.eot_toughness_bonus = 0
+                try:
+                    from src.engine.equip import clear_crew_eot
+                    clear_crew_eot(game_state)
+                except Exception:
+                    pass
                 for player in game_state.players:
                     empty_mana_pool(player)
                     hand_cards = [
@@ -490,8 +588,14 @@ class GameRunner:
             # Move to next phase
             phase_idx += 1
         
-        # After all phases complete, move to next turn
-        game_state.turn_number += 1
-        game_state.active_player_index = (game_state.active_player_index + 1) % len(game_state.players)
+        # After all phases complete, advance the active player. The turn
+        # number only increases when we wrap back to the first seat — i.e.
+        # one full trip around the table is one "turn" in multiplayer
+        # parlance. (In a 2-player game this still increments every player's
+        # play, matching standard usage.)
+        next_idx = (game_state.active_player_index + 1) % len(game_state.players)
+        game_state.active_player_index = next_idx
+        if next_idx == 0:
+            game_state.turn_number += 1
 
         return game_state

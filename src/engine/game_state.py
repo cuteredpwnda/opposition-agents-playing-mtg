@@ -130,6 +130,7 @@ class StaticAbility:
     power_mod: int = 0  # Power modifier (e.g., +1)
     toughness_mod: int = 0  # Toughness modifier (e.g., +1)
     keywords: list[str] = field(default_factory=list)  # Keywords to add (flying, deathtouched, etc.)
+    subtype_filter: str = ""  # Optional subtype restriction (e.g., "goblin", "elf")
     description: str = ""  # Full ability text for logging
 
 
