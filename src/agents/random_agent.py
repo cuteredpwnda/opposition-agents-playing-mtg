@@ -75,6 +75,19 @@ class RandomAgent(MTGAgent):
             chosen.metadata["decision_mode"] = "random_weighted"
             chosen.metadata["target_score"] = self._score_attack_target(game_state, chosen.targets[0])
 
+        # Reasoning trace.
+        from src.agents.reasoning import ReasoningTrace
+        try:
+            chosen_idx = legal_actions.index(chosen)
+        except ValueError:
+            chosen_idx = -1
+        self.set_reasoning(ReasoningTrace(
+            agent_kind="random",
+            rationale=f"weighted random over {len(legal_actions)} legal actions; picked {chosen.action_type.value}",
+            legal_action_count=len(legal_actions),
+            chosen_index=chosen_idx,
+            beliefs={"weighted_pool_size": len(weighted)},
+        ))
         return chosen
     
     def get_heuristic_score(self, game_state: GameState) -> float:

@@ -56,7 +56,9 @@ class HeuristicAgent(MTGAgent):
         # actions for cards whose oracle text contains "counter target"
         # unless the topmost stack item is a spell controlled by an
         # opponent.
+        original_count = len(legal_actions)
         legal_actions = self._filter_counter_actions(game_state, legal_actions)
+        filtered_counters = original_count - len(legal_actions)
 
         ranked = sorted(
             legal_actions,
@@ -75,9 +77,19 @@ class HeuristicAgent(MTGAgent):
         )
         candidates = list(candidates)
 
+        chosen: Action
+        chose_via = "top_priority"
         if self._prefer_aggressive:
             for a in candidates:
                 if a.action_type == ActionType.DECLARE_ATTACKERS and a.targets:
+                    self._record_reasoning(
+                        legal_actions, a,
+                        priority=top_priority,
+                        candidate_count=len(candidates),
+                        filtered_counters=filtered_counters,
+                        rationale=f"aggressive override → DECLARE_ATTACKERS with {len(a.targets)} target(s)",
+                        chose_via="aggressive_override",
+                    )
                     return a
 
         # When blocking is on the table, block the biggest unblocked attacker
@@ -85,9 +97,56 @@ class HeuristicAgent(MTGAgent):
         if candidates and candidates[0].action_type == ActionType.DECLARE_BLOCKERS:
             blocker = self._pick_block(game_state, candidates)
             if blocker is not None:
+                self._record_reasoning(
+                    legal_actions, blocker,
+                    priority=top_priority,
+                    candidate_count=len(candidates),
+                    filtered_counters=filtered_counters,
+                    rationale="chump-block: smallest blocker → largest attacker",
+                    chose_via="chump_block",
+                )
                 return blocker
 
-        return candidates[0]
+        chosen = candidates[0]
+        self._record_reasoning(
+            legal_actions, chosen,
+            priority=top_priority,
+            candidate_count=len(candidates),
+            filtered_counters=filtered_counters,
+            rationale=f"highest-priority action class ({chosen.action_type.value}, prio={top_priority})",
+            chose_via=chose_via,
+        )
+        return chosen
+
+    def _record_reasoning(
+        self,
+        legal_actions: list[Action],
+        chosen: Action,
+        *,
+        priority: int,
+        candidate_count: int,
+        filtered_counters: int,
+        rationale: str,
+        chose_via: str,
+    ) -> None:
+        from src.agents.reasoning import ReasoningTrace
+        try:
+            idx = legal_actions.index(chosen)
+        except ValueError:
+            idx = -1
+        self.set_reasoning(ReasoningTrace(
+            agent_kind="heuristic",
+            rationale=rationale,
+            legal_action_count=len(legal_actions),
+            chosen_index=idx,
+            beliefs={
+                "top_priority": priority,
+                "tied_candidate_count": candidate_count,
+                "filtered_counterspells": filtered_counters,
+                "chose_via": chose_via,
+                "prefer_aggressive": self._prefer_aggressive,
+            },
+        ))
 
     def _pick_block(
         self, game_state: GameState, candidates: list[Action]

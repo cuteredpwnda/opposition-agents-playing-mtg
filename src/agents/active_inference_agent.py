@@ -109,6 +109,49 @@ class ActiveInferenceAgent(MTGAgent):
             ranked[0][1] if ranked else None,
         )
 
+        # Reasoning trace ----------------------------------------------------
+        try:
+            from src.agents.reasoning import ReasoningTrace
+
+            efe_scores = [float(g) for _, g in ranked][:32] if ranked else []
+            top_payload = []
+            for a, g in (ranked[:5] if ranked else []):
+                top_payload.append({
+                    "action": f"{a.action_type.value}({a.card_instance_id or ''})",
+                    "score": float(g),  # expected free energy (lower = better)
+                    "reason": "lowest expected free energy" if g == (ranked[0][1] if ranked else None) else "candidate",
+                })
+            try:
+                chosen_idx = legal_actions.index(chosen_action)
+            except ValueError:
+                chosen_idx = -1
+            beliefs = {
+                "best_efe": float(ranked[0][1]) if ranked else None,
+                "num_opponents_modelled": len(self.opponent_ids),
+                "fallback_used": self.ai_module is None,
+            }
+            if self.opponent_model is not None:
+                try:
+                    threat = await self.opponent_model.get_threat_assessment()
+                    beliefs["opp_p_counterspell"] = float(threat.probability_has_counterspell)
+                except Exception:
+                    pass
+            self.set_reasoning(ReasoningTrace(
+                agent_kind="active_inference",
+                rationale=(
+                    f"min-EFE over {len(legal_actions)} actions: "
+                    f"chose {chosen_action.action_type.value} (G={ranked[0][1]:.3f})"
+                    if ranked else "fallback heuristic (no AI module)"
+                ),
+                legal_action_count=len(legal_actions),
+                chosen_index=chosen_idx,
+                scores=efe_scores,
+                top_candidates=top_payload,
+                beliefs=beliefs,
+            ))
+        except Exception as e:  # never let reasoning logging break gameplay
+            logger.debug("Failed to record ActiveInferenceAgent reasoning: %s", e)
+
         return chosen_action
 
     def _score_attack_target(self, game_state: GameState, target_id: str) -> float:

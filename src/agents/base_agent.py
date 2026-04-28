@@ -33,6 +33,19 @@ class MTGAgent(abc.ABC):
         self.player_id = player_id
         self.name = name or player_id
         self.memory = AgentMemory()
+        # Most-recent reasoning trace — populated by ``set_reasoning``
+        # at the end of ``decide_action``.  The priority loop reads this
+        # after the agent returns and forwards it to the JSONL trace.
+        self.last_reasoning: dict | None = None
+
+    def set_reasoning(self, trace) -> None:
+        """Record the rationale for the most recent action.
+
+        ``trace`` may be a :class:`~src.agents.reasoning.ReasoningTrace`
+        instance, a plain dict, or ``None`` (clears).
+        """
+        from src.agents.reasoning import attach_reasoning
+        attach_reasoning(self, trace)
 
     @abc.abstractmethod
     async def decide_action(

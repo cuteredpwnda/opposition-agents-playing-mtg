@@ -59,19 +59,63 @@ class KGHeuristicAgent(HeuristicAgent):
         # rerank them by combo / synergy score before falling through.
         casts = [a for a in legal_actions if a.action_type == ActionType.CAST_SPELL]
         if len(casts) <= 1 or self._kg_disabled or self._kg is None:
-            return await super().decide_action(game_state, legal_actions)
+            action = await super().decide_action(game_state, legal_actions)
+            # Tag the parent's reasoning trace as kg_heuristic-with-fallback.
+            if isinstance(self.last_reasoning, dict):
+                self.last_reasoning["agent_kind"] = "kg_heuristic"
+                self.last_reasoning.setdefault("beliefs", {})["kg_active"] = False
+                if self._kg_disabled:
+                    self.last_reasoning["beliefs"]["kg_disabled_reason"] = "previous_query_failed"
+                elif self._kg is None:
+                    self.last_reasoning["beliefs"]["kg_disabled_reason"] = "no_kg_handle"
+                elif len(casts) <= 1:
+                    self.last_reasoning["beliefs"]["kg_disabled_reason"] = "fewer_than_2_casts"
+            return action
 
         scored = await self._score_casts(game_state, casts)
         if not scored:
-            return await super().decide_action(game_state, legal_actions)
+            action = await super().decide_action(game_state, legal_actions)
+            if isinstance(self.last_reasoning, dict):
+                self.last_reasoning["agent_kind"] = "kg_heuristic"
+                self.last_reasoning.setdefault("beliefs", {})["kg_active"] = False
+                self.last_reasoning["beliefs"]["kg_disabled_reason"] = "scoring_returned_empty"
+            return action
 
         # Replace the cast subset with a single "best" cast in the legal
         # list and let the parent's priority pick handle the rest (so
         # PLAY_LAND still beats CAST_SPELL, etc.).
-        best_cast = max(scored, key=lambda kv: kv[1])[0]
+        best_cast, best_score = max(scored, key=lambda kv: kv[1])
         pruned = [a for a in legal_actions if a.action_type != ActionType.CAST_SPELL]
         pruned.append(best_cast)
-        return await super().decide_action(game_state, pruned)
+        action = await super().decide_action(game_state, pruned)
+
+        # Augment the parent's reasoning trace with KG details.
+        if isinstance(self.last_reasoning, dict):
+            top = sorted(scored, key=lambda kv: kv[1], reverse=True)[:5]
+            top_payload = []
+            for act, sc in top:
+                name = self._card_name_for_action(game_state, act) or act.card_instance_id
+                top_payload.append({
+                    "action": f"CAST_SPELL({name})",
+                    "score": float(sc),
+                    "reason": ("near-combo closer" if sc >= 10.0
+                               else "synergy with battlefield" if sc > 0.0
+                               else "no KG signal"),
+                })
+            self.last_reasoning["agent_kind"] = "kg_heuristic"
+            self.last_reasoning["top_candidates"] = top_payload
+            self.last_reasoning["scores"] = [float(s) for _, s in scored]
+            beliefs = self.last_reasoning.setdefault("beliefs", {})
+            beliefs["kg_active"] = True
+            beliefs["best_cast_score"] = float(best_score)
+            beliefs["cast_options"] = len(casts)
+            beliefs["kg_chose_cast"] = action.card_instance_id == best_cast.card_instance_id
+            if action.card_instance_id == best_cast.card_instance_id:
+                self.last_reasoning["rationale"] = (
+                    f"KG re-rank: cast {self._card_name_for_action(game_state, best_cast)} "
+                    f"(score={best_score:.2f}) selected from {len(casts)} options"
+                )
+        return action
 
     # ----------------------------------------------------------------- scoring
     async def _score_casts(

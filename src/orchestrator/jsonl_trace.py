@@ -101,7 +101,14 @@ class JsonlActionTrace:
             pid = str(player_id)
         self._pending_state = _summarize_state(game_state, pid)
 
-    def on_action(self, action: Action, reward: float = 0.0, done: bool = False) -> None:
+    def on_action(
+        self,
+        action: Action,
+        reward: float = 0.0,
+        done: bool = False,
+        reasoning: dict[str, Any] | None = None,
+        agent_name: str | None = None,
+    ) -> None:
         record = {
             "game_id": self._game_id,
             "tick": self._tick,
@@ -110,6 +117,10 @@ class JsonlActionTrace:
             "reward": reward,
             "done": done,
         }
+        if reasoning is not None:
+            record["reasoning"] = reasoning
+        if agent_name is not None:
+            record["agent"] = agent_name
         self._fh.write(json.dumps(record, default=str) + "\n")
         self._fh.flush()
         self._tick += 1

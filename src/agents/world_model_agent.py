@@ -111,6 +111,65 @@ class WorldModelAgent(MTGAgent):
             chosen_action.action_type.value,
             chosen_action.card_instance_id or "",
         )
+        # Reasoning trace ----------------------------------------------------
+        try:
+            from src.agents.reasoning import ReasoningTrace
+            beliefs: dict = {
+                "mode": self.mode,
+                "z_norm": float(z.norm().item()) if z is not None else None,
+                "deterministic": self.deterministic,
+            }
+            scores_list: list[float] = []
+            top_payload: list[dict] = []
+            if getattr(self, "_last_policy_info", None) and isinstance(self._last_policy_info, dict):
+                logits = self._last_policy_info.get("logits")
+                probs = self._last_policy_info.get("probs")
+                if probs is not None:
+                    try:
+                        scores_list = [float(p) for p in probs.flatten().tolist()][: len(legal_actions)]
+                    except Exception:
+                        scores_list = []
+                if logits is not None and not scores_list:
+                    try:
+                        scores_list = [float(x) for x in logits.flatten().tolist()][: len(legal_actions)]
+                    except Exception:
+                        scores_list = []
+                value = self._last_policy_info.get("value")
+                if value is not None:
+                    try:
+                        beliefs["value_estimate"] = float(value.item() if hasattr(value, "item") else value)
+                    except Exception:
+                        pass
+            elif getattr(self, "_last_dream_info", None) and isinstance(self._last_dream_info, dict):
+                raw = self._last_dream_info.get("scores")
+                try:
+                    scores_list = [float(x) for x in raw.flatten().tolist()][: len(legal_actions)]
+                except Exception:
+                    scores_list = []
+                beliefs["dream_rollouts"] = self.dream_rollouts
+                beliefs["dream_depth"] = self.dream_depth
+
+            if scores_list:
+                ranked = sorted(enumerate(scores_list), key=lambda kv: kv[1], reverse=True)[:5]
+                for idx, sc in ranked:
+                    if idx >= len(legal_actions):
+                        continue
+                    a = legal_actions[idx]
+                    top_payload.append({
+                        "action": f"{a.action_type.value}({a.card_instance_id or ''})",
+                        "score": sc,
+                    })
+            self.set_reasoning(ReasoningTrace(
+                agent_kind="world_model",
+                rationale=f"{self.mode} policy over {len(legal_actions)} legal actions",
+                legal_action_count=len(legal_actions),
+                chosen_index=action_idx,
+                scores=scores_list,
+                top_candidates=top_payload,
+                beliefs=beliefs,
+            ))
+        except Exception as e:  # never let reasoning logging break gameplay
+            logger.debug("Failed to record WorldModelAgent reasoning: %s", e)
         return chosen_action
 
     async def observe(self, game_state: GameState, action: Action) -> None:
@@ -205,9 +264,12 @@ class WorldModelAgent(MTGAgent):
         action_mask: torch.Tensor,
     ) -> int:
         """Select action directly via the controller."""
-        action_idx, _ = self.world_model.controller.select_action(
+        action_idx, info = self.world_model.controller.select_action(
             z, h, action_encodings, action_mask, deterministic=self.deterministic
         )
+        # Stash for reasoning trace.
+        self._last_policy_info = info
+        self._last_dream_info = None
         return action_idx
 
     def _dream_search(
@@ -223,6 +285,8 @@ class WorldModelAgent(MTGAgent):
             num_rollouts=self.dream_rollouts,
             rollout_depth=self.dream_depth,
         )
+        self._last_dream_info = {"scores": scores}
+        self._last_policy_info = None
         return best_idx
 
     def _get_player_index(self, game_state: GameState) -> int:

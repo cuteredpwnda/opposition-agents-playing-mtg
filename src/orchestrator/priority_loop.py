@@ -249,7 +249,19 @@ async def run_priority_loop(
 
         # Collector records action
         if collector is not None:
-            collector.on_action(action, reward=0.0, done=game_state.game_over)
+            reasoning = getattr(agent, "last_reasoning", None)
+            agent_name = getattr(agent, "name", None)
+            try:
+                collector.on_action(
+                    action,
+                    reward=0.0,
+                    done=game_state.game_over,
+                    reasoning=reasoning,
+                    agent_name=agent_name,
+                )
+            except TypeError:
+                # Older collectors with a narrower signature.
+                collector.on_action(action, reward=0.0, done=game_state.game_over)
         
         if action.action_type == ActionType.PASS_PRIORITY:
             # Player passed priority
