@@ -255,6 +255,88 @@ We use a champion-vs-challenger promotion scheme:
 \end{algorithm}
 $\theta$ is the promotion threshold (default $0.55$). The loop is implemented in \texttt{src/training/rl\_trainer.py} and is exercised end-to-end by \texttt{scripts/train\_pipeline.py}.
 
+\subsection{Agent zoo: algorithmic specification}
+\label{sec:agentzoo}
+The framework provides eight agents, all satisfying the same one-method contract \texttt{decide\_action(state, legal\_actions) $\to$ action} (see \texttt{src/agents/base\_agent.py}). They span the full spectrum from purely combinatorial baselines to the V+M+C+JEPA+KG+LLM fusion of \Cref{sec:wm}. We summarise each agent below; the engineering reference (exact class signatures, configuration knobs, fallback paths, and test pointers) is the companion technical report \texttt{docs/AGENTS\_TECH\_REPORT.md}.
+
+\paragraph{Random ($\pi^{\mathrm{rand}}$).} A weighted sampler over legal actions with fixed type-class weights $w_{\mathrm{land}}\!=\!25$, $w_{\mathrm{cast}}\!=\!10$ (boosted to $30$ for casts from the command zone), $w_{\mathrm{atk}}\!=\!8$, $w_{\mathrm{pass}}\!=\!1$. Used as a baseline floor; not deterministic per-instance because it shares the process-global RNG.
+
+\paragraph{Heuristic ($\pi^{\mathrm{heur}}$).} Deterministic priority cascade
+\begin{equation*}
+a^\star = \argmax_{a \in \mathcal{A}_{\mathrm{legal}}} \; \mathrm{prio}(a),
+\qquad
+\mathrm{prio}: \begin{cases}
+  \textsc{play\_land} \mapsto 100 \\
+  \textsc{cast\_spell} \mapsto 90 \\
+  \textsc{declare\_attackers} \mapsto 80 \\
+  \textsc{declare\_blockers} \mapsto 70 \\
+  \textsc{activate\_ability} \mapsto 60 \\
+  \textsc{pass} \mapsto 1 \\
+  \textsc{concede} \mapsto 0,
+\end{cases}
+\end{equation*}
+with three tactical refinements: (i) counter-spell discipline filters \texttt{counter target} casts unless an opponent spell tops the stack, (ii) when \texttt{prefer\_aggressive} is set the agent always picks an attack at the top tier, (iii) on the blocking step it chump-blocks the largest unblocked attacker with the smallest blocker. Tie-breaking uses a seeded \texttt{random.Random}, making it the strongest fully-reproducible baseline.
+
+\paragraph{KG-Heuristic ($\pi^{\mathrm{KG\!+\!heur}}$).} Inherits $\pi^{\mathrm{heur}}$ but, when more than one \textsc{cast\_spell} is legal, re-ranks them through the knowledge graph. Let $H$ be the agent's hand and $B$ its battlefield. For each candidate cast $c$,
+\begin{equation*}
+\mathrm{score}_{\mathrm{KG}}(c) \;=\; 10\cdot \mathbf{1}\!\big[c \in \mathrm{NearComboMissingPieces}(H \cup B)\big] \;+\!\!\sum_{p \in B}\!\!\mathrm{strength}\big(\mathrm{KG\text{-}edge}(c, p)\big),
+\end{equation*}
+where the indicator is computed by a single Cypher round-trip
+(\texttt{kg.detect\_near\_combos}) and synergy strength comes from the
+\texttt{HAS\_SYNERGY} edges of \Cref{lst:cypher}. The best-scoring cast
+replaces the cast subset in the legal-action list and the parent
+priority logic resumes, so \textsc{play\_land} can still beat
+\textsc{cast\_spell}. On any KG exception the agent latches
+\texttt{kg\_disabled = True} and silently degrades to $\pi^{\mathrm{heur}}$.
+
+\paragraph{Ollama LLM ($\pi^{\mathrm{LLM}}$).} The LLM is consulted as a discrete posterior over the legal-action set, never as a free-form generator. Concretely, for each decision we serialise the board state $s_t$ (life totals, hand sizes, lands, creatures) and an enumerated list $\{(i, a_i)\}_{i=0}^{|\mathcal{A}_{\mathrm{legal}}|-1}$, prompt the model to ``respond with ONLY the option number'', parse an integer $\hat\imath$ from the reply, and return $a_{\hat\imath}$. Formally,
+\begin{equation*}
+\hat\imath = \pi_{\mathrm{LLM}}\!\big(\mathrm{prompt}_t\big),\quad a^\star = a_{\mathrm{clip}(\hat\imath,\,0,\,|\mathcal{A}_{\mathrm{legal}}|-1)}.
+\end{equation*}
+Illegal actions are unrepresentable by construction. We use Gemma~4-edge (\texttt{gemma4:e2b}) at temperature $0.2$ via Ollama for a $\sim$1--4\,s budget per decision. On any HTTP or parse failure the agent falls back to $\pi^{\mathrm{rand}}$ and records the event in a per-game stats dictionary.
+
+\paragraph{Active Inference ($\pi^{\mathrm{AI}}$).} Maintains a particle-filter belief $b_t$ over the opponent's hand and library top conditioned on the published decklist (\texttt{src/agents/opponent\_model.py}). Action selection minimises the discrete-state expected free energy
+\begin{equation*}
+\mathcal{F}(a) \;=\; -\Expect_{q(s'|a,b_t)}[R(s')] \;-\; \mathrm{IG}(a, b_t),
+\qquad
+\mathrm{IG}(a, b_t) \;=\; \mathrm{H}[q(s'|a,b_t)] - \Expect_{q(s|b_t)}[\mathrm{H}[q(s'|s,a)]],
+\end{equation*}
+exposed as \texttt{ActiveInferenceModule.rank\_actions(legal, state)}. A tactical override re-ranks \textsc{declare\_attackers} actions by target threat $\max(0, 40 - \mathrm{life}) + 2\cdot \mathrm{commander\_dmg\_taken}$, and a counter-spell-aware filter drops non-mana \textsc{cast\_spell} actions when the opponent model places probability $>0.5$ on a counter-spell being held.
+
+\paragraph{World-Model agent ($\pi^{\mathrm{WM}}$).} Plays through the V+M+C+JEPA stack of \Cref{sec:wm}. Every turn,
+\begin{equation*}
+z_t = \mathrm{Enc}_V(s_t),\quad
+g_t = \mathrm{Enc}_{\mathrm{KG}}(g, s_t),\quad
+(h_t, c_t) = \mathrm{LSTM}_M\!\big([z_t; g_t], (h_{t-1}, c_{t-1})\big).
+\end{equation*}
+Two action-selection modes are available: a fast \emph{direct policy} that calls the controller $C(z, h, A)$ and returns its argmax (or a temperature-scaled sample if \texttt{deterministic = False}), and a slower \emph{dream search} that, for each candidate $a_i$, runs $K$ rollouts of depth $D$ in latent space using $M$, scores each rollout by the controller's value head $V(z)$, and picks $\argmax_i \frac{1}{K} \sum_k V(z^{(k,D)}_i)$. Defaults are $K=8, D=10$. The hidden state $(h, c)$ is persisted across turns so the dynamics model sees the full game-step trajectory.
+
+\paragraph{LLM-Fusion agent ($\pi^{\mathrm{fuse}}$).} The strongest agent: a calibrated weighted sum of four scalar signals per legal action,
+\begin{equation*}
+\mathrm{score}(a) \;=\; \alpha_h\,s_{\mathrm{heur}}(a) \;+\; \alpha_g\,s_{\mathrm{KG}}(a) \;+\; \alpha_w\,s_{\mathrm{WM}}(a) \;+\; \alpha_\ell\,\log p_{\mathrm{LLM}}(a),
+\quad a^\star = \argmax_a \mathrm{score}(a),
+\end{equation*}
+with default weights $(\alpha_h, \alpha_g, \alpha_w, \alpha_\ell) = (0.15, 0.15, 0.40, 0.30)$. The LLM signal is skipped when one action dominates the heuristic-plus-WM signal by more than \texttt{obvious\_threshold} = $0.8$, which saves roughly $80\%$ of LLM calls in practice. Setting any single weight to zero recovers the corresponding ablation; the canonical four-arm study (LLM-only, WM-only, KG-only, all four) is wired up by \texttt{scripts/run\_matchups.py}.
+
+\begin{algorithm}[H]
+\caption{LLM-Fusion decision (one priority window).}
+\label{alg:fusion}
+\begin{algorithmic}[1]
+\Require state $s_t$, legal actions $\mathcal{A}$, world model $(\mathrm{Enc}_V, M, C)$, KG $\mathcal{G}$, opponent model $b_t$, weights $(\alpha_h, \alpha_g, \alpha_w, \alpha_\ell)$
+\State $\mathbf{s}_h \gets \mathrm{HeuristicScores}(s_t, \mathcal{A})$ \Comment{$\sim$50\,\textmu s}
+\State $\mathbf{s}_g \gets \mathrm{KGScores}(s_t, \mathcal{A})$ \Comment{combo + synergy bonuses}
+\State $z_t \gets \mathrm{Enc}_V(s_t)$;\quad $\mathbf{s}_w \gets \mathrm{DreamSearch}(z_t, h_t, \mathcal{A}; K, D)$
+\If{$\mathrm{spread}(\mathbf{s}_h + \mathbf{s}_w) > \tau_{\mathrm{obvious}}$}
+   \State $\mathbf{s}_\ell \gets \mathbf{0}$ \Comment{skip the LLM call}
+\Else
+   \State $\mathbf{s}_\ell \gets \log p_{\mathrm{LLM}}(\cdot \mid \mathrm{prompt}(s_t, \mathcal{A}))$
+\EndIf
+\State \Return $a^\star \gets \mathcal{A}\big[\argmax_i (\alpha_h \mathbf{s}_{h,i} + \alpha_g \mathbf{s}_{g,i} + \alpha_w \mathbf{s}_{w,i} + \alpha_\ell \mathbf{s}_{\ell,i})\big]$
+\end{algorithmic}
+\end{algorithm}
+
+\paragraph{Reasoning traces.} Every agent writes a \texttt{ReasoningTrace} dict to \texttt{self.last\_reasoning} before returning. The orchestrator flushes these to \texttt{runs/<out>/logs/game\_NNNN.jsonl}, one line per decision, schema \{turn, phase, player\_id, agent\_kind, rationale, legal\_action\_count, chosen\_index, top\_candidates, scores, beliefs\}. This is the canonical telemetry format consumed by the post-hoc analysis notebooks and by the Streamlit visualisation panel discussed in \Cref{sec:future}.
+
 % =============================================================================
 \section{Implementation}
 \label{sec:impl}

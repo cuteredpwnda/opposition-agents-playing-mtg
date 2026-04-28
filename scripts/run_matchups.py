@@ -114,12 +114,30 @@ def load_deck(path: Path, format: str) -> tuple[str, list[dict]]:
 # Agent factory wrapper
 # --------------------------------------------------------------------------
 
-def _build_agent(agent_name: str, player_id: str, seed: int | None) -> "MTGAgent":
-    """Build an agent by registry name; pass ``seed`` if the factory accepts it."""
+def _build_agent(
+    agent_name: str,
+    player_id: str,
+    seed: int | None,
+    wm_checkpoint: str | None = None,
+) -> "MTGAgent":
+    """Build an agent by registry name; pass ``seed`` if the factory accepts it.
+
+    ``wm_checkpoint`` is forwarded to factories that accept it (currently
+    ``world_model`` and ``llm_fusion``) so the same harness can compare
+    different WM training configurations side by side.
+    """
+    kwargs: dict = {"seed": seed}
+    if wm_checkpoint and agent_name in {"world_model", "llm_fusion", "fusion"}:
+        kwargs["checkpoint"] = wm_checkpoint
     try:
-        return make_agent(agent_name, player_id, seed=seed)
+        return make_agent(agent_name, player_id, **kwargs)
     except TypeError:
-        return make_agent(agent_name, player_id)
+        # Older factories don't accept ``seed=`` — drop it and retry.
+        kwargs.pop("seed", None)
+        try:
+            return make_agent(agent_name, player_id, **kwargs)
+        except TypeError:
+            return make_agent(agent_name, player_id)
 
 
 # --------------------------------------------------------------------------
@@ -134,6 +152,7 @@ async def play_one_game(
     seed: int | None,
     log_dir: Path | None,
     game_idx: int,
+    wm_checkpoint: str | None = None,
 ) -> dict:
     decks: dict[str, list[dict]] = {}
     agents: dict[str, "MTGAgent"] = {}
@@ -150,7 +169,9 @@ async def play_one_game(
             deck_label, cards = deck_path.stem, []
         decks[pid] = cards
         try:
-            agents[pid] = _build_agent(agent_name, pid, seed=seed)
+            agents[pid] = _build_agent(
+                agent_name, pid, seed=seed, wm_checkpoint=wm_checkpoint
+            )
         except Exception as e:
             setup_error = f"agent '{agent_name}' build failed: {e}"
             logger.exception("agent build failed: %s", agent_name)
@@ -287,6 +308,7 @@ async def run_matchups(args: argparse.Namespace) -> None:
                 seed=args.seed + round_idx if args.seed is not None else None,
                 log_dir=log_dir,
                 game_idx=game_idx,
+                wm_checkpoint=args.wm_checkpoint,
             )
             records.append(rec)
             print(f"  -> winner={rec['winner_agent']} ({rec['winner_deck']}) "
@@ -309,6 +331,7 @@ async def run_matchups(args: argparse.Namespace) -> None:
                     seed=(args.seed + game_idx) if args.seed is not None else None,
                     log_dir=log_dir,
                     game_idx=game_idx,
+                    wm_checkpoint=args.wm_checkpoint,
                 )
                 records.append(rec)
                 print(f"  -> winner={rec['winner_agent']} in {rec['turns']} turns, "
@@ -381,6 +404,10 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Output dir for CSV + JSON + logs.")
     p.add_argument("--no-game-logs", action="store_true",
                    help="Skip per-game game logs (still writes run.log + CSV).")
+    p.add_argument("--wm-checkpoint", type=str, default=None,
+                   help="Path to WorldModel checkpoint to use for the\n"
+                        "world_model / llm_fusion agents.  Lets the same\n"
+                        "harness compare different training configurations.")
     p.add_argument("--verbose", action="store_true")
     return p
 
