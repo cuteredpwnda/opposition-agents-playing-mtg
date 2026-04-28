@@ -1,0 +1,68 @@
+{
+  "games": [
+    {
+      "game": 1,
+      "model": "none",
+      "players": {
+        "player1": "krenko_mob_boss_core",
+        "player2": "atraxa_praetors_voice_core",
+        "player3": "urza_lord_high_artificer_core",
+        "player4": "meren_of_clan_nel_toth_core"
+      },
+      "commanders": {
+        "player1": "Krenko, Mob Boss",
+        "player2": "Atraxa, Praetors' Voice",
+        "player3": "Urza, Lord High Artificer",
+        "player4": "Meren of Clan Nel Toth"
+      },
+      "winner": "krenko_mob_boss_core",
+      "winner_seat": "player1",
+      "turns": 7,
+      "elapsed_sec": 0.15,
+      "agent_actions": {
+        "player1": {
+          "PASS_PRIORITY": 32,
+          "CAST_SPELL": 1,
+          "PLAY_LAND": 2,
+          "DECLARE_ATTACKERS": 0,
+          "ACTIVATE_ABILITY": 0,
+          "OTHER": 0
+        },
+        "player2": {
+          "PASS_PRIORITY": 33,
+          "CAST_SPELL": 1,
+          "PLAY_LAND": 1,
+          "DECLARE_ATTACKERS": 0,
+          "ACTIVATE_ABILITY": 0,
+          "OTHER": 0
+        },
+        "player3": {
+          "PASS_PRIORITY": 31,
+          "CAST_SPELL": 2,
+          "PLAY_LAND": 1,
+          "DECLARE_ATTACKERS": 0,
+          "ACTIVATE_ABILITY": 0,
+          "OTHER": 0
+        },
+        "player4": {
+          "PASS_PRIORITY": 32,
+          "CAST_SPELL": 1,
+          "PLAY_LAND": 1,
+          "DECLARE_ATTACKERS": 0,
+          "ACTIVATE_ABILITY": 0,
+          "OTHER": 0
+        }
+      },
+      "agent_llm_calls": {
+        "player1": 0,
+        "player2": 0,
+        "player3": 0,
+        "player4": 0
+      },
+      "log_path": "runs\\edh_pod\\pod_game_001.log"
+    }
+  ],
+  "wins": {
+    "krenko_mob_boss_core": 1
+  }
+}

@@ -61,8 +61,11 @@ def slugify(s: str) -> str:
 
 async def main(args: argparse.Namespace) -> int:
     loader = DecklistLoader()
-    print(f"Fetching: {args.url}")
-    deck = await loader.from_url(args.url)
+    bracket = args.bracket
+    if isinstance(bracket, str) and bracket.isdigit():
+        bracket = int(bracket)
+    print(f"Fetching: {args.url}  (bracket={bracket})")
+    deck = await loader.from_url(args.url, bracket=bracket)
     total = sum(deck.mainboard.values()) + len(deck.commander) + sum(deck.sideboard.values())
     print(f"  -> {total} cards "
           f"(mainboard={sum(deck.mainboard.values())}, "
@@ -111,6 +114,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--out", default=None, help="Output path (default: data/decks/<slug>.txt)")
     p.add_argument("--classify", action="store_true",
                    help="Run bracket classification after fetching")
+    p.add_argument("--bracket", default=None,
+                   help="EDHREC bracket filter: 1..5, exhibition, core, "
+                        "upgraded, optimized, cedh, budget, expensive")
     return p
 
 

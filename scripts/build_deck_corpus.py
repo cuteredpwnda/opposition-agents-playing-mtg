@@ -65,17 +65,19 @@ def to_text(deck) -> str:
     return "\n".join(out)
 
 
-async def fetch_one(loader: DecklistLoader, slug: str, out_dir: Path) -> bool:
-    out_path = out_dir / f"{slug}.txt"
+async def fetch_one(loader: DecklistLoader, slug: str, out_dir: Path,
+                    bracket: int | str | None) -> bool:
+    suffix = f"_{bracket}" if bracket else ""
+    out_path = out_dir / f"{slug}{suffix}.txt"
     if out_path.exists():
         return True
     try:
-        deck = await loader.from_edhrec_average(slug)
+        deck = await loader.from_edhrec_average(slug, bracket=bracket)
     except Exception as exc:
-        print(f"  [skip] {slug}: {exc}")
+        print(f"  [skip] {slug} ({bracket}): {exc}")
         return False
     out_path.write_text(to_text(deck), encoding="utf-8")
-    print(f"  [ok]   {slug} -> {out_path}")
+    print(f"  [ok]   {slug} ({bracket or 'avg'}) -> {out_path}")
     return True
 
 
@@ -89,17 +91,20 @@ async def main(args: argparse.Namespace) -> int:
     else:
         slugs = DEFAULT_COMMANDERS[: args.top]
 
-    print(f"Fetching {len(slugs)} EDHREC average decks -> {out_dir}")
+    bracket = args.bracket
+    if isinstance(bracket, str) and bracket.isdigit():
+        bracket = int(bracket)
+
+    print(f"Fetching {len(slugs)} EDHREC decks "
+          f"(bracket={bracket or 'average'}) -> {out_dir}")
     ok = 0
-    # Sequential with tiny pause; EDHREC isn't a high-throughput target.
     for slug in slugs:
-        if await fetch_one(loader, slug, out_dir):
+        if await fetch_one(loader, slug, out_dir, bracket):
             ok += 1
         await asyncio.sleep(0.5)
 
     print(f"\nDone: {ok}/{len(slugs)} fetched")
 
-    # Manifest for downstream tooling
     manifest = out_dir / "manifest.json"
     decks = sorted(p.name for p in out_dir.glob("*.txt"))
     manifest.write_text(json.dumps({"decks": decks}, indent=2), encoding="utf-8")
@@ -114,6 +119,9 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Specific EDHREC slugs (e.g. krenko-mob-boss)")
     p.add_argument("--top", type=int, default=30,
                    help="When --commanders is omitted, pull this many from the seed list")
+    p.add_argument("--bracket", default=None,
+                   help="EDHREC bracket: 1..5, exhibition, core, upgraded, "
+                        "optimized, cedh, budget, expensive")
     p.add_argument("--out-dir", default="data/decks/edhrec")
     return p
 

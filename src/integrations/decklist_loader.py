@@ -113,31 +113,51 @@ class DecklistLoader:
     async def from_moxfield(self, deck_id_or_url: str) -> Decklist:
         """Load a public deck from Moxfield.
 
-        Accepts either the public deck ID (e.g. ``"abc123"``) or a full URL
-        (``https://www.moxfield.com/decks/abc123``). Uses the v3 API which
-        returns the full board layout at
-        ``https://api2.moxfield.com/v3/decks/all/<publicId>``.
-        """
-        import httpx
+        Accepts the public deck ID (``"abc123"``) or full URL
+        (``https://www.moxfield.com/decks/abc123``).
 
+        .. note::
+
+            Moxfield's API sits behind Cloudflare and rejects plain ``httpx``
+            requests with HTTP 403. To make this work, install
+            `curl_cffi <https://pypi.org/project/curl-cffi/>`_::
+
+                pip install curl_cffi
+
+            which performs full browser TLS-fingerprint impersonation. If
+            ``curl_cffi`` is not installed, this method raises
+            :class:`RuntimeError` with a hint to either install it or paste
+            the deck's exported text into a local file and use
+            :meth:`from_text` instead.
+        """
         m = self._MOXFIELD_URL_RE.search(deck_id_or_url)
         deck_id = m.group("id") if m else deck_id_or_url
-
         url = f"https://api2.moxfield.com/v3/decks/all/{deck_id}"
-        headers = {
-            "Accept": "application/json",
-            # Moxfield's CDN refuses the default httpx UA; any browser-like UA works.
-            "User-Agent": "OppositionAgentsMTG/1.0 (+research)",
-        }
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.get(url, headers=headers)
-            resp.raise_for_status()
-            data = resp.json()
+
+        try:
+            from curl_cffi import requests as cffi_requests  # type: ignore[import-not-found]
+        except ImportError as exc:
+            raise RuntimeError(
+                "Moxfield requires the 'curl_cffi' package to bypass "
+                "Cloudflare. Install it with `pip install curl_cffi`, or "
+                "use Moxfield's Export -> Text feature and load the result "
+                "with DecklistLoader.from_text(text)."
+            ) from exc
+
+        # curl_cffi is sync, so run in a thread to keep the API async-friendly.
+        import asyncio
+
+        def _fetch():
+            r = cffi_requests.get(url, impersonate="chrome", timeout=30)
+            r.raise_for_status()
+            return r.json()
+
+        data = await asyncio.to_thread(_fetch)
 
         deck = Decklist()
         boards = data.get("boards", {}) or {}
 
-        def _add(board_key: str, target: dict[str, int] | list[str]):
+        def _add(board_key: str, target):
             board = boards.get(board_key, {}) or {}
             cards = board.get("cards", {}) or {}
             for entry in cards.values():
@@ -155,7 +175,6 @@ class DecklistLoader:
         _add("mainboard", deck.mainboard)
         _add("sideboard", deck.sideboard)
         _add("commanders", deck.commander)
-        # Some Moxfield decks also use "companions" / "signatureSpells" — fold in.
         _add("companions", deck.commander)
         return deck
 
@@ -163,65 +182,187 @@ class DecklistLoader:
     # EDHREC (read-only: average decks, recommendations)
     # ------------------------------------------------------------------
 
-    async def from_edhrec_average(self, commander_slug: str) -> Decklist:
-        """Load EDHREC's "average deck" for a commander.
+    # Map bracket selectors → EDHREC URL slug components.
+    # 1=Exhibition, 2=Core, 3=Upgraded, 4=Optimized, 5=cEDH
+    # plus the meta budget/expensive views.
+    _EDHREC_BRACKET_SLUGS = {
+        None: None,
+        1: "exhibition", 2: "core", 3: "upgraded",
+        4: "optimized", 5: "cedh",
+        "exhibition": "exhibition", "core": "core",
+        "upgraded": "upgraded", "optimized": "optimized",
+        "cedh": "cedh", "budget": "budget", "expensive": "expensive",
+    }
 
-        ``commander_slug`` is the EDHREC URL slug — e.g. ``"krenko-mob-boss"``
-        for ``https://edhrec.com/commanders/krenko-mob-boss``. Uses the public
-        JSON endpoint ``https://json.edhrec.com/v2/decks/<slug>.json`` (not
-        always available — falls back to the commander page's recommended-card
-        list).
+    async def from_edhrec_average(
+        self,
+        commander_slug: str,
+        bracket: int | str | None = None,
+    ) -> Decklist:
+        """Build an EDHREC-derived "average" 100-card deck for a commander.
+
+        EDHREC publishes per-commander aggregate stats at
+        ``/pages/commanders/<slug>.json`` (or the bracket-filtered variants
+        ``.../<slug>/{exhibition,core,upgraded,optimized,cedh,budget,expensive}.json``).
+        Each payload exposes:
+
+        * ``creature``, ``instant``, ``sorcery``, ``artifact``,
+          ``enchantment``, ``planeswalker``, ``nonbasic``, ``basic`` —
+          average card counts per category.
+        * ``container.json_dict.cardlists`` — ranked card recommendations
+          grouped by category (Creatures, Instants, Sorceries, Utility
+          Artifacts, Enchantments, Mana Artifacts, Utility Lands, Lands,
+          Planeswalkers, …) with inclusion counts.
+
+        We pick the top-N most-included cards in each category to match the
+        average composition, then fill with basics matching the commander's
+        color identity, returning a 100-card singleton list.
+
+        Args:
+            commander_slug: EDHREC URL slug, e.g. ``"krenko-mob-boss"``.
+            bracket: Optional WotC Commander Bracket filter — accepts
+                ``1..5`` (Exhibition .. cEDH), the names ``"exhibition"``,
+                ``"core"``, ``"upgraded"``, ``"optimized"``, ``"cedh"``,
+                or the special slugs ``"budget"`` / ``"expensive"``.
+                ``None`` (default) uses the unfiltered average.
         """
         import httpx
 
+        if bracket not in self._EDHREC_BRACKET_SLUGS:
+            raise ValueError(
+                f"unknown bracket {bracket!r}; "
+                f"expected one of {sorted(k for k in self._EDHREC_BRACKET_SLUGS if k is not None)}"
+            )
+        bracket_slug = self._EDHREC_BRACKET_SLUGS[bracket]
+
         slug = commander_slug.strip().lower().replace(" ", "-")
-        urls = [
-            f"https://json.edhrec.com/v2/decks/{slug}.json",
-            f"https://json.edhrec.com/pages/decks/{slug}.json",
-        ]
+        url = (
+            f"https://json.edhrec.com/pages/commanders/{slug}/{bracket_slug}.json"
+            if bracket_slug
+            else f"https://json.edhrec.com/pages/commanders/{slug}.json"
+        )
         headers = {
             "Accept": "application/json",
-            "User-Agent": "OppositionAgentsMTG/1.0 (+research)",
+            "User-Agent": "Mozilla/5.0 (compatible; OppositionAgentsMTG/1.0; +research)",
         }
-        data: dict | None = None
         async with httpx.AsyncClient(timeout=30.0) as client:
-            for url in urls:
-                resp = await client.get(url, headers=headers)
-                if resp.status_code == 200:
-                    data = resp.json()
+            resp = await client.get(url, headers=headers)
+            if resp.status_code != 200:
+                raise RuntimeError(
+                    f"EDHREC returned {resp.status_code} for "
+                    f"'{slug}' (bracket={bracket})"
+                )
+            data = resp.json()
+
+        # Average counts per category (rounded ints); fall back to sane defaults.
+        def _n(key: str, default: int) -> int:
+            v = data.get(key)
+            return int(v) if isinstance(v, (int, float)) else default
+
+        n_creature = _n("creature", 30)
+        n_instant = _n("instant", 8)
+        n_sorcery = _n("sorcery", 8)
+        n_artifact = _n("artifact", 10)        # split across utility + mana
+        n_enchant = _n("enchantment", 6)
+        n_planeswalker = _n("planeswalker", 0)
+        n_nonbasic = _n("nonbasic", 6)
+        n_basic = _n("basic", 30)
+
+        cardlists = (
+            data.get("container", {}).get("json_dict", {}).get("cardlists", [])
+            or []
+        )
+        by_tag: dict[str, list[dict]] = {
+            cl.get("tag", ""): cl.get("cardviews", []) or []
+            for cl in cardlists
+        }
+
+        def pick_top(tag: str, n: int, exclude: set[str]) -> list[str]:
+            """Pick the top-N most-included cards from a cardlist tag."""
+            out: list[str] = []
+            for cv in by_tag.get(tag, []):
+                if n <= 0:
                     break
-        if data is None:
-            raise RuntimeError(f"EDHREC has no average-deck JSON for '{slug}'")
+                name = cv.get("name")
+                if not name or name in exclude:
+                    continue
+                out.append(name)
+                exclude.add(name)
+                n -= 1
+            return out
 
         deck = Decklist()
-        # EDHREC payload shape: data["deck"] is a list of card names (strings)
-        # for the average deck; commander is in data["container"]["json_dict"]
-        # ["card_lists"][0]["cardviews"]... For the simple endpoint, look at
-        # data["deck"] and data["commanders"].
-        for name in data.get("commanders", []) or []:
-            if isinstance(name, str):
-                deck.commander.append(name)
-        for entry in data.get("deck", []) or []:
-            if isinstance(entry, str):
-                deck.mainboard[entry] = deck.mainboard.get(entry, 0) + 1
-            elif isinstance(entry, dict):
-                n = entry.get("name") or entry.get("sanitized")
-                q = int(entry.get("count", 1) or 1)
-                if n:
-                    deck.mainboard[n] = deck.mainboard.get(n, 0) + q
+        # Commander
+        cmd_name = (
+            data.get("container", {}).get("json_dict", {}).get("card", {}).get("name")
+            or data.get("header")
+            or slug.replace("-", " ").title()
+        )
+        deck.commander.append(cmd_name)
+        chosen: set[str] = {cmd_name}
 
-        if not (deck.commander or deck.mainboard):
-            raise RuntimeError(
-                f"EDHREC payload for '{slug}' had no parseable card list"
+        for tag, n in [
+            ("creatures", n_creature),
+            ("instants", n_instant),
+            ("sorceries", n_sorcery),
+            ("manaartifacts", max(0, n_artifact // 2)),
+            ("utilityartifacts", max(0, n_artifact - n_artifact // 2)),
+            ("enchantments", n_enchant),
+            ("planeswalkers", n_planeswalker),
+            ("utilitylands", max(0, n_nonbasic // 2)),
+            ("lands", max(0, n_nonbasic - n_nonbasic // 2)),
+        ]:
+            for name in pick_top(tag, n, chosen):
+                deck.mainboard[name] = 1
+
+        # Top-up shortfalls from "topcards" then "highsynergycards"
+        target_nonbasic = (
+            n_creature + n_instant + n_sorcery + n_artifact + n_enchant
+            + n_planeswalker + n_nonbasic
+        )
+        have_nonbasic = sum(deck.mainboard.values())
+        if have_nonbasic < target_nonbasic:
+            for tag in ("topcards", "highsynergycards"):
+                for name in pick_top(tag, target_nonbasic - have_nonbasic, chosen):
+                    deck.mainboard[name] = 1
+                    have_nonbasic += 1
+                    if have_nonbasic >= target_nonbasic:
+                        break
+                if have_nonbasic >= target_nonbasic:
+                    break
+
+        # Fill basics. Distribute n_basic across the commander's color identity.
+        commander_card = data.get("container", {}).get("json_dict", {}).get("card", {})
+        ci = commander_card.get("color_identity") or []
+        if isinstance(ci, str):
+            ci = list(ci)
+        ci = [c for c in ci if c in "WUBRG"] or ["C"]
+        basic_for = {"W": "Plains", "U": "Island", "B": "Swamp",
+                     "R": "Mountain", "G": "Forest", "C": "Wastes"}
+        # Make total exactly 100: 1 commander + nonbasics + basics
+        basics_needed = 100 - 1 - sum(deck.mainboard.values())
+        if basics_needed < 0:
+            basics_needed = max(15, n_basic)
+        per = basics_needed // len(ci)
+        rem = basics_needed - per * len(ci)
+        for i, color in enumerate(ci):
+            land = basic_for.get(color, "Wastes")
+            deck.mainboard[land] = (
+                deck.mainboard.get(land, 0) + per + (1 if i < rem else 0)
             )
+
         return deck
 
     # ------------------------------------------------------------------
     # Auto-dispatch from a URL
     # ------------------------------------------------------------------
 
-    async def from_url(self, url: str) -> Decklist:
-        """Auto-detect Moxfield / Archidekt / EDHREC URL and dispatch."""
+    async def from_url(self, url: str, bracket: int | str | None = None) -> Decklist:
+        """Auto-detect Moxfield / Archidekt / EDHREC URL and dispatch.
+
+        ``bracket`` is forwarded to :meth:`from_edhrec_average` and ignored
+        for the other providers.
+        """
         u = url.strip()
         if "moxfield.com" in u:
             return await self.from_moxfield(u)
@@ -231,8 +372,16 @@ class DecklistLoader:
                 raise ValueError(f"can't extract Archidekt deck id from: {url}")
             return await self.from_archidekt(int(m.group(1)))
         if "edhrec.com" in u:
-            m = re.search(r"edhrec\.com/commanders/([A-Za-z0-9_-]+)", u)
+            # Allow URL-embedded bracket: /commanders/<slug>/<bracket>
+            m = re.search(
+                r"edhrec\.com/commanders/([A-Za-z0-9_-]+)(?:/([A-Za-z0-9_-]+))?",
+                u,
+            )
             if not m:
                 raise ValueError(f"can't extract EDHREC slug from: {url}")
-            return await self.from_edhrec_average(m.group(1))
+            slug = m.group(1)
+            url_bracket = m.group(2)
+            if url_bracket and bracket is None:
+                bracket = url_bracket
+            return await self.from_edhrec_average(slug, bracket=bracket)
         raise ValueError(f"unsupported decklist URL: {url}")
