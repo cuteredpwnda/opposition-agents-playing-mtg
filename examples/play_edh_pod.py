@@ -111,8 +111,14 @@ def load_edh_deck(path: Path) -> tuple[str, str, list[dict]]:
     cmdr_name = deck.commander[0]
 
     cards: list[dict] = []
-    cmdr_data = db.get(cmdr_name) or _fallback_card(cmdr_name)
-    cards.append(dict(cmdr_data))  # index 0 → command zone
+    # Add every commander listed in the Commander section (1 or 2 — partner /
+    # partner-with / friends-forever / background pairs).  Tag each with
+    # ``is_commander`` so the engine lifts them all into the command zone
+    # during setup.
+    for name in deck.commander:
+        data = dict(db.get(name) or _fallback_card(name))
+        data["is_commander"] = True
+        cards.append(data)
 
     missing: list[str] = []
     total = 0
@@ -126,7 +132,8 @@ def load_edh_deck(path: Path) -> tuple[str, str, list[dict]]:
             total += 1
 
     label = path.stem.replace("-", "_").replace(" ", "_")
-    print(f"  Loaded {total + 1} cards (commander='{cmdr_name}', "
+    cmdr_label = " + ".join(deck.commander) if len(deck.commander) > 1 else cmdr_name
+    print(f"  Loaded {total + len(deck.commander)} cards (commander='{cmdr_label}', "
           f"{len(deck.mainboard)} unique non-commander) from {path.name}")
     if missing:
         print(f"  Missing from cache ({len(missing)}): "

@@ -302,7 +302,11 @@ def _track_commander_damage(
     if not hasattr(defender, "commander_damage_received"):
         defender.commander_damage_received = {}
     is_commander = (
-        attacker.instance_id == state.commanders.get(attacker.controller_id)
+        attacker.instance_id in (
+            state.commander_ids(attacker.controller_id)
+            if hasattr(state, "commander_ids")
+            else [state.commanders.get(attacker.controller_id)]
+        )
         or attacker.card_data.get("is_commander", False)
     )
     if is_commander:

@@ -292,23 +292,34 @@ class GameRunner:
                 )
                 player_cards.append(card)
 
-            # Commander: pull the commander card (deck index 0 by convention)
-            # OUT of the deck BEFORE shuffling so it doesn't get randomised
-            # away.  Otherwise random.shuffle + player_cards.pop(0) would
-            # crown a random card as the "commander", breaking colour-identity
-            # checks for the rest of the game.
-            commander_card = None
+            # Commanders: lift every card flagged as a commander (or, by
+            # legacy convention, just the deck-index-0 card) into the
+            # command zone BEFORE shuffling — otherwise random.shuffle
+            # would let pop(0) crown a random card as "the commander",
+            # breaking colour-identity checks for the rest of the game.
+            #
+            # Decklist loaders may flag a card as a commander by setting
+            # ``card_dict["is_commander"] = True`` before passing the deck
+            # in.  This supports partner / partner-with / friends-forever
+            # / background pairs (1 or 2 commanders per player).
+            commanders_for_player: list[CardInstance] = []
             if self.config.format == "commander" and player_cards:
-                commander_card = player_cards.pop(0)
-                commander_card.zone = Zone.COMMAND_ZONE
-                commander_card.card_data["is_commander"] = True
+                tagged = [c for c in player_cards if c.card_data.get("is_commander")]
+                if not tagged:
+                    # Legacy fallback: deck index 0 is the (sole) commander.
+                    tagged = [player_cards[0]]
+                for c in tagged:
+                    player_cards.remove(c)
+                    c.zone = Zone.COMMAND_ZONE
+                    c.card_data["is_commander"] = True
+                    commanders_for_player.append(c)
 
-            # Shuffle library (commander is held aside, not in player_cards yet)
+            # Shuffle library (commanders are held aside, not in player_cards yet)
             random.shuffle(player_cards)
 
-            # Re-insert commander so all_cards/state.cards still contains it.
-            if commander_card is not None:
-                player_cards.insert(0, commander_card)
+            # Re-insert commanders so all_cards/state.cards still contains them.
+            for c in commanders_for_player:
+                player_cards.insert(0, c)
 
             player_state = next((p for p in players if p.player_id == pid), None)
             if self.config.mulligan_enabled:
@@ -340,15 +351,12 @@ class GameRunner:
             cards=all_cards,
         )
 
-        # Commander post-setup: mark each player's commander mapping
+        # Commander post-setup: register every commander instance for each player.
         if self.config.format == "commander":
-            game_state.commanders = {
-                p.player_id: next(
-                    (c.instance_id for c in all_cards if c.owner_id == p.player_id and c.zone == Zone.COMMAND_ZONE),
-                    "",
-                )
-                for p in players
-            }
+            for p in players:
+                for c in all_cards:
+                    if c.owner_id == p.player_id and c.zone == Zone.COMMAND_ZONE:
+                        game_state.add_commander(p.player_id, c.instance_id)
 
         return game_state
 

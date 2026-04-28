@@ -293,6 +293,69 @@ class CombatState:
     damage_assignment_order: dict[str, list[str]] = field(default_factory=dict)
 
 
+# ---------------------------------------------------------------------------
+# Command-zone objects (CR 408 / 113.6.1 / 309 / 901)
+# ---------------------------------------------------------------------------
+
+
+class DayNight(str, Enum):
+    """Day/Night designation (CR 726). 'NEITHER' is the pre-game default."""
+
+    NEITHER = "neither"
+    DAY = "day"
+    NIGHT = "night"
+
+
+@dataclass
+class Emblem:
+    """An emblem in the command zone (CR 114).
+
+    Emblems are colorless, typeless, nameless game objects with the listed
+    ability. They are never put into another zone — they remain in their
+    owner's command zone for the rest of the game.
+    """
+
+    emblem_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    controller_id: str = ""
+    source: str = ""  # e.g. "Sorin, Solemn Visitor emblem"
+    text: str = ""    # the granted ability
+
+
+@dataclass
+class Dungeon:
+    """A dungeon a player is venturing into (CR 309).
+
+    Dungeons live in their controller's command zone. ``rooms`` is the
+    ordered list of room names; ``current_room`` is the 0-based index of
+    the room the player most recently entered (-1 means "not yet entered" /
+    just chose this dungeon). When the player completes the bottom-most
+    room, the dungeon is removed from the command zone.
+    """
+
+    dungeon_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    controller_id: str = ""
+    name: str = ""
+    rooms: list[str] = field(default_factory=list)
+    current_room: int = -1
+    completed: bool = False
+
+
+@dataclass
+class CommandZoneObject:
+    """Generic command-zone object: vanguard avatar, conspiracy, plane, scheme, attraction etc.
+
+    Used as a catch-all for non-card command-zone entities that don't fit
+    Emblem/Dungeon. ``kind`` is one of: "vanguard", "conspiracy", "plane",
+    "scheme", "attraction", "phenomenon".
+    """
+
+    object_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    controller_id: str = ""
+    kind: str = ""
+    name: str = ""
+    card_data: dict[str, Any] = field(default_factory=dict)
+
+
 @dataclass(init=False)
 class GameState:
     """Complete state of a game — the single source of truth."""
@@ -311,7 +374,17 @@ class GameState:
     game_log: list[str]
     game_over: bool
     winner: Optional[str]
-    commanders: dict[str, str]  # player_id -> commander card instance id
+    commanders: dict[str, str]  # player_id -> commander card instance id (legacy alias; first commander)
+    # Command-zone objects beyond cards (CR 113.6.1, 114, 309, 726, 901, ...)
+    emblems: list[Emblem]
+    dungeons: list[Dungeon]
+    command_zone_objects: list[CommandZoneObject]
+    # Day/Night designation (CR 726)
+    day_night: DayNight
+    # The Initiative (Commander Legends: Battle for Baldur's Gate) — player_id who has it.
+    the_initiative: Optional[str]
+    # The Monarch — player_id who is currently the monarch.
+    monarch: Optional[str]
 
     def __init__(
         self,
@@ -344,7 +417,18 @@ class GameState:
         self.game_log = game_log or []
         self.game_over = game_over
         self.winner = winner
-        self.commanders = {}
+        # Canonical multi-commander store (player_id -> [commander instance ids]).
+        # ``self.commanders`` (the legacy single-id mapping) is exposed as a
+        # property derived from this list-valued dict.
+        self._commanders_by_player: dict[str, list[str]] = {}
+        # Command-zone objects (CR 113.6.1) beyond physical cards.
+        self.emblems: list[Emblem] = []
+        self.dungeons: list[Dungeon] = []
+        self.command_zone_objects: list[CommandZoneObject] = []
+        # Designations (CR 726, 702.155, etc.)
+        self.day_night: DayNight = DayNight.NEITHER
+        self.the_initiative: Optional[str] = None
+        self.monarch: Optional[str] = None
 
         if isinstance(self.players, dict):
             self.players = list(self.players.values())
@@ -372,6 +456,38 @@ class GameState:
     @property
     def priority_player(self) -> PlayerState:
         return self.players[self.priority_player_index]
+
+    # ------------------------------------------------------------------
+    # Commander helpers (multi-commander aware: partner / partner-with /
+    # background / friends-forever).  ``commanders`` is kept as a flat
+    # ``dict[str, str]`` (player_id -> first commander id) for backward
+    # compatibility with code that only handles single-commander decks.
+    # ------------------------------------------------------------------
+    @property
+    def commanders(self) -> dict[str, str]:
+        return {pid: ids[0] for pid, ids in self._commanders_by_player.items() if ids}
+
+    @commanders.setter
+    def commanders(self, value: dict[str, Any]) -> None:
+        new: dict[str, list[str]] = {}
+        for pid, v in (value or {}).items():
+            if isinstance(v, str):
+                new[pid] = [v] if v else []
+            elif isinstance(v, (list, tuple)):
+                new[pid] = [x for x in v if x]
+            else:
+                new[pid] = []
+        self._commanders_by_player = new
+
+    def commander_ids(self, player_id: str) -> list[str]:
+        """Return all commander instance ids for ``player_id`` (0–2 entries)."""
+        return list(self._commanders_by_player.get(player_id, []))
+
+    def add_commander(self, player_id: str, instance_id: str) -> None:
+        """Register an additional commander instance for ``player_id``."""
+        bucket = self._commanders_by_player.setdefault(player_id, [])
+        if instance_id and instance_id not in bucket:
+            bucket.append(instance_id)
 
     def cards_in_zone(self, player_id: str, zone: Zone) -> list[CardInstance]:
         return [

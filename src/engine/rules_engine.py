@@ -38,11 +38,22 @@ def _get_color_identity(card):
 def _commander_color_identity(state: GameState, player_id: str) -> set:
     if state.format != "commander":
         return set()
-    commander_id = getattr(state, "commanders", {}).get(player_id, None)
-    if commander_id is None:
+    # Union the colour identities of every commander the player controls
+    # (partner / partner-with / friends-forever / background pairs).
+    ids: list[str] = []
+    if hasattr(state, "commander_ids"):
+        ids = list(state.commander_ids(player_id))
+    if not ids:
+        cid = getattr(state, "commanders", {}).get(player_id, None)
+        if cid:
+            ids = [cid]
+    if not ids:
         return set()
-    commander_card = next((c for c in state.cards if c.instance_id == commander_id), None)
-    return _get_color_identity(commander_card)
+    by_id = {c.instance_id: c for c in state.cards}
+    out: set = set()
+    for cid in ids:
+        out |= _get_color_identity(by_id.get(cid))
+    return out
 
 
 _WORD_COUNTS = {"a": 1, "an": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5}
@@ -157,21 +168,12 @@ class RulesEngine:
         if state.format != "commander":
             return True
 
-        commanders = getattr(state, "commanders", {}) or {}
-        commander_id = commanders.get(player_id)
-        if not commander_id:
+        cmd_identity = _commander_color_identity(state, player_id)
+        if not cmd_identity:
             return True
-
-        commander_card = next((c for c in state.cards if c.instance_id == commander_id), None)
-        if not commander_card:
-            return True
-
-        cmd_identity = self._card_color_identity(commander_card)
         card_identity = self._card_color_identity(card)
         if not card_identity:
             return True
-
-        # Commander color identity is inclusive: card must be subset
         return card_identity.issubset(cmd_identity)
 
     def get_legal_actions(self, state: GameState, player_id: str) -> list[Action]:
