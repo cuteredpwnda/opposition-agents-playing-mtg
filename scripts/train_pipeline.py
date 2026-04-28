@@ -456,10 +456,12 @@ async def stage_7_eval_game(world_model: "WorldModel | None" = None) -> None:
                 try:
                     from src.world_model.kg_encoder import KGContextEncoder, KGContextEncoderConfig
 
-                    kg_cfg = KGContextEncoderConfig(
-                        kg_embed_dim=world_model.encoder.config.kg_embed_dim
-                    )
-                    kg_encoder = KGContextEncoder(CardEmbeddingModel(), kg_cfg)
+                    kg_dim = world_model.encoder.config.kg_embed_dim
+                    if kg_dim and kg_dim > 0:
+                        kg_cfg = KGContextEncoderConfig(kg_embed_dim=kg_dim)
+                        kg_encoder = KGContextEncoder(CardEmbeddingModel(), kg_cfg)
+                    else:
+                        logger.info("Skipping KG encoder for evaluation: model trained with --no-kg")
                 except Exception as e:
                     logger.warning("KG encoder unavailable for evaluation: %s", e)
 

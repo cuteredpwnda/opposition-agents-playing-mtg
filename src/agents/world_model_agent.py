@@ -109,7 +109,7 @@ class WorldModelAgent(MTGAgent):
         logger.debug(
             "WorldModelAgent chose: %s %s",
             chosen_action.action_type.value,
-            chosen_action.card.name if chosen_action.card else "",
+            chosen_action.card_instance_id or "",
         )
         return chosen_action
 
