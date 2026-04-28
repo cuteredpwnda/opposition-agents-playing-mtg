@@ -702,14 +702,34 @@ def resolve_trigger(state: GameState, trigger: Trigger) -> GameState:
             paid = False
             if ec_match:
                 cost = parse_mana_cost(ec_match.group(1))
-                # Heuristic: pay echo only if it's cheap (cmc <= 3) AND we
-                # can afford it. Otherwise sacrifice — naive but safe.
                 cmc = sum(cost.values())
-                if cmc <= 3 and auto_tap_for_cost(state, controller, cost):
+                # Smarter echo decision (CR 702.50): pay if the creature is
+                # worth keeping. Worth = effective power plus a bonus for
+                # key keywords ("flying", "trample", "haste", "lifelink",
+                # "deathtouch") or for creatures with non-trivial ability
+                # text. We pay when worth >= cmc, so a 5/5 flier happily
+                # pays an echo of {2}{G}{G} but a vanilla 1/1 does not.
+                from src.engine.counters import effective_power
+                power = effective_power(source) if source.is_creature() else 0
+                text = (source.oracle_text or "").lower()
+                key_kw = sum(
+                    1 for kw in (
+                        "flying", "trample", "haste", "lifelink", "deathtouch",
+                        "first strike", "double strike", "vigilance", "menace",
+                        "reach", "hexproof", "indestructible", "shroud",
+                    ) if kw in text
+                )
+                non_trivial_text = ":" in text or "when" in text or "whenever" in text
+                worth = power + 2 * key_kw + (3 if non_trivial_text else 0)
+                affordable = auto_tap_for_cost(state, controller, cost)
+                if worth >= cmc and affordable:
                     from src.engine.mana import pay_cost
                     pay_cost(controller, cost)
                     paid = True
-                    state.log(f"[Trigger] {controller.name} pays echo cost for {source.name}")
+                    state.log(
+                        f"[Trigger] {controller.name} pays echo cost for "
+                        f"{source.name} (worth={worth} ≥ cmc={cmc})"
+                    )
             if not paid:
                 move_card(
                     state, source.instance_id, Zone.BATTLEFIELD,

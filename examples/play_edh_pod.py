@@ -49,6 +49,7 @@ from src.agents.llm_agent import OllamaAgent
 from src.integrations.decklist_loader import DecklistLoader
 from src.integrations.offline_card_db import get_default_db
 from src.orchestrator.game_runner import GameConfig, GameRunner
+from src.orchestrator.jsonl_trace import JsonlActionTrace
 from src.utils.seeding import set_global_seed
 
 
@@ -169,7 +170,12 @@ async def play_pod(deck_paths: list[Path], model: str,
         mulligan_enabled=True,
         max_mulligans=3,
     )
-    runner = GameRunner(config)
+    trace: JsonlActionTrace | None = None
+    if log_dir is not None:
+        log_dir.mkdir(parents=True, exist_ok=True)
+        trace_path = log_dir / f"pod_game_{game_num:03d}.jsonl"
+        trace = JsonlActionTrace(trace_path, game_id=f"pod_game_{game_num:03d}")
+    runner = GameRunner(config, self_play_collector=trace)
 
     print(f"\n{'='*72}")
     print(f"POD GAME {game_num}  (model={model_tag}, max_turns={max_turns})")
@@ -178,7 +184,11 @@ async def play_pod(deck_paths: list[Path], model: str,
     print(f"{'='*72}")
 
     t0 = time.time()
-    result = await runner.run_game(agents=agents, decks=decks)
+    try:
+        result = await runner.run_game(agents=agents, decks=decks)
+    finally:
+        if trace is not None:
+            trace.close()
     elapsed = time.time() - t0
 
     winner_label = labels.get(result.winner, str(result.winner))
@@ -206,6 +216,7 @@ async def play_pod(deck_paths: list[Path], model: str,
             pid: a.stats["llm_calls_total"] for pid, a in agents.items()
         },
         "log_path": str(log_path) if log_path else None,
+        "trace_path": str(trace.path) if trace is not None else None,
     }
     print(f"  -> {winner_label} wins in {result.turns} turns ({elapsed:.1f}s)")
     return summary

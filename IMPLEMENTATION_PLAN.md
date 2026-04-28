@@ -147,6 +147,64 @@ items stay for traceability.
       `keywords.effective_power/toughness` now read those counters so
       "Equipped creature gets +N/+M" is reflected in combat. Tests:
       `tests/test_equip_bonus.py` (2 tests).
+- [x] **Counterspell awareness** — `HeuristicAgent._filter_counter_actions`
+      now drops `Cast(<counter>)` from the candidate set unless the
+      topmost stack item is an opponent's spell. The agent still has the
+      counter in hand for later, instead of firing it on its own dork or
+      whenever {U}{U} is open. Tests:
+      `tests/test_counterspell_awareness.py` (3 tests).
+- [x] **Smarter proliferate** — `apply_spell_effect("proliferate")`
+      now (a) skips harmful counter types (`-1/-1`, `stun`, `poison`) on
+      our own permanents so we don't kill our own walker, (b) bumps only
+      harmful counters on opponents' permanents, never their +1/+1, and
+      (c) bumps our energy / opponents' poison appropriately. Tests:
+      `tests/test_proliferate_smart.py` (4 tests).
+- [x] **Planeswalker / legendary / aura SBAs (CR 704.5i, .5j, .5n)** —
+      `check_state_based_actions` now sends 0-loyalty walkers to the
+      graveyard, sacrifices same-name legendaries under one controller
+      (keeping the most recent ETB), and sends auras with no/illegal
+      target to the graveyard. Tests:
+      `tests/test_planeswalker_legendary_aura_sba.py` (5 tests).
+- [x] **Multi-mode targeting (CR 700.2)** — verified `apply_spell_effect`
+      already splits modes on bullet separators, picks the highest-value
+      modes via `_pick_modes`, and re-runs `auto_pick_targets` per chosen
+      mode by temporarily swapping `oracle_text`. Hardened
+      `_split_modes` to also strip rider lines (Entwine / Fuse /
+      Escalate / Kicker / Aftermath) that share a paragraph with the
+      final mode. Tests: `tests/test_modal_targeting.py` (3 tests).
+- [x] **Channel keyword (Kamigawa: Neon Dynasty)** — new
+      `src/engine/channel.py` parses `Channel — {cost}, Discard <name>:
+      <effect>` from oracle text, exposes `parse_channel`,
+      `can_pay_channel`, and `execute_channel`. The rules engine surfaces
+      channel as `Special_Action(metadata={'special':'channel'})` for
+      cards in hand and resolves it by paying the cost, discarding the
+      card, and pushing the effect onto the stack as an ability (so
+      opponents can respond). Tests: `tests/test_channel.py` (4 tests).
+- [x] **JSONL action trace** — new
+      `src/orchestrator/jsonl_trace.py:JsonlActionTrace` conforms to
+      the existing `SelfPlayCollector` protocol (`on_state`, `on_action`,
+      `finish_game`) and writes one JSON object per agent decision next
+      to the human log. `play_edh_pod.py` now opens a trace file
+      (`runs/edh_pod/pod_game_NNN.jsonl`) when `--log-dir` is set. Each
+      record carries the per-perspective state summary (life, hand size,
+      mana pool, battlefield, hand_view) and the chosen action. Tests:
+      `tests/test_jsonl_trace.py` (2 tests).
+- [x] **Board-aware mode picking** — `_pick_modes` in
+      `src/engine/spell_effects.py` now consults the board: removal
+      modes are boosted when an opponent has a real threat on the
+      battlefield, demoted when there are no creatures to remove;
+      damage modes are demoted when the chosen amount can't kill the
+      smallest opposing creature *and* the opponent's life is high;
+      lifegain spikes hard at low life (≤5) and is otherwise mild;
+      card draw bumps when our hand is small. Tests:
+      `tests/test_board_aware_modes.py` (4 tests).
+- [x] **Echo cost decision** — `resolve_trigger` in
+      `src/engine/triggers.py` no longer hard-codes "pay if cmc ≤ 3".
+      Instead it computes a *worth* score = effective power + 2·(key
+      keywords) + 3 (if the card has activated/triggered ability text)
+      and only pays when worth ≥ cmc. Vanilla 1/1s with echo {1}{R}
+      get sacrificed; 5/5 fliers with echo {2}{R}{R} get paid. Tests:
+      `tests/test_echo_decision.py` (3 tests).
 
 ### In progress
 
@@ -154,31 +212,16 @@ _(none — pick from queue below)_
 
 ### Queue — High Priority
 
-- [ ] **Counterspell awareness** — heuristic agent should hold up `{U}` when
-      it has a counter in hand and the opponent casts a relevant spell.
+_(empty — promote from medium)_
 
 ### Queue — Medium Priority
 
-- [ ] **Cycling, Channel, Flashback** activated abilities from non-battlefield
-      zones.
-- [ ] **Proliferate** target choice (currently always proliferates everything
-      we control — should also include planeswalkers we want to protect).
-- [ ] **Multi-mode targeting**: modal spells that target should let
-      `auto_pick_targets` re-evaluate per-mode (partially done — verify with
-      Charms / Commands).
-- [ ] **Replacement effects framework** — generalize beyond stun + ETB tapped.
-- [ ] **State-based actions for planeswalker loyalty 0** (already partial; add
-      legendary rule + token cleanup audit).
+- [ ] **Replacement effects framework** — generalize beyond stun + ETB
+      tapped (handle "if X would Y, instead Z").
 
 ### Queue — Low Priority / Polish
 
-- [ ] **Better mode picking**: inject board-state heuristics (e.g. don't pick
-      "destroy target creature" if no opp creatures with power ≥ 3).
-- [ ] **Echo cost decision**: currently a fixed cmc-≤-3 heuristic; let the
-      agent decide.
-- [ ] **Compress legal-action log** — collapse repeated `Activate(Mountain)`
-      mana-tap entries into `Activate(Mountain) ×3`.
-- [ ] **Per-turn JSONL action trace** alongside the human log for ML.
+_(currently empty — see Done above)_
 
 ---
 

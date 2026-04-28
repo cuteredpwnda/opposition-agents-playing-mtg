@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import re
 
-from .game_state import Action, ActionType, GameState, Phase, Zone, StackItem
+from .game_state import Action, ActionType, GameState, Phase, Zone, StackItem, CardInstance
 from .phases import is_main_phase
 from .stack import is_empty as stack_is_empty
 from .stack import push_to_stack
@@ -329,6 +329,25 @@ class RulesEngine:
                         metadata={"special": "cycle"},
                     )
                 )
+
+        # Channel (Kamigawa: Neon Dynasty): "Channel — {cost}, Discard
+        # this card: <effect>". Activated ability from hand, instant speed.
+        from .channel import parse_channel, can_pay_channel
+        for card in hand:
+            chan = parse_channel(card)
+            if chan is None:
+                continue
+            chan_cost, _ = chan
+            if not can_pay_channel(state, player, chan_cost):
+                continue
+            actions.append(
+                Action(
+                    action_type=ActionType.SPECIAL_ACTION,
+                    player_id=player_id,
+                    card_instance_id=card.instance_id,
+                    metadata={"special": "channel"},
+                )
+            )
 
         # Flashback (CR 702.34): cast eligible spells from graveyard for the
         # flashback cost. Sorcery-speed for sorceries, instant-speed for
@@ -801,6 +820,12 @@ class RulesEngine:
                 player = next((p for p in state.players if p.player_id == action.player_id), None)
                 if card and player:
                     state = execute_cycle(state, card, player)
+            elif special == "channel" and action.card_instance_id:
+                from .channel import execute_channel
+                card = next((c for c in state.cards if c.instance_id == action.card_instance_id), None)
+                player = next((p for p in state.players if p.player_id == action.player_id), None)
+                if card and player:
+                    state = execute_channel(state, card, player)
             elif special == "equip" and action.card_instance_id and action.targets:
                 from .equip import execute_equip
                 eq = next((c for c in state.cards if c.instance_id == action.card_instance_id), None)
@@ -1168,6 +1193,78 @@ class RulesEngine:
                 if card in state.cards:
                     state.cards.remove(card)
                     events.append(f"{card.name} token ceases to exist")
+
+        # CR 704.5i: planeswalker with 0 loyalty is put into its owner's
+        # graveyard.
+        for card in list(state.cards):
+            if card.zone != Zone.BATTLEFIELD:
+                continue
+            type_line = (card.card_data.get("type_line") or "").lower()
+            if "planeswalker" not in type_line:
+                continue
+            loyalty = card.counters.get("loyalty", 0)
+            if loyalty <= 0:
+                events.append(f"{card.name} dies (0 loyalty)")
+                state = move_card(
+                    state, card.instance_id, Zone.BATTLEFIELD, Zone.GRAVEYARD,
+                    card.owner_id,
+                )
+
+        # CR 704.5j: legendary rule. If a player controls two or more
+        # legendary permanents with the same name, that player chooses one
+        # of them; the rest go to their owners' graveyards.
+        legendaries: dict[tuple[str, str], list[CardInstance]] = {}
+        for card in state.cards:
+            if card.zone != Zone.BATTLEFIELD:
+                continue
+            type_line = (card.card_data.get("type_line") or "").lower()
+            if "legendary" not in type_line:
+                continue
+            key = (card.controller_id, card.name)
+            legendaries.setdefault(key, []).append(card)
+        for (controller, name), group in legendaries.items():
+            if len(group) <= 1:
+                continue
+            # Keep the most recently entered one; sacrifice the rest. We
+            # use turn_entered as a coarse proxy for "newest".
+            group.sort(key=lambda c: c.turn_entered, reverse=True)
+            keeper = group[0]
+            for dup in group[1:]:
+                events.append(
+                    f"{dup.name} dies (legendary rule, {controller} keeps "
+                    f"{keeper.instance_id})"
+                )
+                state = move_card(
+                    state, dup.instance_id, Zone.BATTLEFIELD, Zone.GRAVEYARD,
+                    dup.owner_id,
+                )
+
+        # CR 704.5n: an Aura attached to an illegal object (or nothing) is
+        # put into its owner's graveyard.
+        for card in list(state.cards):
+            if card.zone != Zone.BATTLEFIELD:
+                continue
+            type_line = (card.card_data.get("type_line") or "").lower()
+            if "aura" not in type_line:
+                continue
+            if not card.attached_to:
+                events.append(f"{card.name} dies (aura unattached)")
+                state = move_card(
+                    state, card.instance_id, Zone.BATTLEFIELD, Zone.GRAVEYARD,
+                    card.owner_id,
+                )
+                continue
+            target = next(
+                (c for c in state.cards if c.instance_id == card.attached_to),
+                None,
+            )
+            if target is None or target.zone != Zone.BATTLEFIELD:
+                events.append(f"{card.name} dies (aura's target left play)")
+                state = move_card(
+                    state, card.instance_id, Zone.BATTLEFIELD, Zone.GRAVEYARD,
+                    card.owner_id,
+                )
+                card.attached_to = None
 
         # Remove dead players from the game
         orig_count = len(state.players)

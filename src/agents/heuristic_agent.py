@@ -51,6 +51,13 @@ class HeuristicAgent(MTGAgent):
                 action_type=ActionType.PASS_PRIORITY, player_id=self.player_id
             )
 
+        # Counterspell discipline: don't waste a counter on our own spells
+        # or fire it when nothing's on the stack. Filter out CAST_SPELL
+        # actions for cards whose oracle text contains "counter target"
+        # unless the topmost stack item is a spell controlled by an
+        # opponent.
+        legal_actions = self._filter_counter_actions(game_state, legal_actions)
+
         ranked = sorted(
             legal_actions,
             key=lambda a: (
@@ -113,4 +120,50 @@ class HeuristicAgent(MTGAgent):
         # Stable deterministic tiebreak: hash action serialisation with RNG.
         return self._rng.getrandbits(32) ^ hash(
             (action.action_type, action.player_id, tuple(action.targets or ()))
+        )
+
+    def _filter_counter_actions(
+        self, game_state: GameState, legal_actions: list[Action]
+    ) -> list[Action]:
+        """Remove ``Cast(counterspell)`` from the menu unless an opponent
+        spell is on the stack.
+
+        Without this, the heuristic happily casts Counterspell on its own
+        spells (or whenever it has the mana) since `CAST_SPELL` > `PASS`.
+        """
+        # Find the controller of the topmost spell on the stack, if any.
+        opp_spell_on_top = False
+        if game_state.stack:
+            top = game_state.stack[-1]
+            if (
+                getattr(top, "is_spell", False)
+                and getattr(top, "controller_id", None) != self.player_id
+            ):
+                opp_spell_on_top = True
+
+        if opp_spell_on_top:
+            return legal_actions
+
+        # No opponent spell to counter — drop Cast(counterspell) actions.
+        kept: list[Action] = []
+        for a in legal_actions:
+            if a.action_type == ActionType.CAST_SPELL and a.card_instance_id:
+                card = next(
+                    (c for c in game_state.cards if c.instance_id == a.card_instance_id),
+                    None,
+                )
+                if card and self._is_counterspell(card.oracle_text or ""):
+                    continue
+            kept.append(a)
+        # Never strip the entire menu down to nothing.
+        return kept or legal_actions
+
+    @staticmethod
+    def _is_counterspell(oracle: str) -> bool:
+        text = oracle.lower()
+        # CR 701.5: "counter target spell" or "counter target X spell".
+        return (
+            "counter target spell" in text
+            or "counter target activated" in text
+            or "counter target triggered" in text
         )

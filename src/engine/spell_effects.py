@@ -328,10 +328,16 @@ def _split_modes(oracle: str) -> list[str]:
     parts = [p.strip() for p in parts[1:] if p.strip()]
     # Strip rider clauses ("Entwine {2}", "Fuse", reminder text in parens).
     cleaned = []
+    rider_re = re.compile(r"^\s*(entwine|fuse|escalate|kicker|aftermath)\b",
+                          re.IGNORECASE)
     for p in parts:
-        # Drop entwine/fuse riders that follow the last mode.
-        if p.lower().startswith("entwine") or p.lower().startswith("fuse"):
+        # Drop entwine/fuse riders that follow the last mode (own paragraph).
+        if rider_re.match(p):
             continue
+        # Strip rider lines mixed into the same chunk as the last mode
+        # (e.g. "Draw two cards.\nEntwine {2}").
+        kept_lines = [ln for ln in p.splitlines() if not rider_re.match(ln)]
+        p = "\n".join(kept_lines).strip()
         # Strip trailing reminder text in parentheses.
         p = re.sub(r"\(.*?\)", "", p).strip()
         if p:
@@ -348,22 +354,74 @@ def _pick_modes(
 ) -> list[str]:
     """Rank modes by `_MODE_KIND_RANK` and return the top ``pick_count``.
 
-    Filters out modes whose kind would have no legal effect (e.g. "destroy
-    target creature" with no opposing creatures).
+    Board-aware adjustments:
+
+    * Removal (destroy/exile/bounce/tap/fight) is penalised when there
+      are no targets, and *boosted* when an opponent has a high-power
+      creature on the field.
+    * Counter modes only score when an opponent's spell sits on the
+      stack top.
+    * Damage modes are penalised when the chosen amount is below the
+      smallest opposing toughness (it would either fizzle or merely
+      tickle a player at high life).
+    * Lifegain is boosted when our life total is below 5 (panic mode)
+      and otherwise stays low.
+    * Card draw scales up modestly when our hand is small.
     """
+    me = _find_player(state, controller_id)
+    opp = _opponent(state, controller_id)
+    opp_creatures = _opponent_creatures(state, controller_id, source) if opp else []
+    biggest_opp_power = max((_power(c) for c in opp_creatures), default=0)
+
+    def _tough(c: CardInstance) -> int:
+        try:
+            return int(c.toughness)
+        except (TypeError, ValueError):
+            return 99
+
+    smallest_opp_toughness = min(
+        (_tough(c) for c in opp_creatures), default=99,
+    )
+
     scored: list[tuple[int, str]] = []
     for m in modes:
         kind = detect_effect_kind(m)
         score = _MODE_KIND_RANK.get(kind, 0)
-        # Penalise modes that need a target we don't have.
+        m_lower = m.lower()
         if kind in ("destroy", "exile", "bounce", "tap", "fight"):
-            opp_creatures = _opponent_creatures(state, controller_id, source)
-            if not opp_creatures and "creature" in m.lower():
+            if not opp_creatures and "creature" in m_lower:
                 score -= 5
+            elif biggest_opp_power >= 4:
+                # The board has a real threat — removal is great.
+                score += 3
+            elif biggest_opp_power >= 2:
+                score += 1
         if kind == "counter":
             top = state.stack[-1] if state.stack else None
             if not top or not top.is_spell or top.controller_id == controller_id:
                 score -= 5
+        if kind == "damage":
+            amount = _parse_amount(m, default=1)
+            if opp_creatures and amount < smallest_opp_toughness:
+                # Won't kill anything; only useful if we can aim at face.
+                if opp and opp.life_total > amount * 4:
+                    score -= 2
+            elif amount >= smallest_opp_toughness and opp_creatures:
+                score += 2
+        if kind == "lifegain":
+            if me is not None and me.life_total <= 5:
+                score += 6  # panic mode — survival overrides everything
+            elif me is not None and me.life_total < 12:
+                score += 1
+            else:
+                score -= 1
+        if kind == "draw":
+            hand_size = sum(
+                1 for c in state.cards
+                if c.zone == Zone.HAND and c.owner_id == controller_id
+            )
+            if hand_size <= 2:
+                score += 2
         scored.append((score, m))
     scored.sort(key=lambda t: t[0], reverse=True)
     return [m for _, m in scored[:max(1, pick_count)]]
@@ -727,14 +785,42 @@ def apply_spell_effect(
 
     if kind == "proliferate":
         # CR 701.27: choose any number of permanents/players with counters,
-        # add one of each kind they already have. Greedy: do all of ours.
+        # add one of each kind they already have. We greedy-pick:
+        #   * all OUR permanents, but skip harmful counter types on them
+        #     (we don't want to pile -1/-1 / stun / poison onto our own
+        #     stuff — that's how you kill your own walker).
+        #   * opponents' permanents only when the counters there are
+        #     harmful (-1/-1, stun, poison) so we make their situation
+        #     worse, never better.
+        # Player poison counters always go up on opponents only.
+        HARMFUL = {"-1/-1", "stun", "poison"}
         bumped = 0
         for c in state.cards:
-            if c.zone != Zone.BATTLEFIELD or c.controller_id != controller_id:
+            if c.zone != Zone.BATTLEFIELD:
                 continue
-            for kctype in list(c.counters.keys()):
-                if c.counters[kctype] > 0:
-                    c.counters[kctype] += 1
+            if c.controller_id == controller_id:
+                # Our permanent: add one of each *non-harmful* counter type.
+                for kctype in list(c.counters.keys()):
+                    if kctype in HARMFUL:
+                        continue
+                    if c.counters[kctype] > 0:
+                        c.counters[kctype] += 1
+                        bumped += 1
+            else:
+                # Opponent's permanent: only bump harmful counters.
+                for kctype in list(c.counters.keys()):
+                    if kctype in HARMFUL and c.counters[kctype] > 0:
+                        c.counters[kctype] += 1
+                        bumped += 1
+        # Players: bump our energy, opponents' poison.
+        for pl in state.players:
+            if pl.player_id == controller_id:
+                if getattr(pl, "energy_counters", 0) > 0:
+                    pl.energy_counters += 1
+                    bumped += 1
+            else:
+                if getattr(pl, "poison_counters", 0) > 0:
+                    pl.poison_counters += 1
                     bumped += 1
         state.log(f"{name}: proliferates ({bumped} counter(s) added)")
         return state
