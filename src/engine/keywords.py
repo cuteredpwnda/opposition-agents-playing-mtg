@@ -97,14 +97,35 @@ def _spell_colors(card: CardInstance) -> set[str]:
 
 
 def ward_cost(card: Optional[CardInstance]) -> int:
-    """Generic ward cost (CR 702.21), or 0 if absent."""
+    """Generic ward cost in mana (CR 702.21), or 0 if absent.
+
+    Recognised forms (oracle-text excerpts):
+
+    * ``Ward {2}`` / ``Ward {1}{U}`` — total mana value.
+    * ``Ward—Pay 3 life.`` — converted to 1 generic for the purpose of
+      auto-pay (we don't yet model life payment as part of ward).
+    * Bare ``Ward`` (no cost) — defaults to 1 (treated as ``ward {1}``).
+
+    The match is anchored so that words like ``wardrobe`` or
+    ``forward`` don't false-positive.
+    """
     if card is None:
         return 0
     text = (card.oracle_text or "").lower()
-    m = re.search(r"ward\s*\{(\d+)\}", text)
+    # Numeric mana ward like "ward {2}" or "ward {1}{U}".
+    m = re.search(r"\bward\s*((?:\{[^}]+\}\s*)+)", text)
     if m:
-        return int(m.group(1))
-    if "ward" in text:
+        cost_chunk = m.group(1)
+        total = 0
+        for token in re.findall(r"\{([^}]+)\}", cost_chunk):
+            tok = token.strip().upper()
+            if tok.isdigit():
+                total += int(tok)
+            else:
+                total += 1  # any coloured/hybrid pip counts as 1
+        return total
+    # Word-boundary check so "wardrobe" / "forward" don't match.
+    if re.search(r"\bward\b", text):
         return 1
     return 0
 

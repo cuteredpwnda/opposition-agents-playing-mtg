@@ -205,6 +205,18 @@ items stay for traceability.
       and only pays when worth ≥ cmc. Vanilla 1/1s with echo {1}{R}
       get sacrificed; 5/5 fliers with echo {2}{R}{R} get paid. Tests:
       `tests/test_echo_decision.py` (3 tests).
+- [x] **Replacement effects framework** — `src/engine/replacement_effects.py`
+      replaced with a real registry (`ReplacementRegistry`) and a single
+      hook `apply_replacements(state, event)`. Pattern parsers for
+      damage prevention ("prevent all combat damage that would be dealt
+      to you"), death-to-exile ("if a creature would die, exile it
+      instead"), and lifegain doubling ("if you would gain life, …
+      twice that much instead") install themselves automatically when
+      a permanent enters the battlefield via `move_card`, and uninstall
+      on LTB. Convenience helpers `apply_lifegain` and
+      `apply_damage_to_player` mutate `life_total` only after running
+      replacements. Tests: `tests/test_replacement_effects_framework.py`
+      (5 tests).
 
 ### In progress
 
@@ -216,8 +228,7 @@ _(empty — promote from medium)_
 
 ### Queue — Medium Priority
 
-- [ ] **Replacement effects framework** — generalize beyond stun + ETB
-      tapped (handle "if X would Y, instead Z").
+_(empty — see Done above)_
 
 ### Queue — Low Priority / Polish
 

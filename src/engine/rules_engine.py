@@ -714,6 +714,15 @@ class RulesEngine:
                         card_data=card.card_data.copy(),
                     )
                     state = push_to_stack(state, stack_item)
+                    # Cascade (CR 702.85) — triggers when the spell is
+                    # cast; resolves above the cascade spell so the
+                    # cascaded spell resolves first.
+                    try:
+                        from .cascade import has_cascade, execute_cascade
+                        if has_cascade(card):
+                            execute_cascade(state, card)
+                    except Exception:
+                        pass
                     # Prowess (CR 702.108): non-creature spells boost
                     # prowess creatures controller controls.
                     apply_prowess_on_cast(state, action.player_id, card)
