@@ -1,16 +1,16 @@
-#!/usr/bin/env python
+﻿#!/usr/bin/env python
 """
-End-to-end training pipeline — Knowledge Graph + JEPA World Model.
+End-to-end training pipeline â€” Knowledge Graph + JEPA World Model.
 
 Orchestrates the full flow from raw data to a trained dual-input JEPA
 world model agent:
 
   Stage 1: Infrastructure check (Neo4j, GPU, dependencies)
-  Stage 2: Knowledge Graph setup (Scryfall import → combos → ontology)
-  Stage 3: Graph embedding training (GNN on card graph → 128-dim vectors)
+  Stage 2: Knowledge Graph setup (Scryfall import â†’ combos â†’ ontology)
+  Stage 3: Graph embedding training (GNN on card graph â†’ 128-dim vectors)
   Stage 4: Self-play trajectory collection (random/simple agents)
   Stage 5: JEPA world model training (encoder + predictor + KG fusion)
-  Stage 6: Full dream training (V → JEPA → M → C pipeline)
+  Stage 6: Full dream training (V â†’ JEPA â†’ M â†’ C pipeline)
   Stage 7: Evaluation game with trained WorldModelAgent
 
 Usage:
@@ -36,16 +36,25 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
-)
+# Force unbuffered stdout so progress shows live when piped/teed.
+try:
+    sys.stdout.reconfigure(line_buffering=True)  # type: ignore[attr-defined]
+    sys.stderr.reconfigure(line_buffering=True)  # type: ignore[attr-defined]
+except Exception:
+    pass
+
+_handler = logging.StreamHandler(sys.stdout)
+_handler.setFormatter(logging.Formatter(
+    "%(asctime)s [%(levelname)s] %(name)s | %(message)s",
+    datefmt="%H:%M:%S",
+))
+logging.basicConfig(level=logging.INFO, handlers=[_handler], force=True)
 logger = logging.getLogger("train_pipeline")
 
 
-# ╔═══════════════════════════════════════════════════════════════════╗
-# ║  Stage 1 — Infrastructure Check                                  ║
-# ╚═══════════════════════════════════════════════════════════════════╝
+# â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—
+# â•‘  Stage 1 â€” Infrastructure Check                                  â•‘
+# â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 async def stage_1_check_infra() -> dict[str, bool]:
     """Verify Python, PyTorch, Neo4j, GPU availability."""
@@ -55,7 +64,7 @@ async def stage_1_check_infra() -> dict[str, bool]:
     # Python
     py = platform.python_version()
     status["python_3.11+"] = sys.version_info >= (3, 11)
-    logger.info("Python %s — %s", py, "OK" if status["python_3.11+"] else "NEED 3.11+")
+    logger.info("Python %s â€” %s", py, "OK" if status["python_3.11+"] else "NEED 3.11+")
 
     # PyTorch + GPU
     try:
@@ -63,10 +72,10 @@ async def stage_1_check_infra() -> dict[str, bool]:
         status["pytorch"] = True
         status["cuda"] = torch.cuda.is_available()
         if status["cuda"]:
-            logger.info("PyTorch %s — CUDA %s (%s)", torch.__version__,
+            logger.info("PyTorch %s â€” CUDA %s (%s)", torch.__version__,
                         torch.version.cuda, torch.cuda.get_device_name(0))
         else:
-            logger.info("PyTorch %s — CPU only", torch.__version__)
+            logger.info("PyTorch %s â€” CPU only", torch.__version__)
     except ImportError:
         status["pytorch"] = False
         status["cuda"] = False
@@ -84,7 +93,7 @@ async def stage_1_check_infra() -> dict[str, bool]:
             _ = await result.single()
         await driver.close()
         status["neo4j"] = True
-        logger.info("Neo4j at %s — OK", settings.neo4j_uri)
+        logger.info("Neo4j at %s â€” OK", settings.neo4j_uri)
     except Exception as e:
         status["neo4j"] = False
         logger.warning("Neo4j not available: %s", e)
@@ -93,7 +102,7 @@ async def stage_1_check_infra() -> dict[str, bool]:
     try:
         from torch_geometric.nn import SAGEConv  # noqa: F401
         status["pyg"] = True
-        logger.info("PyTorch Geometric — OK")
+        logger.info("PyTorch Geometric â€” OK")
     except ImportError:
         status["pyg"] = False
         logger.warning("PyTorch Geometric not installed (graph embeddings will be skipped)")
@@ -101,9 +110,9 @@ async def stage_1_check_infra() -> dict[str, bool]:
     return status
 
 
-# ╔═══════════════════════════════════════════════════════════════════╗
-# ║  Stage 2 — Knowledge Graph Setup                                  ║
-# ╚═══════════════════════════════════════════════════════════════════╝
+# â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—
+# â•‘  Stage 2 â€” Knowledge Graph Setup                                  â•‘
+# â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 async def stage_2_build_kg() -> bool:
     """Import Scryfall cards + combos into Neo4j, set up ontology."""
@@ -112,7 +121,7 @@ async def stage_2_build_kg() -> bool:
     try:
         from src.knowledge.n10s_setup import N10sSetup
 
-        logger.info("Initialising n10s + ontology…")
+        logger.info("Initialising n10s + ontologyâ€¦")
         setup = N10sSetup()
         await setup.full_setup()
         logger.info("n10s setup complete")
@@ -122,7 +131,7 @@ async def stage_2_build_kg() -> bool:
     # Scryfall import
     try:
         from scripts.import_scryfall import main as import_scryfall_main
-        logger.info("Importing Scryfall card data…")
+        logger.info("Importing Scryfall card dataâ€¦")
         await import_scryfall_main()
     except Exception as e:
         logger.error("Scryfall import failed: %s", e)
@@ -131,7 +140,7 @@ async def stage_2_build_kg() -> bool:
     # Combo import
     try:
         from scripts.import_combos import main as import_combos_main
-        logger.info("Importing combos…")
+        logger.info("Importing combosâ€¦")
         await import_combos_main()
     except Exception as e:
         logger.warning("Combo import skipped: %s", e)
@@ -140,9 +149,9 @@ async def stage_2_build_kg() -> bool:
     return True
 
 
-# ╔═══════════════════════════════════════════════════════════════════╗
-# ║  Stage 3 — Graph Embedding Training                               ║
-# ╚═══════════════════════════════════════════════════════════════════╝
+# â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—
+# â•‘  Stage 3 â€” Graph Embedding Training                               â•‘
+# â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 async def stage_3_train_graph_embeddings(
     embed_dim: int = 128,
@@ -171,9 +180,9 @@ async def stage_3_train_graph_embeddings(
     return True
 
 
-# ╔═══════════════════════════════════════════════════════════════════╗
-# ║  Stage 4 — Self-Play Trajectory Collection                        ║
-# ╚═══════════════════════════════════════════════════════════════════╝
+# â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—
+# â•‘  Stage 4 â€” Self-Play Trajectory Collection                        â•‘
+# â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 async def stage_4_collect_trajectories(
     num_games: int = 200,
@@ -181,16 +190,22 @@ async def stage_4_collect_trajectories(
 ) -> "TrajectoryStore":
     """Run self-play games to collect training trajectories.
 
-    Uses the existing RLTrainer with random agents initially.
-    Returns a TrajectoryStore with game trajectories.
+    Plays games directly with HeuristicAgent vs RandomAgent using
+    SelfPlayCollector to record encoded transitions.  Returns a
+    TrajectoryStore with the collected games.
     """
     logger.info("=== Stage 4: Collecting Self-Play Trajectories (%d games) ===", num_games)
 
+    from src.agents.heuristic_agent import HeuristicAgent
+    from src.agents.random_agent import RandomAgent
+    from src.orchestrator.game_runner import GameRunner, GameConfig
+    from src.world_model.card_embeddings import CardEmbeddingModel
+    from src.world_model.data_sources.self_play_collector import SelfPlayCollector
+    from src.world_model.game_tokenizer import GameTokenizer
     from src.world_model.trajectory import TrajectoryStore
 
-    store = TrajectoryStore(base_dir="data/trajectories")
+    store = TrajectoryStore(storage_dir="data/trajectories")
 
-    # Try loading existing trajectories
     try:
         store.load()
         logger.info("Loaded %d existing trajectories", len(store))
@@ -198,38 +213,46 @@ async def stage_4_collect_trajectories(
         pass
 
     if len(store) >= num_games:
-        logger.info("Already have %d trajectories (target: %d), skipping collection",
-                     len(store), num_games)
+        logger.info("Already have %d trajectories (target: %d), skipping",
+                    len(store), num_games)
         return store
 
     needed = num_games - len(store)
     logger.info("Need %d more trajectories", needed)
 
-    try:
-        from src.training.rl_trainer import RLConfig, RLTrainer
+    # Set up shared tokenizer/embeddings once (expensive to build)
+    card_model = CardEmbeddingModel()
+    tokenizer = GameTokenizer(card_embeddings=card_model.get_all_embeddings())
 
-        rl_config = RLConfig(
-            num_iterations=max(needed // 20, 1),
-            games_per_iteration=min(needed, 20),
-            max_turns_per_game=max_turns,
-            collect_trajectories=True,
-            dream_training_interval=9999,  # disable dream training during collection
-        )
-        trainer = RLTrainer(rl_config)
-        trainer.setup()
-        await trainer.train()
+    # Build deck from main.build_simple_deck for now
+    from main import build_simple_deck
 
-        # Merge trainer's trajectories into our store
-        if hasattr(trainer, "trajectory_store"):
-            for traj in trainer.trajectory_store.trajectories:
+    for game_num in range(needed):
+        try:
+            collector = SelfPlayCollector(tokenizer=tokenizer, card_embeddings=card_model)
+            agents = {
+                "player_0": HeuristicAgent("player_0"),
+                "player_1": RandomAgent("player_1"),
+            }
+            decks = {pid: build_simple_deck() for pid in agents}
+            gc = GameConfig(format="standard", starting_life=20, max_turns=max_turns)
+            runner = GameRunner(gc, self_play_collector=collector)
+            result = await runner.run_game(agents, decks)
+            for traj in collector.collected_trajectories:
                 store.add(traj)
-    except Exception as e:
-        logger.error("Self-play collection failed: %s", e)
-        logger.info("Continuing with %d trajectories", len(store))
+            logger.info(
+                "Game %d/%d: winner=%s turns=%d transitions=%d",
+                game_num + 1, needed, result.winner, result.turns,
+                sum(len(t) for t in collector.collected_trajectories),
+            )
+        except Exception as e:
+            logger.warning("Game %d failed: %s", game_num + 1, e)
 
-    # Persist
     try:
+        logger.info("Saving %d trajectories to disk...", len(store))
+        t0 = time.time()
         store.save()
+        logger.info("Saved trajectories in %.1fs", time.time() - t0)
     except Exception as e:
         logger.warning("Could not save trajectories: %s", e)
 
@@ -268,11 +291,11 @@ async def stage_4_iterative_self_play(
     if trainer.trajectory_store is not None:
         return trainer.trajectory_store
 
-    return TrajectoryStore(base_dir="data/trajectories")
+    return TrajectoryStore(storage_dir="data/trajectories")
 
-# ╔═══════════════════════════════════════════════════════════════════╗
-# ║  Stage 5 — JEPA World Model Training                              ║
-# ╚═══════════════════════════════════════════════════════════════════╝
+# â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—
+# â•‘  Stage 5 â€” JEPA World Model Training                              â•‘
+# â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 def stage_5_train_jepa(
     store: "TrajectoryStore",
@@ -308,7 +331,10 @@ def stage_5_train_jepa(
         jepa=jepa_cfg,
         use_jepa=True,
     )
+    logger.info("Building WorldModel (encoder + JEPA predictor)...")
     world_model = WorldModel(wm_cfg)
+    logger.info("WorldModel built: %d params",
+                sum(p.numel() for p in world_model.parameters()))
 
     # Build KG encoder if enabled
     kg_encoder = None
@@ -333,28 +359,31 @@ def stage_5_train_jepa(
             kg_encoder = KGContextEncoder(card_model, kg_cfg)
             logger.info("KG encoder enabled (dim=%d)", kg_embed_dim)
         except Exception as e:
-            logger.warning("Could not build KG encoder: %s — training without KG", e)
+            logger.warning("Could not build KG encoder: %s â€” training without KG", e)
 
     train_cfg = JEPATrainingConfig(
         num_epochs=num_epochs,
         device="cuda" if torch.cuda.is_available() else "cpu",
+        log_interval=10,
     )
+    logger.info("JEPA training: device=%s epochs=%d batch=%d",
+                train_cfg.device, train_cfg.num_epochs, train_cfg.batch_size)
 
     world_model = train_jepa(world_model, store, train_cfg, kg_encoder=kg_encoder)
     logger.info("JEPA training complete")
     return world_model
 
 
-# ╔═══════════════════════════════════════════════════════════════════╗
-# ║  Stage 6 — Full Dream Training (V → JEPA → M → C)                ║
-# ╚═══════════════════════════════════════════════════════════════════╝
+# â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—
+# â•‘  Stage 6 â€” Full Dream Training (V â†’ JEPA â†’ M â†’ C)                â•‘
+# â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 def stage_6_dream_training(
     store: "TrajectoryStore",
     world_model: "WorldModel | None" = None,
     num_iterations: int = 3,
 ) -> "WorldModel":
-    """Run the full V → JEPA → M → C dream training pipeline.
+    """Run the full V â†’ JEPA â†’ M â†’ C dream training pipeline.
 
     If a world_model is provided (e.g. from stage 5), it continues
     training from that checkpoint.  Otherwise a fresh model is created.
@@ -370,16 +399,16 @@ def stage_6_dream_training(
     return world_model
 
 
-# ╔═══════════════════════════════════════════════════════════════════╗
-# ║  Stage 7 — Evaluation Game                                        ║
-# ╚═══════════════════════════════════════════════════════════════════╝
+# â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—
+# â•‘  Stage 7 â€” Evaluation Game                                        â•‘
+# â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 async def stage_7_eval_game(world_model: "WorldModel | None" = None) -> None:
     """Play a demo game with the trained agent (or random agents if no model)."""
     logger.info("=== Stage 7: Evaluation Game ===")
 
     try:
-        from src.engine.game_runner import GameRunner
+        from src.orchestrator.game_runner import GameRunner
         from src.agents.random_agent import RandomAgent
 
         agents = {}
@@ -429,38 +458,42 @@ async def stage_7_eval_game(world_model: "WorldModel | None" = None) -> None:
         logger.error("Evaluation game failed: %s", e)
 
 
-# ╔═══════════════════════════════════════════════════════════════════╗
-# ║  Main Orchestrator                                                ║
-# ╚═══════════════════════════════════════════════════════════════════╝
+# â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—
+# â•‘  Main Orchestrator                                                â•‘
+# â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 async def run_pipeline(args: argparse.Namespace) -> None:
     """Execute the training pipeline from the specified stage."""
     start = args.stage
+    end = getattr(args, "end_stage", 7)
     t0 = time.time()
 
+    def _in_range(n: int) -> bool:
+        return start <= n <= end
+
     # --- Stage 1 ---
-    if start <= 1:
+    if _in_range(1):
         infra = await stage_1_check_infra()
         if not infra.get("pytorch"):
             logger.error("PyTorch is required. Install with: pip install -r requirements-ml.txt")
             return
 
     # --- Stage 2 ---
-    if start <= 2 and not args.no_kg:
+    if _in_range(2) and not args.no_kg:
         try:
             await stage_2_build_kg()
         except Exception as e:
-            logger.warning("KG setup failed: %s — continuing without KG", e)
+            logger.warning("KG setup failed: %s â€” continuing without KG", e)
 
     # --- Stage 3 ---
-    if start <= 3 and not args.no_kg:
+    if _in_range(3) and not args.no_kg:
         try:
             await stage_3_train_graph_embeddings(embed_dim=args.kg_embed_dim)
         except Exception as e:
-            logger.warning("Graph embedding training failed: %s — continuing", e)
+            logger.warning("Graph embedding training failed: %s â€” continuing", e)
 
     # --- Stage 4 ---
-    if start <= 4:
+    if _in_range(4):
         if args.iterative_training:
             store = await stage_4_iterative_self_play(
                 num_iterations=args.iterative_iters,
@@ -494,19 +527,23 @@ async def run_pipeline(args: argparse.Namespace) -> None:
             except Exception as e:
                 logger.warning("KG enrichment skipped: %s", e)
     else:
-        from src.world_model.trajectory import TrajectoryStore
-        store = TrajectoryStore(base_dir="data/trajectories")
-        try:
-            store.load()
-        except Exception:
-            pass
-        if len(store) == 0:
-            logger.error("No trajectories found. Run stage 4 first.")
-            return
+        # Only need to load trajectories from disk if a later stage will use them
+        if end >= 5:
+            from src.world_model.trajectory import TrajectoryStore
+            store = TrajectoryStore(storage_dir="data/trajectories")
+            try:
+                store.load()
+            except Exception:
+                pass
+            if len(store) == 0:
+                logger.error("No trajectories found. Run stage 4 first.")
+                return
+        else:
+            store = None  # type: ignore[assignment]
 
     # --- Stage 5 ---
     world_model = None
-    if start <= 5:
+    if _in_range(5):
         if args.wm_engine == "stable":
             from scripts.train_stable_worldmodel import main as stable_train_main
             import sys
@@ -554,7 +591,7 @@ async def run_pipeline(args: argparse.Namespace) -> None:
             )
 
     # --- Stage 6 ---
-    if start <= 6 and not args.skip_dream:
+    if _in_range(6) and not args.skip_dream:
         world_model = stage_6_dream_training(
             store,
             world_model=world_model,
@@ -589,7 +626,7 @@ async def run_pipeline(args: argparse.Namespace) -> None:
             logger.warning("Surprise detection skipped: %s", e)
 
     # --- Stage 7 ---
-    if not args.skip_eval:
+    if _in_range(7) and not args.skip_eval:
         await stage_7_eval_game(world_model)
 
     elapsed = time.time() - t0
@@ -604,6 +641,8 @@ def main() -> None:
     # Stage control
     parser.add_argument("--stage", type=int, default=1,
                         help="Start from this stage (1-7)")
+    parser.add_argument("--end-stage", type=int, default=7,
+                        help="Stop after this stage (inclusive)")
     parser.add_argument("--eval-only", action="store_true",
                         help="Only run the evaluation game")
 
@@ -644,7 +683,7 @@ def main() -> None:
 
     # Dream training
     parser.add_argument("--dream-iters", type=int, default=3,
-                        help="Full V→M→C dream training iterations")
+                        help="Full Vâ†’Mâ†’C dream training iterations")
     parser.add_argument("--skip-dream", action="store_true",
                         help="Skip dream training (stages 1-5 only)")
     parser.add_argument("--skip-eval", action="store_true",
@@ -660,3 +699,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

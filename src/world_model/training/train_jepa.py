@@ -22,6 +22,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from pathlib import Path
+import time
 from typing import Optional
 
 try:
@@ -53,7 +54,7 @@ class JEPATrainingConfig:
     beta_warmup_epochs: int = 10    # Linearly ramp β from 0 to jepa_beta
     grad_clip: float = 1.0
     checkpoint_dir: str = "checkpoints/jepa"
-    log_interval: int = 50
+    log_interval: int = 10
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
 
 
@@ -190,6 +191,7 @@ def train_jepa(
     original_beta = world_model.jepa_predictor.config.jepa_beta
 
     for epoch in range(config.num_epochs):
+        epoch_t0 = time.time()
         world_model.train()
         if kg_encoder is not None:
             kg_encoder.train()
@@ -203,6 +205,10 @@ def train_jepa(
             )
         else:
             world_model.jepa_predictor.config.jepa_beta = original_beta
+
+        logger.info("Epoch %d/%d starting (%d batches, β=%.3f)",
+                    epoch + 1, config.num_epochs, len(dataloader),
+                    world_model.jepa_predictor.config.jepa_beta)
 
         for step, batch in enumerate(dataloader):
             features_t = {k: v.to(device) for k, v in batch["features_t"].items()}
@@ -245,8 +251,9 @@ def train_jepa(
         n_steps = max(len(dataloader), 1)
         avg = {k: v / n_steps for k, v in epoch_losses.items()}
         logger.info(
-            "Epoch %d done: avg_total=%.4f avg_pred=%.4f avg_kl=%.4f",
-            epoch, avg["total"], avg["prediction"], avg["kl"],
+            "Epoch %d/%d done in %.1fs: avg_total=%.4f avg_pred=%.4f avg_kl=%.4f",
+            epoch + 1, config.num_epochs, time.time() - epoch_t0,
+            avg["total"], avg["prediction"], avg["kl"],
         )
 
         if (epoch + 1) % 10 == 0:

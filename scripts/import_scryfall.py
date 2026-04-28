@@ -18,7 +18,7 @@ from src.knowledge.kg_builder import KGBuilder
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-BULK_DATA_PATH = "data/oracle-cards.json"
+BULK_DATA_PATH = "data/scryfall/oracle-cards.json"
 
 
 async def download_bulk_data(output_path: str = BULK_DATA_PATH) -> str:
