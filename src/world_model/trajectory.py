@@ -184,6 +184,32 @@ class TrajectoryStore:
                 source=entry.get("source", "unknown"),
             )
 
+            if "_format" in files_set and str(data["_format"]) == "dense_v1":
+                # Fast path: per-feature stacked arrays.
+                num = int(data["_num_transitions"])
+                actions = data["actions"]
+                rewards = data["rewards"]
+                dones = data["dones"]
+                feat_arrays = {
+                    key[len("state__"):]: data[key]
+                    for key in data.files
+                    if key.startswith("state__")
+                }
+                for i in range(num):
+                    state_features = {k: v[i] for k, v in feat_arrays.items()}
+                    traj.add(Transition(
+                        state_features=state_features,
+                        action_encoding=actions[i],
+                        reward=float(rewards[i]),
+                        done=bool(dones[i]),
+                        action_type="unknown",
+                    ))
+                self.add(traj)
+                _log.info("  [%d/%d] %s: %d transitions in %.1fs (dense)",
+                          n, len(index), game_id, num, _time.time() - _t0)
+                continue
+
+            # Legacy path: per-transition keys (slow, kept for old files).
             # Pre-bucket keys by transition index in a single pass over the
             # key list (O(K) instead of O(N*K) where N = #transitions and
             # K = #npz keys).  Per-transition key counts can reach 70k+
@@ -219,7 +245,7 @@ class TrajectoryStore:
                 i += 1
 
             self.add(traj)
-            _log.info("  [%d/%d] %s: %d transitions in %.1fs",
+            _log.info("  [%d/%d] %s: %d transitions in %.1fs (legacy)",
                       n, len(index), game_id, i, _time.time() - _t0)
 
     def save_hdf5(self, output_path: str) -> None:
