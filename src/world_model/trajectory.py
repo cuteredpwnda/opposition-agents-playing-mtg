@@ -101,27 +101,51 @@ class TrajectoryStore:
     # -- Persistence --------------------------------------------------------
 
     def save(self) -> None:
-        """Save all trajectories to disk."""
+        """Save all trajectories to disk.
+
+        Uses a *dense* per-feature layout: for each trajectory we write
+        one npz file containing one entry per state-feature key (stacked
+        along axis 0 across transitions) plus stacked ``actions``,
+        ``rewards`` and ``dones`` arrays.  When transitions disagree on a
+        feature's shape we fall back to an ``object`` array.
+
+        The previous "per-transition key" format (``state_{i}_{name}``)
+        scaled the npz key count linearly with the number of transitions,
+        making load times unusable (>200s per game).  Old files written
+        in that legacy format are still readable via :meth:`load`.
+        """
         self.storage_dir.mkdir(parents=True, exist_ok=True)
 
-        # Save metadata index
         index = []
         for traj in self.trajectories:
-            # Save numpy arrays for this trajectory
-            arrays = {}
-            for i, t in enumerate(traj.transitions):
-                for key, arr in t.state_features.items():
-                    arrays[f"state_{i}_{key}"] = arr
-                arrays[f"action_{i}"] = t.action_encoding
-                arrays[f"reward_{i}"] = np.array(t.reward)
-                arrays[f"done_{i}"] = np.array(t.done)
+            n = len(traj.transitions)
+            arrays: dict[str, np.ndarray] = {}
+
+            # Collect feature keys (union across transitions).
+            feat_keys: set[str] = set()
+            for t in traj.transitions:
+                feat_keys.update(t.state_features.keys())
+
+            for key in feat_keys:
+                values = [t.state_features.get(key) for t in traj.transitions]
+                shapes = {None if v is None else v.shape for v in values}
+                if len(shapes) == 1 and None not in shapes:
+                    arrays[f"state__{key}"] = np.stack(values, axis=0)
+                else:
+                    arrays[f"state__{key}"] = np.array(values, dtype=object)
+
+            arrays["actions"] = np.stack([t.action_encoding for t in traj.transitions], axis=0)
+            arrays["rewards"] = np.array([t.reward for t in traj.transitions], dtype=np.float32)
+            arrays["dones"] = np.array([t.done for t in traj.transitions], dtype=bool)
+            arrays["_format"] = np.array("dense_v1")
+            arrays["_num_transitions"] = np.array(n)
 
             npz_path = self.storage_dir / f"{traj.game_id}.npz"
             np.savez_compressed(str(npz_path), **arrays)
 
             index.append({
                 "game_id": traj.game_id,
-                "num_transitions": len(traj),
+                "num_transitions": n,
                 "winner": traj.winner,
                 "num_turns": traj.num_turns,
                 "source": traj.source,
