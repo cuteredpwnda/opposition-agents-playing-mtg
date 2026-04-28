@@ -154,6 +154,29 @@ Human               & \texttt{human\_agent.py}            & Stdin prompt, used f
 \end{table}
 
 % =========================================================================
+\section{Glossary and symbols}
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabularx}{\linewidth}{l l X}
+\toprule
+\textbf{Symbol / term} & \textbf{Expanded form} & \textbf{Meaning in this repository} \\
+\midrule
+$POMDP$ & Partially Observable Markov Decision Process & Formal model of each seat's decision process under hidden information. \\
+$V, M, C$ & Encoder, Dynamics, Controller & World-model split: latent encoder, recurrent transition model, and policy/value heads. \\
+$JEPA$ & Joint Embedding Predictive Architecture & Predictor head trained in latent space without reconstruction. \\
+$EFE$ / $G(\pi)$ & Expected Free Energy & Active-inference objective combining pragmatic and epistemic terms. \\
+$KG$ & Knowledge Graph & Neo4j-backed symbolic substrate over cards, combos, mechanics, and archetypes. \\
+$APNAP$ & Active Player, Non-Active Player & Priority ordering used by the stack and trigger resolution paths. \\
+$CR$ & Comprehensive Rules & Canonical MTG rules text used as implementation reference for mechanics. \\
+$\mathcal{A}_{legal}$ & Legal action set & Engine-generated action list; agents must choose exactly one member. \\
+$\mathcal{D}$ & Replay buffer & Collected trajectories $(s_t, a_t, r_t)$ for model training and analysis. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+% =========================================================================
 \section{Per-agent reference}
 
 \subsection{RandomAgent}
@@ -286,6 +309,13 @@ factory (\texttt{src/agents/\_\_init\_\_.py:\_make\_world\_model}) falls
 back to a default-initialised network if the checkpoint file does not
 exist, so the harness can be smoke-tested before training.
 
+\medskip\noindent\textbf{Checkpoint troubleshooting.}
+\begin{itemize}[leftmargin=1.2em, itemsep=1pt]
+      \item Shape mismatch in controller head: occurs when $|\mathcal{A}_{legal}|$ conventions differ between checkpoint and runtime. Re-export checkpoint after rebuilding action encoding.
+      \item Missing JEPA keys: expected when loading pre-JEPA checkpoints; loader falls back to random init for missing tensors and logs a warning.
+      \item KG context mismatch: if graph feature width changed, pass a matching checkpoint or train one epoch with \texttt{--resume} to adapt projection layers.
+\end{itemize}
+
 \subsection{LLMFusionAgent}
 \textbf{File:} \texttt{src/agents/llm\_fusion\_agent.py}.
 
@@ -319,11 +349,86 @@ vote to save an LLM call.
 \end{algorithmic}
 \end{algorithm}
 
+\medskip\noindent\textbf{FusionConfig defaults.}
+\begin{center}\small
+\begin{tabular}{lcc}
+\toprule
+Parameter & Default & Role \\
+\midrule
+\texttt{heuristic\_weight} & $0.15$ & Rules-aware tactical prior \\
+\texttt{kg\_weight} & $0.15$ & Combo and synergy prior from Neo4j \\
+\texttt{wm\_weight} & $0.40$ & Latent rollout value estimate \\
+\texttt{llm\_weight} & $0.30$ & Language prior over legal indices \\
+\texttt{top\_n} & $5$ & Candidate set handed to LLM stage \\
+\texttt{obvious\_threshold} & $0.8$ & Short-circuit threshold for cheap decisions \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\medskip\noindent\textbf{One-turn message flow (ASCII).}
+\begin{lstlisting}[language={}]
+priority_loop -> LLMFusionAgent.decide_action(state, legal_actions)
+      LLMFusionAgent -> HeuristicAgent.score_all: S_h
+      LLMFusionAgent -> KG query layer: S_g
+      alt max(S_h) > obvious_threshold
+            LLMFusionAgent --> priority_loop: argmax(S_h)
+      else
+            LLMFusionAgent -> WorldModelAgent.rollout_values: S_w
+            LLMFusionAgent -> OllamaAgent.log_probs(topN by S_w): S_l
+            LLMFusionAgent -> fuse(alpha_h*S_h + alpha_g*S_g + alpha_w*S_w + alpha_l*S_l)
+            LLMFusionAgent --> priority_loop: chosen legal action
+      end
+priority_loop -> engine: apply chosen action
+\end{lstlisting}
+
 \subsection{HumanAgent}
 \textbf{File:} \texttt{src/agents/human\_agent.py}.  Renders the legal
 actions to stdout and reads a 1-based index.  Used by
 \texttt{examples/play\_logged\_game.py} for hand-debugging pathological
 states.
+
+% =========================================================================
+\section{Debugging recipes}
+
+\subsection{Agent loops on pass priority}
+Symptoms: repeated \texttt{PASS\_PRIORITY} despite non-trivial board states.
+
+Checklist:
+\begin{itemize}[leftmargin=1.2em, itemsep=1pt]
+      \item Inspect \texttt{legal\_actions} logs from \texttt{src/orchestrator/priority\_loop.py}; if only pass/concede exist, the issue is engine-side rather than policy-side.
+      \item Verify stack resolution path in \texttt{src/engine/stack.py} and trigger enqueueing in \texttt{src/engine/triggered\_abilities.py}.
+      \item Confirm current phase allows the expected action class (main phase vs combat priority windows).
+\end{itemize}
+
+\subsection{Agent never attacks}
+Symptoms: board develops, but attackers are never declared.
+
+Checklist:
+\begin{itemize}[leftmargin=1.2em, itemsep=1pt]
+      \item Check \texttt{src/engine/combat.py:legal\_attackers} output for summoning-sickness and tap-state filtering.
+      \item Ensure power/toughness modifiers from equipment and temporary effects reach \texttt{effective\_power}/\texttt{effective\_toughness}.
+      \item For heuristic agents, inspect \texttt{ACTION\_PRIORITIES} and tiebreak functions for accidental over-penalisation of combat lines.
+\end{itemize}
+
+\subsection{World-model agent regresses after checkpoint swap}
+Symptoms: sudden Elo drop or random-looking actions after loading a new checkpoint.
+
+Checklist:
+\begin{itemize}[leftmargin=1.2em, itemsep=1pt]
+      \item Confirm checkpoint compatibility warnings from \texttt{WorldModel.load}; missing keys should be expected and logged.
+      \item Run a deterministic smoke pod (seed fixed) and compare trace-level \texttt{wm} scores before/after swap.
+      \item Recompute normalisation statistics if latent feature scales changed between training runs.
+\end{itemize}
+
+\subsection{LLM fusion hangs or times out}
+Symptoms: long think times or fallback-only behaviour.
+
+Checklist:
+\begin{itemize}[leftmargin=1.2em, itemsep=1pt]
+      \item Verify Ollama endpoint and model are available (see \texttt{docs/OLLAMA\_SETUP.md}).
+      \item Lower \texttt{top\_n} and increase \texttt{obvious\_threshold} to reduce LLM calls under load.
+      \item Confirm timeout fallback path returns a legal action and records the fallback reason in reasoning traces.
+\end{itemize}
 
 % =========================================================================
 \section{Reasoning trace contract}
@@ -344,6 +449,39 @@ decision into \texttt{state.log\_jsonl(\dots)}:
 %
 Trace files land at \texttt{runs/<exp>/game\_NNN.jsonl} alongside the
 human-readable \texttt{game\_NNN.log}.
+
+\medskip\noindent\textbf{Minimal deterministic trace example (heuristic).}
+\begin{lstlisting}[language={}]
+{
+      "turn": 3,
+      "phase": "main1",
+      "agent": "heuristic",
+      "chosen_action_idx": 1,
+      "scores": {"heuristic": [100.0, 90.0, 1.0]},
+      "weights": {"heur": 1.0},
+      "elapsed_ms": 1,
+      "explanation": "play land has highest static priority"
+}
+\end{lstlisting}
+
+\medskip\noindent\textbf{Fusion trace example (all channels active).}
+\begin{lstlisting}[language={}]
+{
+      "turn": 7,
+      "phase": "main1",
+      "agent": "llm_fusion",
+      "chosen_action_idx": 3,
+      "scores": {
+            "heuristic": [0.32, 0.81, 0.11, 0.44],
+            "kg": [0.05, 0.10, 0.62, 0.18],
+            "wm": [0.40, 0.21, 0.73, 0.68],
+            "llm": [-1.50, -0.20, -1.10, -0.35]
+      },
+      "weights": {"heur": 0.15, "kg": 0.15, "wm": 0.40, "llm": 0.30},
+      "elapsed_ms": 412,
+      "explanation": "wm+llm agree on index 3 after top-N pruning"
+}
+\end{lstlisting}
 
 % =========================================================================
 \section{Test pointers}
