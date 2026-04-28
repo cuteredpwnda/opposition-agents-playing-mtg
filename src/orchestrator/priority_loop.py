@@ -214,18 +214,26 @@ async def run_priority_loop(
             None,
         )
         label = (pp.name or pp.player_id) if pp else priority_player_id
-        open_mana = (
-            _format_mana(potential_mana(game_state, pp)) if pp is not None else "∅"
-        )
+        if pp is not None:
+            pool_str = _format_mana(pp.mana_pool)
+            potential_str = _format_mana(potential_mana(game_state, pp))
+            # Only show "pool" when something is actually floating, so we
+            # don't double up "pool: ∅" on every line.
+            if any(v > 0 for v in pp.mana_pool.values()):
+                mana_tag = f"  [pool: {pool_str} | potential: {potential_str}]"
+            else:
+                mana_tag = f"  [open mana: {potential_str}]"
+        else:
+            mana_tag = ""
         if not non_pass or _is_noise_only(non_pass):
             game_state.log(
-                f"      ? {label} legal actions: NONE  [open mana: {open_mana}]"
+                f"      ? {label} legal actions: NONE{mana_tag}"
             )
         else:
             game_state.log(
                 f"      ? {label} legal actions ({len(non_pass)}): "
                 + _summarize_actions(non_pass, game_state)
-                + f"  [open mana: {open_mana}]"
+                + mana_tag
             )
 
 # Collector sees current state before action

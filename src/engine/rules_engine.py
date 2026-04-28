@@ -923,7 +923,13 @@ class RulesEngine:
             state = move_card(state, source_card_id, Zone.STACK, Zone.BATTLEFIELD, card.owner_id)
             card.summoning_sick = True
             card.turn_entered = state.turn_number
-            state.log(f"{card.name} enters the battlefield")
+            # Replacement effect: "enters the battlefield tapped" (CR 614).
+            otext = (card.oracle_text or "").lower()
+            if "enters tapped" in otext or "enters the battlefield tapped" in otext:
+                card.tapped = True
+                state.log(f"{card.name} enters the battlefield tapped")
+            else:
+                state.log(f"{card.name} enters the battlefield")
             
             # ETB TRIGGERS: Check what ETB triggers should fire
             etb_triggers = check_enters_battlefield_triggers(state, card)
@@ -956,6 +962,11 @@ class RulesEngine:
                 )
                 card.summoning_sick = True
                 card.turn_entered = state.turn_number
+                # Replacement effect: "enters the battlefield tapped".
+                otext = (card.oracle_text or "").lower()
+                if "enters tapped" in otext or "enters the battlefield tapped" in otext:
+                    card.tapped = True
+                    state.log(f"{card.name} enters the battlefield tapped")
                 # Auras attach to their target if one was chosen.
                 if "aura" in type_line and stack_item.targets:
                     card.attached_to = stack_item.targets[0]

@@ -138,6 +138,71 @@ def _power(card: CardInstance) -> int:
         return 0
 
 
+def _pick_aura_target(
+    state: GameState, source_card: CardInstance, controller_id: str
+) -> list[str]:
+    """Choose a target for an Aura spell on cast (CR 303.4).
+
+    Heuristic:
+    * "Enchant creature" — prefer one of the controller's own creatures
+      (so we don't auras-go-elsewhere ourselves into a 2-for-1); fall
+      back to any creature on the battlefield.
+    * "Enchant artifact / land / permanent" — first matching object the
+      controller controls, else any matching permanent.
+    * "Enchant player" — the controller themselves.
+
+    If no legal target exists, returns ``[]``; the caller is expected to
+    treat the cast as fizzling at resolution.
+    """
+    text = (source_card.oracle_text or "").lower()
+    own = [
+        c for c in state.cards
+        if c.zone == Zone.BATTLEFIELD and c.controller_id == controller_id
+    ]
+    others = [
+        c for c in state.cards
+        if c.zone == Zone.BATTLEFIELD and c.controller_id != controller_id
+    ]
+
+    def _first(cards: list, type_str: str):
+        return next((c for c in cards if type_str in (c.type_line or "").lower()), None)
+
+    if "enchant creature" in text:
+        # Beneficial auras go on our own creature; harmful ones on theirs.
+        # Without a deeper effect parser, prefer our own creature unless the
+        # text screams "doesn't untap" / "loses all abilities" etc.
+        harmful_markers = ("doesn't untap", "loses all abilities",
+                           "can't attack", "can't block", "-1/-1", "-2/-2",
+                           "destroy", "sacrifices")
+        prefer_opponent = any(m in text for m in harmful_markers)
+        ranked = (others, own) if prefer_opponent else (own, others)
+        for pool in ranked:
+            target = _first(pool, "creature")
+            if target is not None:
+                return [target.instance_id]
+        return []
+    if "enchant artifact" in text:
+        for pool in (own, others):
+            target = _first(pool, "artifact")
+            if target is not None:
+                return [target.instance_id]
+        return []
+    if "enchant land" in text:
+        for pool in (own, others):
+            target = _first(pool, "land")
+            if target is not None:
+                return [target.instance_id]
+        return []
+    if "enchant player" in text:
+        return [controller_id]
+    if "enchant permanent" in text:
+        for pool in (own, others):
+            if pool:
+                return [pool[0].instance_id]
+        return []
+    return []
+
+
 def auto_pick_targets(
     state: GameState, source_card: CardInstance, controller_id: str
 ) -> list[str]:
@@ -153,11 +218,17 @@ def auto_pick_targets(
     # targets later, when those abilities go on the stack. Bailing out here
     # prevents e.g. Grist from "targeting Mogg War Marshal" on cast just
     # because its −2 loyalty text contains "destroy target creature".
+    #
+    # Auras (CR 303.4) are the exception: they target a permanent on cast
+    # and attach to it on resolution. We handle them here.
     type_line = (source_card.type_line or "").lower()
     permanent_types = ("creature", "planeswalker", "artifact",
                        "enchantment", "land", "battle")
     is_permanent = any(t in type_line for t in permanent_types)
     is_spell = "instant" in type_line or "sorcery" in type_line
+    is_aura = "aura" in type_line
+    if is_aura:
+        return _pick_aura_target(state, source_card, controller_id)
     if is_permanent and not is_spell:
         return []
 

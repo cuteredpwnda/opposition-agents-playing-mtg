@@ -110,6 +110,24 @@ items stay for traceability.
 - [x] **`.github/copilot-instructions.md` + `AGENTS.md`** — full set of
       coding-agent guardrails (single-source-of-truth rule, file conventions,
       test commands, "don'ts") and a separate agent-zoo onboarding document.
+- [x] **Mana rocks / non-land mana abilities** — `permanent_mana_production`
+      in `src/engine/mana.py` parses `{T}: Add ...` from any permanent
+      (Sol Ring, Mind Stone, Birds of Paradise) while rejecting abilities
+      with extra costs (Treasure sacrifice). `auto_tap_for_cost` drains
+      lands first then rocks; `potential_mana` includes non-land producers
+      and respects summoning sickness / haste. Tests:
+      `tests/test_mana_rocks.py` (9 tests).
+- [x] **Aura targeting on cast** — `_pick_aura_target` in
+      `spell_effects.py` selects an aura's target when cast, choosing an
+      opponent's permanent for harmful auras and own permanent otherwise.
+      Routed via `auto_pick_targets` before the permanent-spell early-out.
+- [x] **Floating mana / phase emptying (CR 106.4)** — `game_runner` now
+      empties every player's mana pool at the end of every phase, with a
+      `✗ <player> loses {R} from mana pool (end of <phase>)` log line when
+      the pool was non-empty. The legal-actions log shows
+      `[pool: {R} | potential: {R}]` while mana is floating and falls back
+      to `[open mana: …]` otherwise. Tests: `tests/test_floating_mana.py`
+      (4 tests).
 
 ### In progress
 
@@ -119,14 +137,9 @@ _(none — pick from queue below)_
 
 - [ ] **Equip / Crew activation** — surface as `ACTIVATE_ABILITY` actions and
       wire attachment.
-- [ ] **Aura targeting on cast** — currently a permanent-spell so
-      `auto_pick_targets` returns `[]`; we need a special path that picks an
-      aura target before resolution.
 - [ ] **"Enters tapped" replacement** for lands/permanents that say so.
 - [ ] **Lord effects beyond +X/+X** — granting keywords by subtype
       (e.g. "Goblins you control have haste").
-- [ ] **Activated mana abilities for non-land permanents** (Treasure / Sol Ring /
-      Birds of Paradise) surfaced as legal actions.
 - [ ] **Counterspell awareness** — heuristic agent should hold up `{U}` when
       it has a counter in hand and the opponent casts a relevant spell.
 

@@ -714,7 +714,23 @@ class GameRunner:
             if game_state.game_over:
                 logger.info(f"Game over triggered after phase {phase.value}")
                 return game_state
-            
+
+            # CR 106.4: at the end of every step and phase, all mana in
+            # players' mana pools empties. We already drain at cleanup; this
+            # makes the rule visible everywhere else too. We log the loss so
+            # players can see when they let mana float and lose it.
+            from src.engine.mana import empty_mana_pool
+            from src.orchestrator.priority_loop import _format_mana
+            for pl in game_state.players:
+                if any(v > 0 for v in pl.mana_pool.values()):
+                    lost = _format_mana(pl.mana_pool)
+                    pname = pl.name or pl.player_id
+                    game_state.log(
+                        f"      ✗ {pname} loses {lost} from mana pool "
+                        f"(end of {phase.value})"
+                    )
+                    empty_mana_pool(pl)
+
             # Move to next phase
             phase_idx += 1
         

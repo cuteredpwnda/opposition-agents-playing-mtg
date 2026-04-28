@@ -78,6 +78,34 @@ def _parse_static_ability_line(card: CardInstance, line: str) -> StaticAbility |
                 description=line,
             )
 
+    # Pattern: "<Subtype>(s) you control have <keyword>" — e.g.
+    # "Goblins you control have haste." Granting a keyword to a creature
+    # type without a P/T mod.
+    keywords_to_match = ["flying", "haste", "deathtouch", "lifelink",
+                         "vigilance", "indestructible", "hexproof", "shroud",
+                         "menace", "trample", "reach", "first strike",
+                         "double strike"]
+    sub_kw_match = re.search(
+        r"\b([a-z]+)s?\s+you\s+control\s+(?:have|get|gain)\s+("
+        + "|".join(keywords_to_match) + r")\b",
+        lower_line,
+    )
+    if sub_kw_match and sub_kw_match.group(1) not in (
+        "non", "all", "other", "the", "your", "creature", "creatures",
+        "permanent", "permanents", "artifact", "artifacts",
+    ):
+        # "Goblins" -> "goblin" so we match the singular form on type_line.
+        subtype = sub_kw_match.group(1).rstrip("s")
+        return StaticAbility(
+            source_card_id=card.instance_id,
+            controller_id=card.controller_id,
+            scope="subtype_creatures_you_control",
+            effect_type="keyword",
+            keywords=[sub_kw_match.group(2)],
+            subtype_filter=subtype,
+            description=line,
+        )
+
     # Pattern: "Creatures you control get +X/+Y" or "All creatures get +X/+Y"
     match = re.search(
         r"(?:(?:(\w+\s+(?:you\s+)?control)|(?:all\s+)?(\w+))\s+)?(?:get|have)\s+([+\-]?\d+)/([+\-]?\d+)",
