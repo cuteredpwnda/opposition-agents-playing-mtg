@@ -40,6 +40,15 @@ LLM_REGISTRY: dict[str, LLMSpec] = {
         vram_gb_estimate=2.0,
         notes="Default for low-end / CI.",
     ),
+    "gemma4-e2b": LLMSpec(
+        name="gemma4-e2b",
+        ollama_tag="gemma4:e2b",
+        family="gemma",
+        params_billion=2.0,
+        vram_gb_estimate=2.5,
+        context_tokens=8192,
+        notes="SOTA 2B model; strong MTG reasoning. Recommended default.",
+    ),
     "phi3-mini": LLMSpec(
         name="phi3-mini",
         ollama_tag="phi3:mini",

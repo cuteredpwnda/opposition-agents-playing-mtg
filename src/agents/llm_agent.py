@@ -220,6 +220,115 @@ class OllamaAgent(MTGAgent):
             action_type=ActionType.PASS_PRIORITY, player_id=self.player_id
         )
 
+    def decide_mulligan(self, hand, mulligans_taken: int, max_mulligans: int) -> bool:
+        """Use Ollama to decide whether to keep or mulligan the opening hand.
+
+        Returns True to KEEP, False to MULLIGAN.
+        Falls back to the strategy-aware heuristic if Ollama is unavailable.
+        """
+        if not self._ollama_available:
+            return super().decide_mulligan(hand, mulligans_taken, max_mulligans)
+
+        # Never mulligan after hitting the cap
+        if mulligans_taken >= max_mulligans:
+            return True
+
+        hand_desc = self._describe_hand(hand)
+        mulligan_prompt = f"""\
+You are evaluating an opening Magic hand in a game of casual constructed magic.
+
+HAND: {hand_desc}
+Mulligans taken: {mulligans_taken}
+Max mulligans allowed: {max_mulligans}
+
+Decide: should you KEEP this hand or MULLIGAN for a fresh 7-card draw minus {mulligans_taken + 1} cards?
+
+Respond with ONLY "KEEP" or "MULLIGAN"."""
+
+        try:
+            response = self.http_client.post(
+                f"{self.base_url}/api/generate",
+                json={
+                    "model": self.model,
+                    "prompt": mulligan_prompt,
+                    "stream": False,
+                    "temperature": 0.3,
+                },
+                timeout=15.0,
+            )
+            if response.status_code == 200:
+                data = response.json()
+                text = data.get("response", "").strip().upper()
+                return "KEEP" in text
+        except Exception:
+            pass
+
+        # Fall back to parent class heuristic
+        return super().decide_mulligan(hand, mulligans_taken, max_mulligans)
+
+    def select_bottom_cards(self, hand, n: int) -> list:
+        """Use Ollama to select which cards to put on the bottom.
+
+        Returns a list of ``n`` cards from ``hand`` to put on the bottom
+        of the library after mulligans.
+        """
+        if not self._ollama_available or n <= 0 or not hand:
+            return super().select_bottom_cards(hand, n)
+
+        hand_desc = self._describe_hand(hand)
+        bottom_prompt = f"""\
+You are selecting which cards to put on the bottom of your library after taking {n} mulligan(s).
+
+HAND: {hand_desc}
+
+Rank these cards by which ones you most want to KEEP (stay in hand) vs BOTTOM.
+Put the cards you want to BOTTOM first, most undesirable first.
+
+List the card names in order, one per line, for the first {n} cards to BOTTOM:"""
+
+        try:
+            response = self.http_client.post(
+                f"{self.base_url}/api/generate",
+                json={
+                    "model": self.model,
+                    "prompt": bottom_prompt,
+                    "stream": False,
+                    "temperature": 0.3,
+                },
+                timeout=15.0,
+            )
+            if response.status_code == 200:
+                data = response.json()
+                text = data.get("response", "").strip()
+                lines = [l.strip() for l in text.split("\n") if l.strip()]
+
+                # Try to match card names from response to hand cards
+                bottomed = []
+                for line in lines[:n]:
+                    # Find a card in hand whose name appears in this line
+                    for card in hand:
+                        if card.name.lower() in line.lower():
+                            bottomed.append(card)
+                            break
+
+                if bottomed:
+                    return bottomed
+        except Exception:
+            pass
+
+        # Fall back to parent class heuristic
+        return super().select_bottom_cards(hand, n)
+
+    @staticmethod
+    def _describe_hand(hand) -> str:
+        """Convert a hand of CardInstance objects to a readable string."""
+        lines = []
+        for card in hand:
+            cmc = getattr(card, "cmc", 0) or 0
+            type_line = getattr(card.card_data, "get", lambda k, d: d)("type_line", "Unknown")
+            lines.append(f"- {card.name} ({cmc}): {type_line}")
+        return "\n".join(lines) if lines else "(empty hand)"
+
 
 # Backward compatibility alias
 LLMAgent = OllamaAgent
