@@ -39,7 +39,7 @@
 \usepackage{algorithm}
 \usepackage{algpseudocode}
 \usepackage{tikz}
-\usetikzlibrary{shapes, arrows, positioning, fit, backgrounds, calc}
+\usetikzlibrary{shapes, arrows, arrows.meta, positioning, fit, backgrounds, calc}
 
 % --- Theorems / definitions ---
 \theoremstyle{definition}
@@ -131,80 +131,99 @@ A purely model-free deep-RL approach is therefore unattractive: the action space
 
 Our position is that the structure of MTG demands a \emph{neuro-symbolic} stack: a verified rules engine to keep play legal, a knowledge graph to make card semantics queryable, a learned world model to enable imagination and planning over the resulting compressed state, and an LLM agent that orchestrates these components under an active-inference objective. \Cref{fig:stack} sketches the resulting architecture as a data-flow diagram, separating the \emph{symbolic} substrate (data sources, engine, knowledge graph) from the \emph{learned} substrate (world model, agent zoo) and showing where information actually crosses the boundary.
 
-\begin{figure}[t]
+\begin{figure*}[t]
 \centering
+\resizebox{\textwidth}{!}{%
 \begin{tikzpicture}[
-    >=stealth,
+    >={Stealth[length=2.2mm]},
     font=\footnotesize,
-    box/.style ={draw, rounded corners=2pt, align=center, minimum height=0.7cm,
-                 inner sep=4pt},
-    data/.style={box, fill=gray!8,   minimum width=2.5cm},
-    sym/.style ={box, fill=blue!8,   minimum width=3.4cm},
-    learn/.style={box, fill=orange!12, minimum width=3.4cm},
-    agent/.style={box, fill=green!10, minimum width=3.0cm, font=\scriptsize},
-    grp/.style ={draw, dashed, rounded corners=4pt, inner sep=8pt},
-    flow/.style={->, thick, blue!50!black},
-    backflow/.style={->, thick, dashed, red!60!black},
-    label/.style={font=\scriptsize\itshape, midway, fill=white, inner sep=1pt}
+    box/.style ={draw, rounded corners=2pt, align=center,
+                 minimum height=0.85cm, inner sep=4pt},
+    data/.style={box, fill=gray!10,    minimum width=2.6cm, font=\scriptsize},
+    sym/.style ={box, fill=blue!10,    minimum width=3.6cm},
+    learn/.style={box, fill=orange!18, minimum width=3.6cm, font=\scriptsize},
+    agent/.style={box, fill=green!12,  minimum width=2.6cm, font=\scriptsize},
+    grp/.style ={draw=black!50, dashed, rounded corners=4pt, inner sep=10pt},
+    flow/.style={->, semithick, blue!55!black},
+    twoway/.style={<->, semithick, gray!70!black},
+    backflow/.style={->, semithick, dashed, red!65!black},
+    elabel/.style={font=\scriptsize\itshape, fill=white,
+                   inner xsep=2pt, inner ysep=1pt}
   ]
 
-  % --- Column 1: external data sources --------------------------------
-  \node[data] (scry) at (0,0) {Scryfall\\(card DB)};
-  \node[data, below=4pt of scry] (rules) {Comprehensive\\Rules};
-  \node[data, below=4pt of rules] (sb)    {Commander\\Spellbook};
-  \node[data, below=4pt of sb]    (decks) {Decklists\\(\texttt{data/decks})};
+  % ---- Column 1: data sources -----------------------------------------
+  \node[data] (scry)  at (0,  3.6) {Scryfall\\(card DB)};
+  \node[data] (sb)    at (0,  1.2) {Commander\\Spellbook};
+  \node[data] (rules) at (0, -1.2) {Comprehensive\\Rules};
+  \node[data] (decks) at (0, -3.6) {Decklists\\(\texttt{data/decks})};
 
-  % --- Column 2: symbolic substrate ----------------------------------
-  \node[sym, right=2.0cm of scry]  (kg)    {\textbf{Knowledge Graph}\\
-        Neo4j $\!+\!$ n10s (OWL2)\\$+\!$ APOC $+$ GraphSAGE};
-  \node[sym, below=12pt of kg]     (eng)   {\textbf{Game Engine}\\
-        zones / stack / priority\\phases / combat / triggers /\\state-based actions};
-  \node[sym, below=12pt of eng]    (rb)    {\textbf{Replay Buffer}\\trajectories $(s_t, a_t, r_t)$};
+  % ---- Column 2: symbolic substrate ------------------------------------
+  \node[sym] (kg)  at (4.7,  2.4) {\textbf{Knowledge Graph}\\
+        Neo4j + n10s (OWL2)\\+ APOC + GraphSAGE};
+  \node[sym] (eng) at (4.7,  0.0) {\textbf{Game Engine}\\
+        zones, stack, priority,\\phases, combat, triggers,\\state-based actions};
+  \node[sym] (rb)  at (4.7, -2.6) {\textbf{Replay Buffer}\\trajectories $(s_t,a_t,r_t)$};
 
-  % --- Column 3: learned substrate -----------------------------------
-  \node[learn, right=1.8cm of kg]  (V)  {V: state encoder\\(Set-Transformer + KG ctx)};
-  \node[learn, below=8pt of V]     (M)  {M: MDN-LSTM dynamics\\$\!+\!$ JEPA target head};
-  \node[learn, below=8pt of M]     (C)  {C: controller\\(policy + value heads)};
-  \node[grp, fit=(V)(M)(C), label={[font=\small\bfseries]above:World Model}] (wm) {};
+  % ---- Column 3: world model V/M/C ------------------------------------
+  \node[learn] (V) at (9.7,  2.4) {V: state encoder\\(Set-Transformer + KG ctx)};
+  \node[learn] (M) at (9.7,  0.0) {M: MDN-LSTM dynamics\\+ JEPA target head};
+  \node[learn] (C) at (9.7, -2.4) {C: controller\\(policy + value heads)};
+  \begin{pgfonlayer}{background}
+    \node[grp, fit=(V)(M)(C),
+          label={[font=\small\bfseries, yshift=-1pt]above:World Model}] (wm) {};
+  \end{pgfonlayer}
 
-  % --- Column 4: agents -----------------------------------------------
-  \node[agent, right=1.6cm of V]   (a1) {Random / Heuristic};
-  \node[agent, below=4pt of a1]    (a2) {KG-Heuristic};
-  \node[agent, below=4pt of a2]    (a3) {Ollama LLM};
-  \node[agent, below=4pt of a3]    (a4) {World-Model};
-  \node[agent, below=4pt of a4]    (a5) {Active Inference};
-  \node[agent, below=4pt of a5]    (a6) {LLM-Fusion};
-  \node[grp, fit=(a1)(a6), label={[font=\small\bfseries]above:Agent Zoo}] (agents) {};
+  % ---- Column 4: agents ------------------------------------------------
+  \node[agent] (a1) at (14.0,  3.0) {Random / Heuristic};
+  \node[agent] (a2) at (14.0,  1.8) {KG-Heuristic};
+  \node[agent] (a3) at (14.0,  0.6) {Ollama LLM};
+  \node[agent] (a4) at (14.0, -0.6) {World-Model};
+  \node[agent] (a5) at (14.0, -1.8) {Active Inference};
+  \node[agent] (a6) at (14.0, -3.0) {LLM-Fusion};
+  \begin{pgfonlayer}{background}
+    \node[grp, fit=(a1)(a6),
+          label={[font=\small\bfseries, yshift=-1pt]above:Agent Zoo}] (agents) {};
+  \end{pgfonlayer}
 
-  % --- arrows: data into symbolic substrate ---------------------------
-  \draw[flow] (scry.east)  -- ++(0.6,0) |- (kg.west)  node[label,xshift=-0.3cm]{cards};
-  \draw[flow] (rules.east) -- ++(0.6,0) |- (eng.west) node[label,xshift=-0.3cm]{rules};
-  \draw[flow] (sb.east)    -- ++(0.6,0) |- (kg.west)  node[label,xshift=-0.3cm]{combos};
-  \draw[flow] (decks.east) -- ++(0.6,0) |- (eng.west) node[label,xshift=-0.3cm]{game cfg};
+  % ---- data -> symbolic -----------------------------------------------
+  \draw[flow] (scry.east)  -- ([yshift= 0.6cm]kg.west)
+              node[elabel, pos=0.55]{cards};
+  \draw[flow] (sb.east)    -- ([yshift=-0.6cm]kg.west)
+              node[elabel, pos=0.55]{combos};
+  \draw[flow] (rules.east) -- ([yshift= 0.6cm]eng.west)
+              node[elabel, pos=0.55]{rules};
+  \draw[flow] (decks.east) -- ([yshift=-0.6cm]eng.west)
+              node[elabel, pos=0.55]{game cfg};
 
-  % --- engine <-> KG (lookup) ----------------------------------------
-  \draw[<->, thick, gray] (kg.south) -- (eng.north) node[label]{card lookup};
+  % ---- engine <-> KG (lookup) -----------------------------------------
+  \draw[twoway] (kg.south) -- node[elabel]{card lookup} (eng.north);
 
-  % --- engine -> replay buffer (trajectories) ------------------------
-  \draw[flow] (eng.south) -- (rb.north) node[label]{$(s_t,a_t,r_t)$};
+  % ---- engine -> replay buffer ----------------------------------------
+  \draw[flow] (eng.south) -- node[elabel]{$(s_t,a_t,r_t)$} (rb.north);
 
-  % --- WM training: replay -> V/M/C ----------------------------------
-  \draw[flow] (rb.east) -- ++(0.6,0) |- (M.west) node[label,xshift=-0.3cm]{train};
-  \draw[flow] (kg.east) -- ++(0.5,0) |- (V.west) node[label,xshift=-0.3cm]{KG ctx};
+  % ---- training: replay -> M; KG -> V ---------------------------------
+  \draw[flow] (rb.east) -- ++(0.4,0) |- node[elabel,pos=0.78]{train} (M.west);
+  \draw[flow] (kg.east) -- (V.west);
 
-  % --- agent decide_action loop -------------------------------------
-  \draw[flow] (eng.east)   to[bend left=18] node[label]{state, legal\_actions} (a3.west);
-  \draw[backflow] (a3.west) to[bend left=18] node[label]{action} (eng.east);
+  % ---- engine <-> agent loop, routed in the gap and along far buses ---
+  \path (eng.north east) ++(0.7,0) coordinate (engNEgap);
+  \path (eng.south east) ++(0.7,0) coordinate (engSEgap);
+  \draw[flow]
+      (eng.north east) -- (engNEgap)
+      -- (7.2, 4.6) -- (14.0, 4.6)
+      node[elabel, pos=0.55, above=1pt]{state, legal\_actions}
+      -- (a1.north);
+  \draw[backflow]
+      (a6.south) -- (14.0,-4.6)
+      -- (7.2,-4.6)
+      node[elabel, pos=0.55, below=1pt]{action}
+      -- (engSEgap)
+      -- (eng.south east);
 
-  % --- agents query WM -----------------------------------------------
-  \draw[flow, dotted] (a4.west) -- ++(-0.3,0) |- (C.east);
-  \draw[flow, dotted] (a6.west) -- ++(-0.3,0) |- (C.east);
-  \draw[flow, dotted] (a2.west) -- ++(-0.3,0) |- (kg.east);
-
-\end{tikzpicture}
-\caption{Data-flow architecture. \textbf{Grey} boxes are external data sources; \textbf{blue} the symbolic substrate (engine, knowledge graph, replay buffer); \textbf{orange} the learned world model (V+M+C with a JEPA target head and a knowledge-graph context channel); \textbf{green} the agent zoo. Solid arrows are forward data flow; the red dashed arrow is the agent's chosen action returned to the engine; dotted arrows mark the lookups an agent performs at decision time. The engine is the only component allowed to mutate game state; agents read but do not write.}
+\end{tikzpicture}}%
+\caption{Data-flow architecture. \textbf{Grey} boxes are external data sources; \textbf{blue} the symbolic substrate (engine, knowledge graph, replay buffer); \textbf{orange} the learned world model (V+M+C with a JEPA target head and a knowledge-graph context channel); \textbf{green} the agent zoo. Solid blue arrows are forward data flow; the red dashed arrow is the agent's chosen action returned to the engine; the engine $\leftrightarrow$ knowledge-graph link is bidirectional (card lookup at decision time, ontology-grounded card metadata at engine boot). Each agent additionally has read-only access to the knowledge graph and to the world-model controller through a thin lookup interface (omitted from the figure for clarity, described in the body text). The engine is the only component allowed to mutate game state; agents read but do not write.}
 \label{fig:stack}
-\end{figure}
+\end{figure*}
 
 \paragraph{Contributions.} This work makes four contributions.
 \begin{enumerate}[leftmargin=1.2em, itemsep=2pt]
@@ -308,6 +327,36 @@ The engine implements the Comprehensive Rules subset relevant for two-player Sta
 \end{itemize}
 The engine is pure-Python, deterministic given an RNG seed, and has no LLM dependency, which makes it the ground truth that all agents play against.
 
+\Cref{tab:engine-pointers} maps each Comprehensive-Rules concept to the exact module that implements it; readers reproducing the system can use it as a reading order through the codebase.
+
+\begin{table}[t]
+\centering
+\small
+\setlength{\tabcolsep}{4pt}
+\renewcommand{\arraystretch}{1.05}
+\begin{tabular}{@{}p{0.40\textwidth} p{0.18\textwidth} p{0.36\textwidth}@{}}
+\toprule
+\textbf{Comprehensive Rules concept} & \textbf{CR section} & \textbf{Implementing module} \\
+\midrule
+Turn structure / phases / steps          & 500--514         & \texttt{src/engine/phases.py} \\
+APNAP priority \& priority loop          & 116--117         & \texttt{src/engine/priority\_loop.py} \\
+The stack \& spell resolution            & 405--608         & \texttt{src/engine/stack.py} \\
+Layer system (continuous effects)        & 613              & \texttt{src/engine/continuous\_effects.py} \\
+Replacement effects                      & 614--616         & \texttt{src/engine/replacement\_effects.py} \\
+Triggered abilities                      & 603              & \texttt{src/engine/triggered\_abilities.py} \\
+State-based actions                      & 704              & \texttt{src/engine/state\_based\_actions.py} \\
+Combat (declare, block, damage steps)    & 506--510         & \texttt{src/engine/combat.py} \\
+Mana \& cost payment                     & 106, 601--602    & \texttt{src/engine/mana.py} \\
+London mulligan                          & 103.5            & \texttt{src/engine/game\_setup.py} \\
+Cleanup discard to hand size             & 514              & \texttt{src/engine/phases.py::cleanup\_step} \\
+Loss from empty library on draw          & 104.3c, 704.5b   & \texttt{src/engine/state\_based\_actions.py} \\
+Legal-action enumeration                 & --- (engine-internal) & \texttt{src/engine/rules\_engine.py} \\
+\bottomrule
+\end{tabular}
+\caption{Mapping from Comprehensive-Rules concepts to the implementing engine module. Every cell is a real path; auditing a rule reduces to opening that file. The legal-action enumerator (\texttt{rules\_engine.py}) is the only point of contact between the engine and any agent.}
+\label{tab:engine-pointers}
+\end{table}
+
 \subsection{Knowledge graph}
 Cards are imported from Scryfall and reified as \texttt{(:Card)} nodes carrying mana cost, type line, oracle text, colour identity, and a SBERT embedding of the oracle text. Mechanics, abilities, archetypes and combos become first-class nodes connected by typed edges (\texttt{HAS\_KEYWORD}, \texttt{ENABLES\_COMBO}, \texttt{ARCHETYPE\_OF}, \ldots). The OWL ontology (v1.1) declares the schema; \texttt{n10s} imports it; \texttt{pyshacl} validates it; APOC provides PageRank, community detection and shortest-path queries used in agent reasoning. \Cref{lst:cypher} shows a typical multi-hop query used by the combo-detector agent.
 
@@ -330,12 +379,16 @@ a_t       &= C(z_t, g_t, h_t)            && \text{(controller).}
 \end{align}
 $\mathrm{Enc}_V$ produces $z_t \in \mathbb{R}^{256}$. The VAE term acts as a regulariser; the JEPA head predicts the \emph{encoder output} $z_{t+1}$, not a reconstruction, and is trained with $\mathrm{MSE}(z_{t+1}, \hat z_{t+1}) + \beta\,\KL(q_\phi \,\|\, p)$. Surprise at step $t+1$ is the predictor residual $\|\hat z_{t+1} - z_{t+1}\|_2$, which seeds curiosity bonuses and KG-enrichment triggers.
 
+\paragraph{Concrete tensor shapes.} For reproducibility we record the default dimensions used in \texttt{src/world\_model/world\_model.py}: state tokens $x_t \in \mathbb{R}^{B \times N \times 64}$ with $N \le 256$ (zero-padded with an attention mask), latent $z_t \in \mathbb{R}^{B \times 256}$, KG context $g_t \in \mathbb{R}^{B \times 64}$ produced by mean-pooling a two-layer GraphSAGE over the cards in the player's library, LSTM hidden $h_t \in \mathbb{R}^{B \times 512}$, MDN with $K = 5$ Gaussian components, and policy logits $\pi^M_t \in \mathbb{R}^{B \times A}$ where $A$ is the size of the legal-action set at step $t$ (variable; the controller masks illegal entries to $-\infty$ before softmax). The JEPA target tensor matches $z_{t+1}$ (no separate decoder); the controller value head outputs a scalar $V_t \in \mathbb{R}^{B}$. The checkpoint loader (\texttt{WorldModel.load}) is shape-tolerant: missing keys fall back to freshly-initialised weights, which lets us swap in checkpoints from earlier minor versions during ablation studies.
+
 \subsection{Active-inference LLM-fusion agent}
 The fused agent maintains a belief $b_t$ over hidden state (opponent's hand and library) using a particle filter constrained by the published decklist, and selects actions by minimising expected free energy:
 \begin{equation}
 \mathcal{F}(a) \;=\; \underbrace{-\Expect_{q(s'|a)}\!\big[ R(s') \big]}_{\text{pragmatic}} \;-\; \underbrace{\mathrm{H}\!\big[q(s'|a)\big] - \Expect[\mathrm{H}\!\big[q(s'|s,a)\big]]}_{\text{epistemic (information gain)}} \;-\; \alpha\,\log p_\mathrm{LLM}(a \mid \mathrm{prompt}_t).
 \end{equation}
 The LLM term provides a calibrated prior over the legal-action set; the controller of \Cref{sec:wm} provides $R$-estimates by short rollouts in the dream; and the KG provides hard combinatorial constraints (e.g., ``no spell with mana cost $>3$ in a deck whose curve peaks at 2'').
+
+\paragraph{Worked example.} Consider a mid-game decision with three legal actions: $a_1$ = cast \emph{Counterspell} on a stack object, $a_2$ = pass priority, $a_3$ = activate a card-draw ability. With pragmatic-value horizon $H=3$ controller rollouts the model returns $R(a_1)=+0.42$, $R(a_2)=-0.05$, $R(a_3)=+0.18$ (utilities normalised to $[-1,1]$ over expected life-total swing). The particle filter has high posterior entropy on the opponent's hand; the epistemic term $\mathrm{H}[q(s'|a)] - \Expect[\mathrm{H}[q(s'|s,a)]]$ peaks for $a_3$ (drawing reveals our top-of-library and lets us tighten the belief over our own future draws), giving an information-gain bonus of $+0.11$ versus $\le 0.02$ for the other actions. The LLM prior, asked ``Given this board state, rank the three actions,'' returns log-probabilities $(-0.6,-1.4,-1.0)$. With weights $(\alpha_R, \alpha_E, \alpha_{\mathrm{LLM}}) = (1.0, 0.5, 0.3)$ the EFE scores are $\mathcal{F}(a_1) = -0.42 - 0.5\cdot 0.02 - 0.3\cdot(-0.6) = -0.25$, $\mathcal{F}(a_2) = +0.05 - 0.01 + 0.42 = +0.46$, $\mathcal{F}(a_3) = -0.18 - 0.055 + 0.30 = +0.065$. The agent picks $a_1$ (lowest free energy), matching the heuristic of countering rather than passing on a known threat. The same mechanism, with epistemic weight $\alpha_E$ raised to $1.0$, would have selected $a_3$ --- the explore--exploit trade-off becomes a single hyperparameter.
 
 \subsection{Self-play training loop}
 \label{sec:selfplay}
