@@ -217,6 +217,21 @@ items stay for traceability.
       `apply_damage_to_player` mutate `life_total` only after running
       replacements. Tests: `tests/test_replacement_effects_framework.py`
       (5 tests).
+- [x] **Ward parsing hardening** — `keywords.ward_cost` now correctly
+      handles coloured / hybrid / multi-pip ward costs (`Ward {1}{U}`,
+      `Ward {U}{U}`), uses a word-boundary `\bward\b` check so that
+      cards mentioning "wardrobe", "forward", etc. no longer
+      false-positive to ward 1, and still defaults a bare ``Ward``
+      keyword to 1. Tests: `tests/test_ward_parsing.py` (5 tests).
+- [x] **Cascade keyword (CR 702.85)** — new `src/engine/cascade.py`
+      with `has_cascade` and `execute_cascade`. The cast pipeline in
+      `rules_engine` runs cascade right after the spell is pushed onto
+      the stack: it exiles cards from the top of the controller's
+      library until finding a non-land with strictly lower mana value,
+      casts that card for free by appending it to the stack above the
+      cascade spell (so the cascaded spell resolves first), and puts
+      the rest of the exiled cards on the bottom of the library
+      deterministically. Tests: `tests/test_cascade.py` (3 tests).
 
 ### In progress
 
