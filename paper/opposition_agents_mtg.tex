@@ -185,6 +185,61 @@ The framework is released as open source\footnote{\url{https://github.com/cutere
 \paragraph{Ontologies for games.} Game ontologies have been explored for serious games and educational metadata; for trading-card games specifically, public OWL ontologies are sparse. Our ontology (\texttt{data/ontology/mtg-ontology-v1.1.owl}) draws on the practices surveyed in \citet{noy2001ontology} and the OntologyExtender workflow of \citet{ontology_extender}, and is validated by SHACL shapes \citep{w3c2017shacl}.
 
 % =============================================================================
+\section{Theoretical Foundations}
+\label{sec:theory}
+
+\subsection{MTG as a partially-observable Markov game}
+We model a game of Magic from the perspective of a single seat as a finite-horizon POMDP $(\mathcal{S}, \mathcal{A}, \mathcal{O}, T, \Omega, R, \gamma, b_0)$ embedded inside an $n$-player Markov game.  The full state $s_t \in \mathcal{S}$ encompasses every public and private zone of every player --- libraries, hands, the stack, mana pools, and a long tail of bookkeeping flags (summoning sickness, monarchy, the day/night state, designations, emblems, dungeon room, companion eligibility).  A controlled-perspective filter $\Omega: \mathcal{S} \to \mathcal{O}$ hides the opposing players' hands and the order of their libraries; the agent only ever observes $o_t = \Omega(s_t)$.  The action space $\mathcal{A}_t = \mathrm{LEGAL}(s_t)$ is computed afresh on every priority pass and is highly variable: typically $|\mathcal{A}_t| \in [1, 60]$, but can spike past several hundred in hard combo states.  The transition model $T(s' \mid s, a)$ is the rules engine itself, fully deterministic given a random seed and the active player's choices.  Reward $R$ is sparse and terminal --- $\pm 1$ on the win condition --- but agents may shape it during training using $\Delta\text{life}$, $\Delta\text{cards}$, $\Delta\text{tempo}$ as auxiliary signals.  The state space is combinatorially large: a conservative count over deck-times-zone configurations gives $|\mathcal{S}| > 10^{800}$, several orders of magnitude beyond Go.
+
+The optimal value function over beliefs $b_t \in \Delta(\mathcal{S})$ satisfies the Bellman equation
+\begin{equation}
+V^*(b) = \max_{a \in \mathcal{A}} \left[ \sum_s b(s)\, R(s,a)
+   + \gamma \sum_o \Pr(o \mid b, a) \, V^*\!\big(b'_o\big) \right],
+\end{equation}
+where $b'_o$ is the Bayes update of $b$ after taking $a$ and observing $o$.  Exact solution is intractable.  Each agent in our zoo is therefore an explicit approximation that trades different axes of accuracy: tabular reactive policies (Random, Heuristic, KG-Heuristic, LLM) collapse $b_t$ to a point estimate $s_t \approx o_t$; the world-model agent learns an amortised Bellman residual in latent space; the active-inference agents maintain an explicit belief and minimise expected free energy.
+
+\subsection{World models as latent imagination}
+The V+M+C decomposition of \citet{ha2018world} factors an agent into a perception module $V$, a recurrent dynamics module $M$, and a controller $C$.  We follow this skeleton but adopt LeCun and Assran's recommendation \citep{lecun2022path, assran2023ijepa} to predict in \emph{representation space} rather than in observation space: the model is trained to match its $H$-step rollout of the latent against a target encoder's output, not to reconstruct cards or board art.  Concretely the training loss for the dynamics is
+\begin{equation}
+\mathcal{L}_{\text{JEPA}}
+= \sum_t \big\| \hat z_{t+1} - \mathrm{sg}(z_{t+1}) \big\|^2_2
+  \,+\, \beta \cdot \mathrm{KL}\!\left( q(z_t \mid o_t) \,\big\|\, p(z_t \mid h_{t-1}) \right),
+\label{eq:jepa-loss}
+\end{equation}
+where $\mathrm{sg}$ is stop-gradient on the target branch, $h_{t-1}$ is the previous LSTM hidden state of $M$, and $\beta$ is the single tunable hyperparameter we expose (\texttt{--jepa-beta}, default 1.0).  At decision time the controller scores each candidate action by a $K{\times}H$ Monte-Carlo rollout in latent space:
+\begin{equation}
+\mathrm{score}(a) = \frac{1}{K} \sum_{k=1}^{K} V_\theta\!\left( h^{(k)}_{t+H} \,\big|\, a_t = a \right),
+\label{eq:wm-rollout}
+\end{equation}
+with $K = 8$, $H = 10$ by default.  No actual rules-engine simulation is performed during inference; this is what makes the agent fast despite the engine being heavy.  The controller therefore amortises the Bellman residual: $C$ is implicitly approximating $\arg\max_a Q^*(s_t, a)$ given an imperfect $\hat T$.
+
+\subsection{Active inference and the free-energy principle}
+Friston's free-energy principle \citep{friston2010free} frames perception and action as two sides of variational inference under a generative model $p(o,s)$.  Variational free energy decomposes as
+\begin{equation}
+F[q] = \mathbb{E}_q[\log q(s) - \log p(o,s)] = \mathrm{KL}\!\big(q(s) \,\|\, p(s \mid o)\big) - \log p(o),
+\end{equation}
+so minimising $F$ over $q$ simultaneously sharpens beliefs (the KL term) and accumulates evidence ($-\log p(o)$).  Action selection is recovered by minimising \emph{expected} free energy, conditioned on a policy $\pi = (a_{t}, a_{t+1}, \dots)$:
+\begin{equation}
+G(\pi) = \underbrace{-\,\mathbb{E}_q[\log p(o_\tau \mid C)]}_{\text{pragmatic value}}
+        \,+\, \underbrace{-\,\mathbb{E}_q\!\left[ \mathrm{KL}\!\big( q(s_\tau \mid o_\tau, \pi) \,\|\, q(s_\tau \mid \pi) \big) \right]}_{\text{epistemic value}},
+\label{eq:efe}
+\end{equation}
+where $C$ encodes the agent's preferences (in our setting: ``win''), $q(s_\tau \mid \pi)$ is the predictive belief under policy $\pi$, and the epistemic term rewards information-gathering actions.  Bayesian RL falls out as the special case where preferences are uniform; pure exploration falls out when rewards vanish.  In the MTG context, the pragmatic term encodes ``play to win'' and the epistemic term encodes ``probe the opponent's hand'' --- exactly the trade-off that \citet{sajid2021active} formalise.  Our \texttt{ActiveInferenceAgent} maintains a Dirichlet belief over the opponent's hand composition seeded from the decklist (cf.\ \texttt{docs/OPPONENT\_MODELING\_WITH\_DECKLIST.md}) and re-evaluates Eq.~\eqref{eq:efe} at every priority pass.
+
+\subsection{Knowledge graphs as a symbolic prior}
+Cards form an inductive graph $\mathcal{G} = (V, E, \tau)$ with typed edges $\tau \in \{\text{combo}, \text{synergy}, \text{counter}, \text{enables}\}$ ingested from the OWL ontology and an embedding pipeline trained with GraphSAGE \citep{hamilton2017inductive}.  GraphSAGE is inductive: a freshly printed card $v_{\text{new}}$ obtains an embedding $\mathbf{h}_{v_{\text{new}}} \in \mathbb{R}^{128}$ by sampling and aggregating its neighbours, without retraining.  We exploit this in two ways: (i) the encoder feeds a graph latent $g_t = \mathrm{Enc}_{KG}(\mathcal{G}, s_t)$ into the recurrent dynamics so that the world model's prior is graph-aware, and (ii) the heuristic agent rescores candidate spells by their graph distance to combo completions, mirroring GraphRAG's ``relational evidence'' pattern \citep{edge2024graphrag}.
+
+\subsection{LLM as a constrained-decoding policy}
+The LLM never freely generates moves.  Given the prompt $\rho(s_t, \mathcal{A})$ that enumerates legal actions by index, we read off
+\begin{equation}
+\log p_{\text{LLM}}(a \mid s_t) = \mathrm{LM}\!\big( \mathrm{idx}(a) \,\big|\, \rho(s_t, \mathcal{A}) \big),
+\end{equation}
+masking any token outside the integer range $\{0, \dots, |\mathcal{A}|-1\}$.  This recovers the standard ``constrained decoding'' guarantee --- the LLM cannot hallucinate an illegal move --- while still letting it import its general-knowledge prior.  Calibration of the resulting distribution is controlled by a temperature parameter ($0.2$ in our default config), which interpolates between greedy LLM picks and a uniform fallback.
+
+\subsection{Self-play promotion as fixed-point iteration}
+Training combines all three signals.  The replay buffer $\mathcal{D}$ is collected by self-play between agent variants; the world model is fit on $\mathcal{D}$; and the controller is improved iteratively by the champion-vs-challenger schema implemented in \texttt{scripts/train\_pipeline.py}.  At each iteration $i$, a challenger $\pi_{i+1}$ is trained against $\pi_i$ on the latest replay window and faces the champion in a best-of-$N$ match; promotion happens iff the empirical win rate exceeds $0.55$.  This is a stochastic-approximation fixed-point operator on the policy improvement step \citep{tesauro1995temporal, silver2017mastering, silver2018alphazero, schrittwieser2020mastering}: under standard Robbins--Monro conditions it converges, in expectation, to a fixed point of the Bellman optimality operator restricted to the dynamics class $\hat T$ that the world model has learned.  Convergence in practice depends on $\hat T$ being locally accurate, which we monitor by tracking JEPA validation loss across iterations.
+
+% =============================================================================
 \section{System Architecture}
 \label{sec:arch}
 

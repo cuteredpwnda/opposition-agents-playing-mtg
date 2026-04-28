@@ -85,3 +85,5 @@ src/graphify-out/cache/
 data/card_graph_embeddings.pt
 
 *.err
+
+*.pt

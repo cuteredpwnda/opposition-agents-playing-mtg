@@ -1,0 +1,469 @@
+% =========================================================================
+% Agent Zoo - Technical Implementation Report
+% Companion to paper/opposition_agents_mtg.tex.  Standalone PDF.
+% Build: pdflatex -interaction=nonstopmode -halt-on-error agents_tech_report.tex
+% =========================================================================
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{amsmath, amssymb}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage[hidelinks]{hyperref}
+\usepackage{enumitem}
+\usepackage{titlesec}
+
+\titleformat{\section}{\Large\bfseries}{\thesection}{0.6em}{}
+\titleformat{\subsection}{\large\bfseries}{\thesubsection}{0.5em}{}
+
+\definecolor{codebg}{HTML}{F5F5F5}
+\definecolor{codekw}{HTML}{0050A0}
+\definecolor{codecm}{HTML}{707070}
+\definecolor{codestr}{HTML}{8B0000}
+
+\lstset{
+  basicstyle=\ttfamily\footnotesize,
+  backgroundcolor=\color{codebg},
+  keywordstyle=\color{codekw}\bfseries,
+  commentstyle=\color{codecm}\itshape,
+  stringstyle=\color{codestr},
+  numbers=left, numberstyle=\tiny\color{gray},
+  frame=single, framesep=4pt, framerule=0pt,
+  breaklines=true, showstringspaces=false,
+  columns=fullflexible,
+  language=Python,
+  morekeywords={Action, GameState, MTGAgent, dataclass}
+}
+
+\title{\bfseries Agent Zoo --- Technical Implementation Report\\
+       \large Engineering reference for the agents in
+       \texttt{opposition-agents-playing-mtg}}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This document is the engineering counterpart to the scientific writeup
+\emph{Opposition Agents Playing Magic: The Gathering} (\texttt{paper/opposition\_agents\_mtg.tex}).
+Where the paper focuses on \emph{objectives}, this report focuses on
+\emph{exactly what the code does}: class signatures, control flow,
+configuration tables, failure modes, and the structured reasoning
+traces each agent emits.  All cited paths are workspace-relative.
+\end{abstract}
+
+\tableofcontents
+\bigskip
+
+% =========================================================================
+\section{Theoretical background (1 page)}
+\label{sec:tech-theory}
+
+The framework treats Magic: The Gathering (MTG) as a partially-observable
+Markov game.  Each player's perspective is a POMDP
+$(\mathcal{S},\mathcal{O},\mathcal{A},T,\Omega,R,\gamma)$ with hidden
+state (opponent hands and library order).  Concretely:
+%
+\begin{itemize}[leftmargin=*]
+  \item $\mathcal{S}$: full \texttt{GameState} including all players' zones, the
+        stack, mana pools, life totals, and bookkeeping flags.  Conservatively
+        $|\mathcal{S}| > 10^{800}$.
+  \item $\mathcal{O}$: controlled-perspective filter from
+        \texttt{src/engine/zones.py}; only the active player's hand,
+        library top, and revealed permanents are visible.
+  \item $\mathcal{A}$: legal \texttt{Action} list assembled by
+        \texttt{src/engine/priority\_loop.py}, typically
+        $|\mathcal{A}| \in [1, 60]$.
+  \item $T$: the rules engine itself --- deterministic given the random
+        seed and the active player's choices.
+  \item $R$: terminal $\pm 1$ on win/loss; agents may shape via $\Delta$life,
+        $\Delta$cards, $\Delta$tempo when training a value head.
+\end{itemize}
+
+\noindent\textbf{Three families of policies.}  The agents implement:
+%
+\begin{enumerate}[leftmargin=*]
+  \item \emph{Reactive} (Random, Heuristic, KG-Heuristic, LLM): map
+        $o_t \to a_t$ directly, no internal state.
+  \item \emph{Model-based} (World-Model): learn $\hat T$ in latent space
+        and pick $\arg\max_a \mathbb{E}_{\hat T}[V(s_{t+H})]$.
+  \item \emph{Belief-driven} (Active-Inference, LLM-Fusion):
+        maintain a belief $b_t$ over hidden state and minimise expected
+        free energy $G(\pi) = \underbrace{-\mathbb{E}_q[R]}_{\text{pragmatic}}
+        \,+\, \underbrace{-\mathbb{E}_q[\mathrm{KL}(b_{t+1}\|b_t)]}_{\text{epistemic}}$.
+\end{enumerate}
+%
+A self-contained derivation is in \S\ref{sec:tech-foundations}.  See
+also the corresponding section in the companion paper.
+
+% =========================================================================
+\section{The contract every agent satisfies}
+\label{sec:contract}
+
+Every agent class implements a single method:
+%
+\begin{lstlisting}
+class MTGAgent(Protocol):
+    name: str
+
+    async def decide_action(
+        self,
+        game_state: GameState,
+        legal_actions: list[Action],
+    ) -> Action: ...
+\end{lstlisting}
+%
+Agents must \emph{never} mutate \texttt{game\_state}; only the rules engine in
+\texttt{src/engine/} is allowed to.  An agent that returns an action not in
+\texttt{legal\_actions} is treated as a forfeit by
+\texttt{src/orchestrator/priority\_loop.py}.
+
+Determinism: any RNG owned by an agent must be a \texttt{random.Random}
+instance constructed from the seed passed by the runner.  This
+guarantees \texttt{(seed, decklists, agent\_types)} replays bit-exactly.
+
+% =========================================================================
+\section{The lineup}
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabularx}{\linewidth}{l l X}
+\toprule
+\textbf{Agent} & \textbf{Module} & \textbf{Strategy} \\
+\midrule
+Random              & \texttt{random\_agent.py}           & Uniform over legal actions. \\
+Heuristic           & \texttt{heuristic\_agent.py}        & Hand-tuned action priorities. \\
+KG-Heuristic        & \texttt{kg\_heuristic\_agent.py}    & Heuristic + Neo4j combo lookup. \\
+Ollama (LLM)        & \texttt{ollama\_agent.py}           & Local LLM picks an action index. \\
+Active-Inference    & \texttt{active\_inference\_agent.py}& Bayesian belief, EFE minimisation. \\
+World-Model         & \texttt{world\_model\_agent.py}     & V+M+C latent rollouts. \\
+LLM-Fusion          & \texttt{llm\_fusion\_agent.py}      & Weighted vote of all four signals. \\
+Human               & \texttt{human\_agent.py}            & Stdin prompt, used for debugging. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+% =========================================================================
+\section{Per-agent reference}
+
+\subsection{RandomAgent}
+\textbf{File:} \texttt{src/agents/random\_agent.py}.  \textbf{Purpose:}
+baseline / smoke test.
+
+\begin{lstlisting}
+def decide_action(self, game_state, legal_actions):
+    return self._rng.choice(legal_actions)
+\end{lstlisting}
+%
+Configuration: \texttt{seed: int} (forwarded to \texttt{random.Random}).
+Failure modes: none.  Deterministic given a seed.
+
+\subsection{HeuristicAgent}
+\textbf{File:} \texttt{src/agents/heuristic\_agent.py}.
+
+\medskip\noindent\textbf{Decision flow.}
+\begin{algorithmic}[1]
+\State $\text{scored} \gets [(\text{priority}(a), -\text{tiebreak}(a), a)\text{ for }a \in \text{legal\_actions}]$
+\State $\text{scored.sort}(\text{descending})$
+\State \Return $\text{scored}[0].a$
+\end{algorithmic}
+
+\noindent\textbf{Priority table} (\texttt{ACTION\_PRIORITIES}):
+\begin{center}\small
+\begin{tabular}{lc}
+\toprule
+Action type & Priority \\
+\midrule
+PLAY\_LAND          & 100 \\
+CAST\_SPELL         &  90 \\
+DECLARE\_ATTACKERS  &  80 \\
+DECLARE\_BLOCKERS   &  70 \\
+ACTIVATE\_ABILITY   &  60 \\
+PASS\_PRIORITY      &   1 \\
+CONCEDE             &   0 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Tiebreaks: prefer cheaper spells, prefer creatures with higher power
+when attacking.  Failure modes: never holds up mana for instants
+(known limitation).
+
+\subsection{KGHeuristicAgent}
+\textbf{File:} \texttt{src/agents/kg\_heuristic\_agent.py}.
+
+Wraps \texttt{HeuristicAgent} but rescores \texttt{CAST\_SPELL} actions
+using the Neo4j graph through
+\texttt{src/knowledge/kg\_query.py:score\_card\_for\_state}:
+%
+\begin{equation}
+\text{kg\_score}(c) =
+  10 \cdot \mathbf{1}[c \in \text{NearComboMissingPieces}(s)]
+  + \sum_{p \in \text{permanents}(s)} \text{strength}(\text{KG-edge}(c,p)).
+\end{equation}
+%
+The combined score is $\text{prio}(a) + \lambda \cdot \text{kg\_score}(c)$ with
+$\lambda{=}5$.  Configuration: \texttt{neo4j\_uri}, \texttt{auth},
+\texttt{enable\_combo\_lookup} (bool).  Failure mode: if Neo4j is
+unreachable, falls back silently to plain HeuristicAgent.
+
+\subsection{OllamaAgent (and LLMAgent alias)}
+\textbf{File:} \texttt{src/agents/ollama\_agent.py}.
+
+Builds a textual board state via \texttt{format\_state\_for\_llm()}, sends a
+chat completion request to \texttt{http://localhost:11434/api/chat}
+(model \texttt{gemma4:e2b}, temperature 0.2, \texttt{keep\_alive=30m},
+timeout 120s), and parses an integer action index out of the reply.
+
+\begin{lstlisting}
+prompt = (
+    "You are an MTG expert.  Choose the BEST action by index.\n"
+    f"State:\n{format_state_for_llm(state)}\n"
+    f"Legal actions:\n{enumerate_actions(legal_actions)}\n"
+    "Respond with ONLY the index."
+)
+resp = requests.post(OLLAMA_URL, json={"model": MODEL, "messages": [...]})
+idx = int(re.search(r"\d+", resp.json()["message"]["content"]).group())
+return legal_actions[idx % len(legal_actions)]
+\end{lstlisting}
+%
+Failure modes: timeout $\to$ fall back to HeuristicAgent; non-integer
+reply $\to$ fall back to RandomAgent over a small legal-action subset.
+
+\subsection{ActiveInferenceAgent}
+\textbf{File:} \texttt{src/agents/active\_inference\_agent.py}.
+
+Maintains a Dirichlet belief over the opponent's hand composition and
+minimises expected free energy:
+%
+\begin{equation}
+G(\pi) \;=\; -\,\mathbb{E}_{q(s'|\pi)}[R(s')]
+            \;-\; \mathrm{KL}\!\left[q(s'|\pi)\,\|\,b_t\right].
+\end{equation}
+%
+The first term is the pragmatic value (favouring high-utility outcomes),
+the second is the epistemic value (favouring information gain).  Belief
+update on each opponent action uses Bayes' rule with a card-likelihood
+table seeded from the decklist (see \texttt{docs/OPPONENT\_MODELING\_WITH\_DECKLIST.md}).
+
+\subsection{WorldModelAgent}
+\textbf{File:} \texttt{src/agents/world\_model\_agent.py}.
+\textbf{Backbone:} \texttt{src/world\_model/world\_model.py}.
+
+\medskip\noindent\textbf{Components} (V+M+C, after Ha \& Schmidhuber).
+\begin{align*}
+z_t          &= \mathrm{Enc}_V(o_t)               &&\text{(perceptual encoder, 768-d)} \\
+g_t          &= \mathrm{Enc}_{KG}(\mathcal{G}, s_t) &&\text{(GraphSAGE, 128-d)} \\
+(h_t, c_t)   &= \mathrm{LSTM}_M([z_t;g_t], (h_{t-1}, c_{t-1})) \\
+\hat r_t     &= V(h_t)                            &&\text{(value head)} \\
+\pi(a|h_t)   &= \mathrm{softmax}(C(h_t))          &&\text{(controller)}
+\end{align*}
+%
+\noindent\textbf{Decision rule.}  For each candidate action $a \in \mathcal{A}$,
+roll out $K$ trajectories of horizon $H$ in latent space (no actual
+rules-engine simulation):
+%
+\begin{equation}
+\text{score}(a) = \frac{1}{K} \sum_{k=1}^{K} V(h^{(k)}_{t+H} \mid a_t=a).
+\end{equation}
+%
+Defaults: $K=8$, $H=10$, sampling temperature $1.15$.
+
+\medskip\noindent\textbf{Checkpoint loading.}  \texttt{WorldModel.load} now
+tolerates three checkpoint shapes (canonical, JEPA-only, and
+free-form), warning-and-continuing rather than raising.  The agent
+factory (\texttt{src/agents/\_\_init\_\_.py:\_make\_world\_model}) falls
+back to a default-initialised network if the checkpoint file does not
+exist, so the harness can be smoke-tested before training.
+
+\subsection{LLMFusionAgent}
+\textbf{File:} \texttt{src/agents/llm\_fusion\_agent.py}.
+
+Combines four signals into a single ranking:
+%
+\begin{equation}
+\text{score}(a) =
+   \alpha_h\, s_{\text{heur}}(a)
+ + \alpha_g\, s_{\text{KG}}(a)
+ + \alpha_w\, s_{\text{WM}}(a)
+ + \alpha_\ell\, \log p_{\text{LLM}}(a),
+\end{equation}
+%
+with default weights $(\alpha_h, \alpha_g, \alpha_w, \alpha_\ell) =
+(0.15, 0.15, 0.40, 0.30)$ from \texttt{FusionConfig}.  When any signal
+exceeds the \texttt{obvious\_threshold} ($0.8$), it short-circuits the
+vote to save an LLM call.
+
+\begin{algorithm}[h]
+\caption{LLM-Fusion turn (simplified)}
+\begin{algorithmic}[1]
+\Require state $s_t$, legal actions $\mathcal{A}$, weights $\alpha$
+\State $S_h \gets \text{HeuristicAgent.score\_all}(s_t, \mathcal{A})$
+\State $S_g \gets \text{KG.score\_all}(s_t, \mathcal{A})$
+\If{$\max_a S_h(a) > \tau_{\text{obvious}}$} \Return $\arg\max_a S_h(a)$ \EndIf
+\State $S_w \gets \text{WM.value\_rollout}(s_t, \mathcal{A})$
+\State $\mathcal{A}^* \gets \text{top-}N\text{ actions by }S_w$
+\State $S_\ell(a) \gets \log p_{\text{LLM}}(a \mid \text{prompt}(s_t, \mathcal{A}^*))$
+\State \Return $\arg\max_{a \in \mathcal{A}^*}
+        \alpha_h S_h(a) + \alpha_g S_g(a) + \alpha_w S_w(a) + \alpha_\ell S_\ell(a)$
+\end{algorithmic}
+\end{algorithm}
+
+\subsection{HumanAgent}
+\textbf{File:} \texttt{src/agents/human\_agent.py}.  Renders the legal
+actions to stdout and reads a 1-based index.  Used by
+\texttt{examples/play\_logged\_game.py} for hand-debugging pathological
+states.
+
+% =========================================================================
+\section{Reasoning trace contract}
+
+Every agent except Random/Human emits a structured JSON record on each
+decision into \texttt{state.log\_jsonl(\dots)}:
+
+\begin{lstlisting}[language={}]
+{
+  "turn": 7, "phase": "main1", "agent": "llm_fusion",
+  "chosen_action_idx": 3,
+  "scores": {"heuristic": [...], "kg": [...], "wm": [...], "llm": [...]},
+  "weights": {"heur": 0.15, "kg": 0.15, "wm": 0.40, "llm": 0.30},
+  "elapsed_ms": 412,
+  "explanation": "WM rollout favours T+8 board state with..."
+}
+\end{lstlisting}
+%
+Trace files land at \texttt{runs/<exp>/game\_NNN.jsonl} alongside the
+human-readable \texttt{game\_NNN.log}.
+
+% =========================================================================
+\section{Test pointers}
+
+\begin{table}[h]\centering\small
+\begin{tabular}{ll}
+\toprule
+Agent & Test file \\
+\midrule
+RandomAgent           & \texttt{tests/test\_random\_agent.py}            \\
+HeuristicAgent        & \texttt{tests/test\_heuristic\_agent.py}         \\
+KGHeuristicAgent      & \texttt{tests/test\_kg\_heuristic\_agent.py}     \\
+OllamaAgent (mocked)  & \texttt{tests/test\_ollama\_agent.py}            \\
+ActiveInferenceAgent  & \texttt{tests/test\_active\_inference\_agent.py} \\
+WorldModelAgent       & \texttt{tests/test\_world\_model\_agent.py}      \\
+LLMFusionAgent        & \texttt{tests/test\_llm\_fusion\_agent.py}       \\
+\bottomrule
+\end{tabular}\end{table}
+
+\medskip\noindent\textbf{Smoke commands.}
+\begin{lstlisting}[language=bash]
+.\.venv\Scripts\python.exe -m pytest tests/ -q
+.\.venv\Scripts\python.exe examples\play_edh_pod.py --max-turns 6 --seed 7 --model none
+scripts\run_overnight_benchmarks.bat --quick
+\end{lstlisting}
+
+% =========================================================================
+\section{Theoretical foundations (extended)}
+\label{sec:tech-foundations}
+
+\subsection{POMDPs and partial observability}
+A finite-horizon POMDP is the tuple
+$(\mathcal{S},\mathcal{A},\mathcal{O},T,\Omega,R,\gamma,b_0)$.  The
+optimal value function over beliefs satisfies
+%
+\begin{equation}
+V^*(b) = \max_a \Big[\,
+   \sum_s b(s) R(s,a)
+   + \gamma \sum_o \Pr(o\mid b,a)\, V^*(b'_o)
+\,\Big],
+\end{equation}
+%
+where $b'_o$ is the Bayes update of $b$ after action $a$ and observation
+$o$.  Exact solution is intractable for $|\mathcal{S}| > 10^{800}$;
+all our policies are approximations.
+
+\subsection{World models as latent imagination}
+Following Ha \& Schmidhuber and Hafner et~al.\ (Dreamer), we factor the
+agent as $V$ (encoder), $M$ (recurrent dynamics), and $C$ (controller).
+Training the dynamics jointly minimises
+%
+\begin{equation}
+\mathcal{L}_{\text{dyn}} = \sum_t \big\| \hat z_{t+1} - \mathrm{sg}(z_{t+1}) \big\|^2_2
+   + \beta \cdot \mathrm{KL}(q(z_t|o_t) \,\|\, p(z_t|h_{t-1})),
+\end{equation}
+%
+where $\mathrm{sg}$ is stop-gradient.  We follow the JEPA recipe of
+LeCun \& Assran: predict in representation space, not in pixel space.
+The single tunable knob is $\beta$ (\texttt{--jepa-beta}, default $1.0$).
+
+\subsection{Free energy and active inference}
+Friston's free-energy principle frames perception and action as joint
+inference.  The variational free energy is
+%
+\begin{equation}
+F[q] = \underbrace{\mathbb{E}_q[\log q(s) - \log p(o,s)]}_{\text{evidence bound}}
+     = \mathrm{KL}(q\|p(s|o)) - \log p(o).
+\end{equation}
+%
+Action selection minimises \emph{expected} free energy,
+which decomposes as
+%
+\begin{equation}
+G(\pi) = \underbrace{-\mathbb{E}_q[\log p(o\mid C)]}_{\text{pragmatic}}
+        + \underbrace{-\mathbb{E}_q[\mathrm{KL}(q(s\mid o,\pi) \,\|\, q(s\mid \pi))]}_{\text{epistemic}}.
+\end{equation}
+%
+The pragmatic term encodes goal-seeking; the epistemic term encodes
+information-gathering.  Bayesian RL is recovered when the prior $C$
+is uniform, and pure exploration is recovered when rewards are flat.
+
+\subsection{Knowledge-graph grounding}
+Cards form an inductive graph $\mathcal{G}=(V,E)$ with edges for
+\emph{combo}, \emph{synergy}, \emph{counters}, and \emph{enables}
+(see \texttt{src/knowledge/}).  GraphSAGE produces inductive node
+embeddings $\mathbf{h}_v \in \mathbb{R}^{128}$ that are concatenated
+with the perceptual latent $z_t$ before the recurrent dynamics.  This
+is the V+M+C model with an additional \emph{graph} channel
+$\mathrm{Enc}_{KG}$.
+
+\subsection{LLM-as-policy under legal-action constraints}
+The LLM never freely generates text.  Given the prompt
+$\rho(s_t,\mathcal{A})$, we read off
+%
+\begin{equation}
+\log p_{\text{LLM}}(a\mid s_t) =
+  \mathrm{LM}(\text{idx}(a) \mid \rho(s_t,\mathcal{A}))
+\end{equation}
+%
+and mask any index outside $\{0, \dots, |\mathcal{A}|-1\}$.  This is the
+standard ``constrained decoding'' trick and prevents illegal
+hallucinated moves.
+
+\subsection{Self-play promotion as fixed-point iteration}
+The iterative training loop in \texttt{scripts/train\_pipeline.py}
+implements a champion-vs-challenger schema: a challenger trained on
+the latest replay buffer plays a best-of-$N$ against the current
+champion; promotion happens iff the win rate exceeds $0.55$.  This is
+a stochastic-approximation fixed-point on the policy improvement
+operator and converges (in expectation) provided the dynamics model is
+locally accurate.
+
+% =========================================================================
+\section{Where to look next}
+\begin{itemize}[leftmargin=*]
+  \item Companion paper: \texttt{paper/opposition\_agents\_mtg.tex}.
+  \item Single source of truth: \texttt{IMPLEMENTATION\_PLAN.md}.
+  \item Engine docs: \texttt{ARCHITECTURE.md}, \texttt{DEVELOPMENT.md}.
+  \item World-model design: \texttt{docs/WORLD\_MODEL\_DESIGN.md}.
+  \item Opponent modelling: \texttt{docs/OPPONENT\_MODELING\_WITH\_DECKLIST.md}.
+\end{itemize}
+
+\end{document}
