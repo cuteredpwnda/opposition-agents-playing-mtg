@@ -1,0 +1,25 @@
+{
+  "total_games": 4,
+  "games_completed": 4,
+  "games_errored": 0,
+  "format": "standard",
+  "pod": false,
+  "agents": [
+    "random",
+    "heuristic"
+  ],
+  "decks": [
+    "data\\decks\\modern_mono_red_burn.txt",
+    "data\\decks\\modern_azorius_control.txt"
+  ],
+  "wins_by_agent": {
+    "random": 1,
+    "heuristic": 3
+  },
+  "win_rate_by_agent": {
+    "random": 0.25,
+    "heuristic": 0.75
+  },
+  "avg_turns": 9.0,
+  "avg_elapsed_sec": 0.515
+}

@@ -1,0 +1,5 @@
+game,format,winner_seat,winner_agent,winner_deck,turns,elapsed_sec,seats,decks,error
+1,standard,player1,random,modern_mono_red_burn,8,1.46,"{""player1"": ""random"", ""player2"": ""heuristic""}","{""player1"": ""modern_mono_red_burn"", ""player2"": ""modern_azorius_control""}",
+2,standard,player2,heuristic,modern_azorius_control,13,0.26,"{""player1"": ""random"", ""player2"": ""heuristic""}","{""player1"": ""modern_mono_red_burn"", ""player2"": ""modern_azorius_control""}",
+3,standard,player1,heuristic,modern_mono_red_burn,8,0.17,"{""player1"": ""heuristic"", ""player2"": ""random""}","{""player1"": ""modern_mono_red_burn"", ""player2"": ""modern_azorius_control""}",
+4,standard,player1,heuristic,modern_mono_red_burn,7,0.17,"{""player1"": ""heuristic"", ""player2"": ""random""}","{""player1"": ""modern_mono_red_burn"", ""player2"": ""modern_azorius_control""}",

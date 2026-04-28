@@ -108,14 +108,59 @@ def _make_active_inference(player_id: str, **kw: Any) -> MTGAgent:
     )
 
 
+def _make_llm_fusion(player_id: str, **kw: Any) -> MTGAgent:
+    """Build a `LLMFusionAgent` (LLM + world model + KG fusion).
+
+    Optional kwargs: ``world_model`` / ``tokenizer`` / ``checkpoint``,
+    ``knowledge_graph``, ``opponent_model``, ``llm_model``, plus any
+    `FusionConfig` field overrides.
+    """
+    from src.agents.llm_fusion_agent import LLMFusionAgent, FusionConfig
+
+    cfg_overrides: dict[str, Any] = {}
+    for fname in (
+        "llm_weight", "world_model_weight", "kg_weight", "heuristic_weight",
+        "dream_rollouts", "dream_depth", "dream_temperature",
+        "llm_provider", "llm_model", "llm_timeout",
+        "skip_llm_if_obvious", "obvious_threshold",
+    ):
+        if fname in kw:
+            cfg_overrides[fname] = kw.pop(fname)
+    config = kw.pop("config", None) or FusionConfig(**cfg_overrides)
+
+    world_model = kw.pop("world_model", None)
+    tokenizer = kw.pop("tokenizer", None)
+    if world_model is None and kw.get("checkpoint"):
+        from src.world_model.world_model import WorldModel
+        world_model = WorldModel.load(kw.pop("checkpoint"))
+    if world_model is not None and tokenizer is None:
+        from src.world_model.game_tokenizer import GameTokenizer
+        from src.world_model.card_embeddings import CardEmbeddingModel
+        card_model = CardEmbeddingModel()
+        tokenizer = GameTokenizer(card_embeddings=card_model.get_all_embeddings())
+
+    return LLMFusionAgent(
+        player_id=player_id,
+        name=kw.pop("name", "Fusion"),
+        config=config,
+        world_model=world_model,
+        tokenizer=tokenizer,
+        knowledge_graph=kw.pop("knowledge_graph", kw.pop("kg", None)),
+        opponent_model=kw.pop("opponent_model", None),
+    )
+
+
 AGENT_REGISTRY: dict[str, _AgentFactory] = {
     "random": _make_random,
     "heuristic": _make_heuristic,
     "kg_heuristic": _make_kg_heuristic,
     "human": _make_human,
     "ollama": _make_ollama,
+    "llm": _make_ollama,  # alias
     "world_model": _make_world_model,
     "active_inference": _make_active_inference,
+    "llm_fusion": _make_llm_fusion,
+    "fusion": _make_llm_fusion,  # alias
 }
 
 
