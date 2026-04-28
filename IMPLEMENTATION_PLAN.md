@@ -43,6 +43,36 @@ items stay for traceability.
 
 ### Done
 
+- [x] **Combo outcome ontology** — combos now carry a human-readable
+      `comboName` (`"Heliod, Sun-Crowned + Walking Ballista"`) and emit
+      `:Outcome` nodes via a `:PRODUCES` edge.
+      `src/knowledge/combo_outcomes.py` buckets Spellbook features into
+      a small ontology (`category` × `magnitude` ∈
+      {infinite, near_infinite, arbitrary, finite}) so combos sharing
+      an outcome are connected through one shared node.  New KG queries:
+      `MTGKnowledgeGraph.get_combos_by_outcome(category, magnitude)`,
+      `get_related_combos_by_outcome(combo_id)`,
+      `list_outcome_categories()`.  Existing `get_combos_containing` /
+      `detect_(near|available)_combos` now return rich payloads with
+      names + outcome breakdowns.  Constraints in `n10s_setup.py`.
+      Tests: `tests/test_combo_outcomes.py` (9 tests).  Smoke:
+      `scripts/smoke_combo_queries.py`.  Verified on full import:
+      10,100 combos / 39 outcome buckets, 3,423 infinite-mana combos
+      reachable in one Cypher hop.
+- [x] **Combo importer schema fix** — Spellbook stores `produces` as
+      list of `{"feature": {"name": str}}` dicts rather than plain
+      strings; `kg_builder._merge_combo` now flattens the structure
+      and feeds it through the outcome classifier.
+- [x] **Encoder early-stop** — `train_encoder` exits when
+      `avg_total < 1e-3` for 3 consecutive epochs, avoiding the wasted
+      ~80 epochs we saw when loss collapsed to 0 in epoch 1.
+- [x] **Game runner KG/judge wiring** — `GameRunner.run_game` now
+      calls `src.agents.tools.set_kg(...)` (and `set_judge` if
+      available) at game start so LangChain-style tool calls resolve
+      against the live KG.  Best-effort: silent if Neo4j is offline.
+- [x] **Overnight runner** — `scripts/overnight_run.py` chains
+      stages 4 → 5 → 6 → 7 with per-stage logs under
+      `runs/overnight_<timestamp>/` and a `SUMMARY.txt`.
 - [x] Agent reasoning traces — every agent now populates
       ``self.last_reasoning`` with a structured `ReasoningTrace`
       (rationale, scores, top candidates, beliefs).  The priority

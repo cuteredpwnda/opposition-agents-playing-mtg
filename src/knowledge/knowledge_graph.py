@@ -46,33 +46,64 @@ class MTGKnowledgeGraph:
     # -----------------------------------------------------------------------
 
     async def get_combos_containing(self, card_name: str) -> list[dict[str, Any]]:
-        """Find all combos that include a given card."""
+        """Find all combos that include a given card.
+
+        Returns the structured combo data: ``comboName`` (joined card
+        names), ``pieces``, ``outcomeCategories`` / ``outcomeMagnitudes``
+        from the new ontology, plus a flat ``outcomes`` list with
+        per-outcome (category, magnitude, displayName, feature) records.
+        """
         query = """
         MATCH (c:Card {cardName: $card_name})-[:PART_OF_COMBO]->(combo:Combo)
-        MATCH (combo)<-[:PART_OF_COMBO]-(piece:Card)
-        OPTIONAL MATCH (combo)-[:PRODUCES_EFFECT]->(effect:Effect)
-        RETURN combo.comboDescription AS description,
+        OPTIONAL MATCH (combo)<-[:PART_OF_COMBO]-(piece:Card)
+        OPTIONAL MATCH (combo)-[r:PRODUCES]->(o:Outcome)
+        RETURN combo.comboId AS comboId,
+               combo.comboName AS comboName,
+               combo.comboDescription AS description,
+               combo.outcomeCategories AS outcomeCategories,
+               combo.outcomeMagnitudes AS outcomeMagnitudes,
+               combo.cardCount AS cardCount,
                collect(DISTINCT piece.cardName) AS pieces,
-               collect(DISTINCT effect.name) AS effects,
-               combo.fragility AS fragility
+               collect(DISTINCT {
+                   category: o.category,
+                   magnitude: o.magnitude,
+                   displayName: o.displayName,
+                   feature: r.feature
+               }) AS outcomes
+        ORDER BY combo.cardCount ASC
         """
         return await self._run_query(query, card_name=card_name)
 
     async def detect_available_combos(
         self, available_cards: list[str]
     ) -> list[dict[str, Any]]:
-        """Find combos where ALL pieces are in the available card list."""
+        """Find combos where ALL pieces are in the available card list.
+
+        Returns rich payloads identical in shape to
+        :meth:`get_combos_containing` so callers can render names,
+        outcome categories, and magnitudes uniformly.
+        """
         if not available_cards:
             return []
         query = """
         MATCH (combo:Combo)
         WITH combo, [(combo)<-[:PART_OF_COMBO]-(c:Card) | c.cardName] AS pieces
-        WHERE ALL(piece IN pieces WHERE piece IN $available)
-        MATCH (combo)<-[:PART_OF_COMBO]-(c:Card)
-        OPTIONAL MATCH (combo)-[:PRODUCES_EFFECT]->(e:Effect)
-        RETURN combo.comboDescription AS description,
-               collect(DISTINCT c.cardName) AS pieces,
-               collect(DISTINCT e.name) AS effects
+        WHERE size(pieces) > 0 AND ALL(piece IN pieces WHERE piece IN $available)
+        OPTIONAL MATCH (combo)-[r:PRODUCES]->(o:Outcome)
+        RETURN combo.comboId AS comboId,
+               combo.comboName AS comboName,
+               combo.comboDescription AS description,
+               combo.outcomeCategories AS outcomeCategories,
+               combo.outcomeMagnitudes AS outcomeMagnitudes,
+               combo.cardCount AS cardCount,
+               pieces,
+               collect(DISTINCT {
+                   category: o.category,
+                   magnitude: o.magnitude,
+                   displayName: o.displayName,
+                   feature: r.feature
+               }) AS outcomes
+        ORDER BY combo.cardCount ASC
         """
         return await self._run_query(query, available=available_cards)
 
@@ -87,14 +118,97 @@ class MTGKnowledgeGraph:
         WITH combo, [(combo)<-[:PART_OF_COMBO]-(c:Card) | c.cardName] AS pieces
         WITH combo, pieces,
              [p IN pieces WHERE NOT p IN $available] AS missing
-        WHERE size(missing) = 1
-        MATCH (combo)<-[:PART_OF_COMBO]-(c:Card)
-        RETURN combo.comboDescription AS description,
-               collect(DISTINCT c.cardName) AS pieces,
+        WHERE size(pieces) > 1 AND size(missing) = 1
+        OPTIONAL MATCH (combo)-[r:PRODUCES]->(o:Outcome)
+        RETURN combo.comboId AS comboId,
+               combo.comboName AS comboName,
+               combo.comboDescription AS description,
+               combo.outcomeCategories AS outcomeCategories,
+               combo.outcomeMagnitudes AS outcomeMagnitudes,
+               combo.cardCount AS cardCount,
+               pieces,
                missing[0] AS missingPiece,
-               combo.fragility AS fragility
+               collect(DISTINCT {
+                   category: o.category,
+                   magnitude: o.magnitude,
+                   displayName: o.displayName,
+                   feature: r.feature
+               }) AS outcomes
+        ORDER BY combo.cardCount ASC
         """
         return await self._run_query(query, available=available_cards)
+
+    # -----------------------------------------------------------------------
+    # Outcome-driven combo queries (new ontology)
+    # -----------------------------------------------------------------------
+
+    async def get_combos_by_outcome(
+        self,
+        category: str,
+        magnitude: str | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        """Find all combos producing a given outcome category.
+
+        Example::
+
+            await kg.get_combos_by_outcome("mana", magnitude="infinite")
+
+        ``magnitude`` is one of ``infinite`` / ``arbitrary`` /
+        ``near_infinite`` / ``finite``; if ``None`` all magnitudes match.
+        """
+        query = """
+        MATCH (combo:Combo)-[:PRODUCES]->(o:Outcome)
+        WHERE o.category = $category
+          AND ($magnitude IS NULL OR o.magnitude = $magnitude)
+        WITH combo, o
+        OPTIONAL MATCH (combo)<-[:PART_OF_COMBO]-(c:Card)
+        RETURN combo.comboId AS comboId,
+               combo.comboName AS comboName,
+               combo.cardCount AS cardCount,
+               o.displayName AS outcomeName,
+               o.category AS category,
+               o.magnitude AS magnitude,
+               collect(DISTINCT c.cardName) AS pieces
+        ORDER BY combo.cardCount ASC
+        LIMIT $limit
+        """
+        return await self._run_query(
+            query, category=category, magnitude=magnitude, limit=limit
+        )
+
+    async def get_related_combos_by_outcome(
+        self, combo_id: str, limit: int = 25
+    ) -> list[dict[str, Any]]:
+        """Find combos sharing at least one outcome with ``combo_id``."""
+        query = """
+        MATCH (src:Combo {comboId: $combo_id})-[:PRODUCES]->(o:Outcome)
+              <-[:PRODUCES]-(other:Combo)
+        WHERE other.comboId <> $combo_id
+        WITH other, collect(DISTINCT o.displayName) AS sharedOutcomes
+        OPTIONAL MATCH (other)<-[:PART_OF_COMBO]-(c:Card)
+        RETURN other.comboId AS comboId,
+               other.comboName AS comboName,
+               other.cardCount AS cardCount,
+               sharedOutcomes,
+               collect(DISTINCT c.cardName) AS pieces
+        ORDER BY size(sharedOutcomes) DESC, other.cardCount ASC
+        LIMIT $limit
+        """
+        return await self._run_query(query, combo_id=combo_id, limit=limit)
+
+    async def list_outcome_categories(self) -> list[dict[str, Any]]:
+        """Inventory all outcome buckets and how many combos they cover."""
+        query = """
+        MATCH (combo:Combo)-[:PRODUCES]->(o:Outcome)
+        RETURN o.outcomeId AS outcomeId,
+               o.category AS category,
+               o.magnitude AS magnitude,
+               o.displayName AS displayName,
+               count(DISTINCT combo) AS comboCount
+        ORDER BY comboCount DESC
+        """
+        return await self._run_query(query)
 
     # -----------------------------------------------------------------------
     # Synergy & counter-play queries

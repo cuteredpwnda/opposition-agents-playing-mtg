@@ -47,8 +47,9 @@ class EncoderTrainingConfig:
     # Early-stop when avg total loss stays below this threshold for
     # ``early_stop_patience`` consecutive epochs.  Mostly defends
     # against degenerate cases where the loss converges to ~0 in
-    # epoch 1 and the next 99 epochs are wasted compute.
-    early_stop_loss: float = 1e-4
+    # epoch 1 and the next 99 epochs are wasted compute.  Threshold
+    # is slightly above the printed-precision floor (``%.4f``).
+    early_stop_loss: float = 1e-3
     early_stop_patience: int = 3
 
 
