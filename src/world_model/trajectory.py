@@ -132,6 +132,9 @@ class TrajectoryStore:
 
     def load(self) -> None:
         """Load trajectories from disk."""
+        import logging
+        import time as _time
+        _log = logging.getLogger(__name__)
         metadata_path = self.storage_dir / "metadata.json"
         if not metadata_path.exists():
             return
@@ -139,13 +142,16 @@ class TrajectoryStore:
         with open(metadata_path) as f:
             index = json.load(f)
 
-        for entry in index:
+        _log.info("Loading %d trajectories from %s ...", len(index), self.storage_dir)
+
+        for n, entry in enumerate(index, 1):
             game_id = entry["game_id"]
             npz_path = self.storage_dir / f"{game_id}.npz"
             if not npz_path.exists():
                 continue
-
+            _t0 = _time.time()
             data = np.load(str(npz_path), allow_pickle=True)
+            files_set = set(data.files)
 
             traj = Trajectory(
                 game_id=game_id,
@@ -154,15 +160,29 @@ class TrajectoryStore:
                 source=entry.get("source", "unknown"),
             )
 
-            # Reconstruct transitions
+            # Pre-bucket keys by transition index in a single pass over the
+            # key list (O(K) instead of O(N*K) where N = #transitions and
+            # K = #npz keys).  Per-transition key counts can reach 70k+
+            # making the naive nested scan minutes-slow.
+            state_keys_by_idx: dict[int, list[tuple[str, str]]] = {}
+            for key in data.files:
+                if key.startswith("state_"):
+                    rest = key[len("state_"):]
+                    sep = rest.find("_")
+                    if sep <= 0:
+                        continue
+                    try:
+                        idx = int(rest[:sep])
+                    except ValueError:
+                        continue
+                    feat_name = rest[sep + 1:]
+                    state_keys_by_idx.setdefault(idx, []).append((key, feat_name))
+
             i = 0
-            while f"action_{i}" in data:
+            while f"action_{i}" in files_set:
                 state_features = {}
-                for key in data:
-                    prefix = f"state_{i}_"
-                    if key.startswith(prefix):
-                        feat_name = key[len(prefix):]
-                        state_features[feat_name] = data[key]
+                for key, feat_name in state_keys_by_idx.get(i, ()):
+                    state_features[feat_name] = data[key]
 
                 transition = Transition(
                     state_features=state_features,
@@ -175,6 +195,8 @@ class TrajectoryStore:
                 i += 1
 
             self.add(traj)
+            _log.info("  [%d/%d] %s: %d transitions in %.1fs",
+                      n, len(index), game_id, i, _time.time() - _t0)
 
     def save_hdf5(self, output_path: str) -> None:
         """Export trajectories into HDF5 for external world-model trainers."""

@@ -43,13 +43,26 @@ try:
 except Exception:
     pass
 
-_handler = logging.StreamHandler(sys.stdout)
-_handler.setFormatter(logging.Formatter(
+print("[boot] train_pipeline.py starting...", flush=True)
+
+# Always also write to runs/train_pipeline.log so progress survives any
+# parent-shell stdout buffering (Windows Start-Process / PowerShell pipes).
+_LOG_PATH = PROJECT_ROOT / "runs" / "train_pipeline.log"
+_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+_fmt = logging.Formatter(
     "%(asctime)s [%(levelname)s] %(name)s | %(message)s",
     datefmt="%H:%M:%S",
-))
-logging.basicConfig(level=logging.INFO, handlers=[_handler], force=True)
+)
+_stream_handler = logging.StreamHandler(sys.stdout)
+_stream_handler.setFormatter(_fmt)
+_file_handler = logging.FileHandler(_LOG_PATH, mode="w", encoding="utf-8")
+_file_handler.setFormatter(_fmt)
+_handler = _stream_handler  # kept for backward compat below
+logging.basicConfig(
+    level=logging.INFO, handlers=[_stream_handler, _file_handler], force=True
+)
 logger = logging.getLogger("train_pipeline")
+logger.info("Logging to %s", _LOG_PATH)
 
 
 # â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—
@@ -312,6 +325,15 @@ def stage_5_train_jepa(
     logger.info("=== Stage 5: JEPA World Model Training ===")
 
     import torch
+    logger.info(
+        "GPU check: torch=%s cuda_available=%s device_count=%d cuda_version=%s",
+        torch.__version__,
+        torch.cuda.is_available(),
+        torch.cuda.device_count(),
+        torch.version.cuda,
+    )
+    if torch.cuda.is_available():
+        logger.info("GPU 0: %s", torch.cuda.get_device_name(0))
     from src.world_model.world_model import WorldModel, WorldModelConfig
     from src.world_model.state_encoder import StateEncoderConfig
     from src.world_model.jepa_predictor import JEPAPredictorConfig
