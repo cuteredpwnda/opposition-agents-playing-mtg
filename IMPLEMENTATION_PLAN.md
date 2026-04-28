@@ -78,6 +78,38 @@ items stay for traceability.
 - [x] **Legal-action log line** in `priority_loop`: emits
       `? <player> legal actions (N): Cast(Foo), Activate(Bar), …` whenever the
       action set has anything beyond `PASS_PRIORITY`.
+- [x] **Atraxa land-play bug** — `_setup_game` was shuffling the deck before
+      pulling the commander, so a random card became the commander and Atraxa's
+      lands failed colour-identity. Fixed in `src/orchestrator/game_runner.py`
+      by lifting *all* `card_data["is_commander"]=True` cards into the command
+      zone before the shuffle.
+- [x] **Multi-commander state model** — `GameState._commanders_by_player:
+      dict[str, list[str]]` with `commander_ids(pid)` / `add_commander(pid,id)`
+      helpers and a back-compat `commanders` property. `_commander_color_identity`
+      unions across all commanders so partner / background pairs work.
+      `combat._track_commander_damage` matches against the list.
+- [x] **Command-zone subsystem** — `src/engine/command_zone.py` with helpers
+      for emblems, dungeons (Phandelver / Tomb / Mad Mage / Undercity registry),
+      day/night flip (CR 726.3), monarch, the initiative (auto-ventures into
+      Undercity), and generic `CommandZoneObject` for vanguards, conspiracies,
+      planes, schemes, attractions, phenomena. New dataclasses + `DayNight`
+      enum live in `src/engine/game_state.py`. Covered by
+      `tests/test_command_zone.py` (10 tests).
+- [x] **Companion (CR 702.139)** — `src/engine/companion.py` with
+      `reveal_companion`, `pay_companion_tax`, `get_companion`, and a
+      `COMPANION_TAX = 3` constant. The companion lives in `Zone.EXILE` with
+      `card_data["companion"]=True` as the outside-the-game proxy and is
+      tracked by a `CommandZoneObject(kind="companion")`. Covered by
+      `tests/test_companion.py` (5 tests).
+- [x] **Comprehensive Rules relocation + downloader** — moved
+      `data/CR20260417.txt` → `data/rules/`. New `scripts/fetch_rules.py`
+      scrapes https://magic.wizards.com/en/rules for the latest
+      `MagicCompRules*.txt`, downloads it into `data/rules/`, and refreshes a
+      stable `data/rules/latest.txt` pointer. `src/judge/rules_vectorstore.py`
+      now defaults to that path.
+- [x] **`.github/copilot-instructions.md` + `AGENTS.md`** — full set of
+      coding-agent guardrails (single-source-of-truth rule, file conventions,
+      test commands, "don'ts") and a separate agent-zoo onboarding document.
 
 ### In progress
 
