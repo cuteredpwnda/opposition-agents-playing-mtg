@@ -43,6 +43,13 @@ items stay for traceability.
 
 ### Done
 
+- [x] **Stable JEPA per-epoch metrics CSV logging fixed** —
+      `scripts/train_stable_worldmodel.py` now writes real epoch-averaged
+      `train/total`, `train/prediction`, and `train/kl` values to
+      `runs/training_stable_*/metrics.csv` by aggregating `on_train_batch_end`
+      outputs; fixed stage naming (`fit` -> `train`) so metrics no longer
+      appear as `NaN`.
+
 - [x] **Collective-intelligence framing propagated across docs** — added a
       shared-graph-memory narrative to `README.md`, `ARCHITECTURE.md`,
       `DEVELOPMENT.md`, `AGENTS.md`, `docs/HOW_IT_ALL_WORKS.md`,
