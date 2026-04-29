@@ -1,0 +1,3 @@
+game,format,winner_seat,winner_agent,winner_deck,turns,elapsed_sec,seats,decks,error
+1,standard,player2,heuristic,modern_azorius_control,1,0.73,"{""player1"": ""world_model"", ""player2"": ""heuristic""}","{""player1"": ""modern_mono_red_burn"", ""player2"": ""modern_azorius_control""}",
+2,standard,player1,heuristic,modern_mono_red_burn,1,0.02,"{""player1"": ""heuristic"", ""player2"": ""world_model""}","{""player1"": ""modern_mono_red_burn"", ""player2"": ""modern_azorius_control""}",

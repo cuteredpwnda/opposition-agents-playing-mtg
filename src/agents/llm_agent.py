@@ -98,6 +98,16 @@ class OllamaAgent(MTGAgent):
         if not legal_actions:
             return Action(action_type=ActionType.PASS_PRIORITY, player_id=self.player_id)
 
+        # Never let the LLM accidentally concede — CONCEDE is always offered
+        # by the rules engine for debug parity, but we strip it from the
+        # candidate set the model sees so a stray "1" in the response cannot
+        # forfeit the game on turn 1.
+        candidate_actions = [a for a in legal_actions
+                             if a.action_type != ActionType.CONCEDE]
+        if not candidate_actions:
+            return legal_actions[0]
+        legal_actions = candidate_actions
+
         # Use fallback if Ollama isn't available
         if not self._ollama_available:
             self.stats["fallback_invocations"] += 1

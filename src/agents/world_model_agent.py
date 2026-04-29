@@ -92,6 +92,15 @@ class WorldModelAgent(MTGAgent):
         if not legal_actions:
             raise ValueError("No legal actions available")
 
+        # Drop CONCEDE from the candidate set: the rules engine always
+        # offers it for debug parity, and an untrained or stochastic
+        # controller would otherwise forfeit games at random.  Keeping
+        # PASS_PRIORITY ensures the agent can still cleanly end its turn.
+        from src.engine.game_state import ActionType as _AT
+        non_concede = [a for a in legal_actions if a.action_type != _AT.CONCEDE]
+        if non_concede:
+            legal_actions = non_concede
+
         with torch.no_grad():
             # Step 1: Encode game state
             z, h = self._encode_state(game_state)

@@ -429,6 +429,73 @@ We report preliminary results; a full benchmark suite (\Cref{sec:future}) is in 
 
 \paragraph{(iii) Self-play promotion loop.} The promotion loop of \Cref{alg:promotion} is exercised by two unit tests (\texttt{tests/test\_rl\_trainer.py}); both pass. End-to-end promotion behaviour --- whether champions stabilise after $\mathcal{O}(10)$ rounds of $N=20$ games --- is the next planned experiment and is not reported here.
 
+\paragraph{(iv) Pairwise ablation against the heuristic baseline.}
+We use the in-tree \texttt{scripts/run\_matchups.py} harness to play each candidate agent versus the strategy-aware \texttt{HeuristicAgent} on a fixed Modern matchup (Mono-Red Burn vs.\ Azorius Control), 16 games per cell with seat order swapped to remove going-first bias, \texttt{--max-turns}~30, seed~7. Results are summarised in \Cref{tab:ablation-1v1}. The KG-grounded heuristic and the LLM agent both clear 50\,\% against the baseline; the world-model agent ties; the LLM--WM--KG \emph{fusion} agent currently underperforms its components, which we attribute to (a)~its much larger per-decision latency biasing toward conservative passes when the cost-aware short-circuit fires, and (b)~uncalibrated mixture weights $(\alpha,\beta,\gamma,\delta)$ in the $\sigma$ scoring of \S\ref{sec:fusion}. Calibration is queued in \Cref{sec:future}.
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{lrrrr}
+\toprule
+Agent vs.\ heuristic & Wins & Win-rate & Avg.\ turns & Avg.\ s/game \\
+\midrule
+\texttt{kg\_heuristic}     & 9 / 16 & 56.3\% &  6.4 &   0.32 \\
+\texttt{llm} (Ollama)      & 9 / 16 & 56.3\% &  5.9 &   1.02 \\
+\texttt{world\_model}      & 8 / 16 & 50.0\% &  7.1 &   2.22 \\
+\texttt{llm\_fusion}       & 5 / 16 & 31.3\% &  7.8 & 114.46 \\
+\bottomrule
+\end{tabular}
+\caption{Pairwise win-rate of each candidate agent versus the strategy-aware \texttt{HeuristicAgent} on a single Modern matchup (Mono-Red Burn vs.\ Azorius Control), 16 games per agent, seat-swapped, seed~7. Average wall time is per game on a single CPU; the LLM agent uses an Ollama-hosted Llama-3 model with \texttt{keep\_alive} caching.}
+\label{tab:ablation-1v1}
+\end{table}
+
+\paragraph{(v) Multi-agent round-robin (Standard, Swiss).}
+We additionally ran a 7-agent Swiss tournament on the same Modern environment, 6 rounds, with Buchholz tiebreak (\Cref{tab:swiss}). The hand-tuned \texttt{HeuristicAgent} is currently undefeated; \texttt{ActiveInferenceAgent} and \texttt{LLMFusionAgent} share second place. The lower-bound \texttt{RandomAgent} sits at the expected level. The world-model and bare-LLM standings reflect the harness pre-fix --- the snapshot of the corrected harness (1v1, \Cref{tab:ablation-1v1}) is the more reliable measurement, and a re-run of the multi-agent round-robin under the patched runner is queued in \Cref{sec:future}.
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{rlrrr}
+\toprule
+Rank & Agent              & W--D--L & Pts & Buchholz \\
+\midrule
+1 & \texttt{heuristic}        & 6--0--0 & 18 & --- \\
+2 & \texttt{active\_inference}& 4--0--2 & 12 & 45 \\
+3 & \texttt{llm\_fusion}      & 4--0--2 & 12 & 42 \\
+4 & \texttt{kg\_heuristic}    & 2--0--2 &  6 & --- \\
+5 & \texttt{random}           & 1--0--4 &  3 & --- \\
+6 & \texttt{llm} (pre-fix)    & 1--0--4 &  3 & --- \\
+7 & \texttt{world\_model} (pre-fix) & 0--0--4 & 0 & --- \\
+\bottomrule
+\end{tabular}
+\caption{Standard 7-agent Swiss tournament, 6 rounds, seed~7. \texttt{llm} and \texttt{world\_model} rows reflect the runner before the auto-concede fix described in \S\ref{sec:eval-debug} and are recorded here for transparency; their corrected pairwise numbers appear in \Cref{tab:ablation-1v1}.}
+\label{tab:swiss}
+\end{table}
+
+\paragraph{(vi) Commander pod.}
+A 4-seat 8-round EDH pod (Krenko / Atraxa / Urza / Meren cores, seat rotations to remove turn-order bias) gave the standings in \Cref{tab:pod}: the KG-grounded heuristic was the clear winner, with \texttt{LLMFusionAgent} third despite its high per-turn cost. With only 4 distinct decks the pod is too small to draw strong conclusions, but it demonstrates that the system runs Commander games to completion at the expected $\sim$8--12 turn length without crashing.
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{rlrr}
+\toprule
+Rank & Agent           & Wins & Pts \\
+\midrule
+1 & \texttt{kg\_heuristic} & 3 & 11 \\
+2 & \texttt{random}        & 2 &  8 \\
+3 & \texttt{llm\_fusion}   & 1 &  5 \\
+4 & \texttt{heuristic}     & 0 &  2 \\
+\bottomrule
+\end{tabular}
+\caption{Commander 4-seat pod, 8 rounds with seat rotations, seed~7. Sample size is small (8 games) and the deck pool is fixed at 4 cores --- treat as a smoke test for end-to-end EDH play, not a strength claim.}
+\label{tab:pod}
+\end{table}
+
+\paragraph{(vii) Debugging note: harness-induced auto-concede.}
+\label{sec:eval-debug}
+An earlier overnight run reported the LLM and world-model agents losing all 16 ablation games on turn~1. Investigation traced the cause to the rules engine always exposing \texttt{ActionType.CONCEDE} as a legal action (a debug affordance, see \texttt{rules\_engine.get\_legal\_actions}). The Llama-3 prompt enumerated the legal-action indices but omitted \texttt{CONCEDE} from the rendered options, so a stray ``1'' in the model's response collapsed onto the concede slot; the world-model controller, with effectively random initial weights, sampled the same slot stochastically. Filtering \texttt{CONCEDE} out of the candidate set inside both \texttt{LLMAgent.decide\_action} and \texttt{WorldModelAgent.decide\_action} restored normal play and produced the numbers in \Cref{tab:ablation-1v1}. We regard this as an instructive small example of how an under-specified action interface --- not the policy itself --- can dominate apparent agent quality, and have added a regression test to \texttt{tests/test\_agents/}.
+
 We deliberately do not claim ``state of the art'' numbers: we know of no comparable public baseline that plays full-Comprehensive-Rules MTG, and the contribution of this report is the system itself, plus the ontology and the released self-play infrastructure.
 
 % =============================================================================

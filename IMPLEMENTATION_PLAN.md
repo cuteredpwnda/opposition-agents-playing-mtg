@@ -43,6 +43,21 @@ items stay for traceability.
 
 ### Done
 
+- [x] **Fix LLM/WM agents auto-conceding on turn 1** — both
+      `src/agents/llm_agent.py::OllamaAgent.decide_action` and
+      `src/agents/world_model_agent.py::WorldModelAgent.decide_action` now
+      filter `ActionType.CONCEDE` out of the candidate set before scoring.
+      Root cause: the rules engine always offers `CONCEDE` as a debug
+      affordance; the LLM prompt omitted it but its index (1) was still
+      reachable from a stray "1" in the model response, and the
+      randomly-initialised world-model controller sampled it ~25% of the
+      time. Verified: `runs/post_fix/A_llm_only` LLM 9-7, `B_wm_only` WM
+      8-8 vs. heuristic on Modern Burn vs. Azorius (16 games each).
+- [x] **§6 evaluation tables and prose in paper** — added
+      `tab:ablation-1v1`, `tab:swiss`, `tab:pod` plus paragraphs (iv)–(vii)
+      to `paper/opposition_agents_mtg.tex` covering the post-fix pairwise
+      ablation, the Swiss round-robin, the EDH pod, and the auto-concede
+      debugging note. Paper now 16 pp.
 - [x] **Paper architecture figure + context pass** — rebuilt Figure 1 with
       orthogonal routing (right-angle paths only), fixed engine in/out arrow
       attachment points, and expanded architecture sections in
