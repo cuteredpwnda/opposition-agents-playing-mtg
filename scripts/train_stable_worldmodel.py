@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import os
+from datetime import datetime
 from pathlib import Path
 import signal
 import sys
@@ -96,6 +98,32 @@ class BetaWarmupCallback(pl.Callback):
             predictor.config.jepa_beta = self.original_beta
 
 
+class MetricsCSVCallback(pl.Callback):
+    """Log per-epoch KL, prediction, and total loss to a CSV file."""
+
+    def __init__(self, output_dir: str | Path):
+        super().__init__()
+        self.output_dir = Path(output_dir)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.csv_path = self.output_dir / "metrics.csv"
+        # Write header
+        with open(self.csv_path, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(["epoch", "train/total", "train/prediction", "train/kl"])
+
+    def on_train_epoch_end(self, trainer: pl.Trainer, pl_module) -> None:
+        metrics = trainer.callback_metrics
+        epoch = int(trainer.current_epoch)
+
+        train_total = float(metrics.get("train/total", float("nan")))
+        train_pred = float(metrics.get("train/prediction", float("nan")))
+        train_kl = float(metrics.get("train/kl", float("nan")))
+
+        with open(self.csv_path, "a", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow([epoch, train_total, train_pred, train_kl])
+
+
 def main():
     _configure_windows_stdio()
 
@@ -105,10 +133,19 @@ def main():
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--device", type=str, default="cpu")
     parser.add_argument("--checkpoint", type=str, default="checkpoints/stable_worldmodel.pt")
+    parser.add_argument("--output-dir", type=str, default=None, help="Output directory for metrics and logs (default: auto-generated timestamp)")
     parser.add_argument("--jepa-beta", type=float, default=1.0)
     parser.add_argument("--no-kg", action="store_true")
     parser.add_argument("--kg-embed-dim", type=int, default=128)
     args = parser.parse_args()
+
+    # Create output directory (with timestamp if not specified)
+    if args.output_dir is None:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        args.output_dir = f"runs/training_stable_{timestamp}"
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    print(f"Training output directory: {output_dir.absolute()}")
 
     store = TrajectoryStore(storage_dir=args.trajectories)
     store.load()
@@ -188,7 +225,10 @@ def main():
         logger=False,
         enable_checkpointing=False,
         enable_progress_bar=False,
-        callbacks=[BetaWarmupCallback(args.jepa_beta, JEPATrainingConfig().beta_warmup_epochs)],
+        callbacks=[
+            BetaWarmupCallback(args.jepa_beta, JEPATrainingConfig().beta_warmup_epochs),
+            MetricsCSVCallback(output_dir),
+        ],
     )
 
     manager = spt.Manager(
@@ -201,6 +241,7 @@ def main():
     os.makedirs(Path(args.checkpoint).parent, exist_ok=True)
     world_model.save(args.checkpoint)
     print(f"Stable JEPA model trained and saved to {args.checkpoint}")
+    print(f"Per-epoch metrics saved to {output_dir / 'metrics.csv'}")
 
 
 if __name__ == "__main__":
