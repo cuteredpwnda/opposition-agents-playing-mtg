@@ -586,22 +586,26 @@ async def run_pipeline(args: argparse.Namespace) -> None:
                 sys.argv[0],
                 "--trajectories",
                 str(store.storage_dir),
-                "--hdf5",
-                "data/trajectories/world_model_train.h5",
                 "--epochs",
                 str(args.jepa_epochs),
                 "--batch-size",
                 str(args.jepa_batch_size),
                 "--device",
                 "cuda" if args.cuda else "cpu",
+                "--jepa-beta",
+                str(args.jepa_beta),
+                "--kg-embed-dim",
+                str(args.kg_embed_dim),
             ]
+            if args.no_kg:
+                sys.argv.append("--no-kg")
             stable_train_main()
             try:
-                from src.world_model.stable_worldmodel_adapter import StableWorldModelAdapter
+                from src.world_model.world_model import WorldModel
 
-                world_model = StableWorldModelAdapter.load("checkpoints/stable_worldmodel.pt")
+                world_model = WorldModel.load("checkpoints/stable_worldmodel.pt")
             except Exception as e:
-                logger.warning("Could not load stable-worldmodel adapter artifact: %s", e)
+                logger.warning("Could not load stable JEPA artifact: %s", e)
                 world_model = None
 
         elif args.wm_engine == "schmidhuber":
@@ -686,7 +690,7 @@ def main() -> None:
     parser.add_argument("--kg-embed-dim", type=int, default=128,
                         help="KG embedding dimension")
     parser.add_argument("--wm-engine", type=str, choices=["built_in", "stable", "schmidhuber"],
-                        default="built_in",
+                        default="stable",
                         help="World model training engine to use")
 
     # Trajectory collection

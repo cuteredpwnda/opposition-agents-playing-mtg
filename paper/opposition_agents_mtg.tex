@@ -156,7 +156,7 @@ The framework is released as open source\footnote{\url{https://github.com/cutere
 \section{Related Work}
 \label{sec:related}
 
-\paragraph{World models.} \citet{ha2018world} introduced the V+M+C decomposition --- a vision-VAE, a recurrent dynamics model with mixture-density output, and a tiny linear/MLP controller trained in the dream of M. Successors include Dreamer \citep{hafner2020dream, hafner2023dreamerv3} and the Schmidhuber-line of self-referential systems \citep{schmidhuber2015learning, irie2022neural}. We adopt the V+M+C skeleton but (i) replace the convolutional vision encoder with a Set-Transformer over symbolic game tokens, and (ii) attach a JEPA head \citep{lecun2022path, assran2023ijepa} that predicts a target encoding rather than a pixel-level reconstruction --- a closer fit to MTG, where ``imagination'' should preserve abstract game state, not card art.
+\paragraph{World models.} \citet{ha2018world} introduced the V+M+C decomposition --- a vision-VAE, a recurrent dynamics model with mixture-density output, and a tiny linear/MLP controller trained in the dream of M. Successors include Dreamer \citep{hafner2020dream, hafner2023dreamerv3} and the Schmidhuber-line of self-referential systems \citep{schmidhuber2015learning, irie2022neural}. We adopt the V+M+C skeleton but (i) replace the convolutional vision encoder with a Set-Transformer over symbolic game tokens, and (ii) attach a JEPA head \citep{lecun2022path, assran2023ijepa} that predicts a target encoding rather than a pixel-level reconstruction --- a closer fit to MTG, where ``imagination'' should preserve abstract game state, not card art. On the software side we now follow the modular research stack exemplified by \texttt{stable-pretraining}, \texttt{stable-worldmodel}, and LeWorldModel \citep{balestriero2025stable, maes_lelidec2026swm, maes_lelidec2026lewm}: the MTG-specific encoder, dynamics, and controller remain local to this repository, while stage-5 JEPA optimisation is delegated to the upstream training infrastructure.
 
 \paragraph{Active inference.} The Free-Energy Principle of \citet{friston2010free} and its discrete-state operationalisation \citep{sajid2021active} provide a principled objective for action selection under uncertainty: minimise expected free energy, which decomposes into a pragmatic (reward-seeking) and an epistemic (information-seeking) term. We use this decomposition to balance ``play to win'' against ``probe the opponent'' decisions during the early game.
 
@@ -194,6 +194,8 @@ where $\mathrm{sg}$ is stop-gradient on the target branch, $h_{t-1}$ is the prev
 \label{eq:wm-rollout}
 \end{equation}
 with $K = 8$, $H = 10$ by default.  No actual rules-engine simulation is performed during inference; this is what makes the agent fast despite the engine being heavy.  The controller therefore amortises the Bellman residual: $C$ is implicitly approximating $\arg\max_a Q^*(s_t, a)$ given an imperfect $\hat T$.
+
+\paragraph{Training implementation note.} The current stage-5 training path keeps the MTG architecture in \texttt{src/world\_model/world\_model.py} but wraps optimisation in \texttt{stable\_pretraining.Manager} and Lightning callbacks rather than a bespoke trainer. We keep \texttt{stable-worldmodel} in the stack as the upstream world-model research substrate and benchmark interface, matching the layering used by LeWorldModel \citep{maes_lelidec2026swm, balestriero2025stable, maes_lelidec2026lewm} while preserving MTG-specific state encoding, graph fusion, and legal-action masking locally.
 
 \subsection{Active inference and the free-energy principle}
 Friston's free-energy principle \citep{friston2010free} frames perception and action as two sides of variational inference under a generative model $p(o,s)$.  Variational free energy decomposes as
@@ -660,6 +662,24 @@ Data Science Lab, Fachhochschule S\"udwestfalen.
 \newblock OntologyExtender: A Multi-Agent Human-in-the-Loop Framework for Ontology Evolution.
 \newblock GitHub repository (work in progress), 2024.
 \newblock \url{https://github.com/DataScienceLabFHSWF/OntologyExtender}.
+
+\bibitem[Balestriero et~al.(2025)]{balestriero2025stable}
+R.~Balestriero, H.~Van~Assel, S.~BuGhanem, and L.~Maes.
+\newblock stable-pretraining-v1: Foundation Model Research Made Simple.
+\newblock \emph{arXiv:2511.19484}, 2025.
+\newblock Software: \url{https://github.com/galilai-group/stable-pretraining}.
+
+\bibitem[Maes et~al.(2026a)]{maes_lelidec2026swm}
+L.~Maes, Q.~Le~Lidec, D.~Haramati, N.~Massaudi, D.~Scieur, Y.~LeCun, and R.~Balestriero.
+\newblock stable-worldmodel-v1: Reproducible World Modeling Research and Evaluation.
+\newblock \emph{arXiv:2602.08968}, 2026.
+\newblock Software: \url{https://github.com/galilai-group/stable-worldmodel}.
+
+\bibitem[Maes et~al.(2026b)]{maes_lelidec2026lewm}
+L.~Maes, Q.~Le~Lidec, D.~Scieur, Y.~LeCun, and R.~Balestriero.
+\newblock LeWorldModel: Stable End-to-End Joint-Embedding Predictive Architecture from Pixels.
+\newblock \emph{arXiv preprint}, 2026.
+\newblock Software: \url{https://github.com/lucas-maes/le-wm}.
 
 \end{thebibliography}
 

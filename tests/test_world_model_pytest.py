@@ -189,12 +189,83 @@ def test_trajectory_store_exports_hdf5(tmp_path):
 
 def test_stable_worldmodel_adapter_importable():
     try:
-        from src.world_model.stable_worldmodel_adapter import StableWorldModelAdapter
+        import stable_pretraining  # noqa: F401
+        import stable_worldmodel  # noqa: F401
     except ImportError:
-        pytest.skip("stable-worldmodel is not installed")
+        pytest.skip("stable training dependencies are not installed")
 
-    with pytest.raises(Exception):
-        StableWorldModelAdapter()  # may fail quickly if external package missing or unavailable
+    import scripts.train_stable_worldmodel as stable_train
+
+    assert callable(stable_train.main)
+
+
+def test_stable_training_entrypoint_runs(tmp_path):
+    try:
+        import stable_pretraining  # noqa: F401
+        import stable_worldmodel  # noqa: F401
+    except ImportError:
+        pytest.skip("stable training dependencies are not installed")
+
+    from src.world_model.card_embeddings import CardEmbeddingModel
+    from src.world_model.game_tokenizer import GameTokenizer
+    from scripts.train_stable_worldmodel import main
+    import sys
+
+    state = _build_minimal_game_state()
+    card_model = CardEmbeddingModel()
+    card_model.build_from_scryfall([
+        {
+            "name": "Lightning Bolt",
+            "oracle_text": "Lightning Bolt deals 3 damage to any target.",
+            "type_line": "Instant",
+            "mana_cost": "{R}",
+        }
+    ])
+    tokenizer = GameTokenizer(card_embeddings=card_model.get_all_embeddings())
+    features = tokenizer.encode_state(state, player_id="p1")
+
+    store = TrajectoryStore(storage_dir=str(tmp_path / "traj"))
+    for game_id in ("t1", "t2"):
+        traj = Trajectory(game_id=game_id, source="test")
+        traj.add(Transition(
+            state_features=features,
+            action_encoding=np.zeros((136,), dtype=np.float32),
+            reward=0.0,
+            done=False,
+            action_type="PASS_PRIORITY",
+        ))
+        traj.add(Transition(
+            state_features=features,
+            action_encoding=np.zeros((136,), dtype=np.float32),
+            reward=0.0,
+            done=True,
+            action_type="PASS_PRIORITY",
+        ))
+        store.add(traj)
+    store.save()
+
+    checkpoint = tmp_path / "stable.pt"
+    old_argv = sys.argv[:]
+    try:
+        sys.argv = [
+            "train_stable_worldmodel.py",
+            "--trajectories",
+            str(tmp_path / "traj"),
+            "--epochs",
+            "1",
+            "--batch-size",
+            "2",
+            "--device",
+            "cpu",
+            "--no-kg",
+            "--checkpoint",
+            str(checkpoint),
+        ]
+        main()
+    finally:
+        sys.argv = old_argv
+
+    assert checkpoint.exists()
 
 
 def test_schmidhuber_worldmodel_adapter_trainable(tmp_path):

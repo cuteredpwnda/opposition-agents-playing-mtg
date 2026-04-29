@@ -1,7 +1,7 @@
 # Opposition Agents Playing MTG
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
 [![Status: Experimental](https://img.shields.io/badge/status-experimental-orange.svg)](#known-limitations)
 
@@ -24,6 +24,7 @@ We treat **Magic: The Gathering** — the most combinatorially complex commercia
 2. **A Neo4j knowledge graph** built from an OWL 2 ontology of cards/keywords/archetypes/combos, queried by agents for symbolic strategic reasoning (combo detection, archetype inference, GraphRAG context).
 3. **A V+M+C+JEPA world model** — a Set-Transformer + VAE state encoder, an MDN-LSTM dynamics model, a controller, and a JEPA latent predictor — trained on self-play trajectories for imagination-based planning.
 4. **Active-Inference LLM agents** that fuse symbolic graph queries, latent rollouts, and free-energy-minimising action selection, with a per-opponent belief module that does **exact** library/hand inference when decklists are public.
+5. **A collective graph-memory loop** where many agents contribute append-only evidence (from self-play traces and outcomes) into a shared knowledge layer, so strategic knowledge accumulates across games rather than being reset per run.
 
 A champion-vs-challenger self-play loop with ELO promotion drives improvement. The full pipeline is described in the [tech report](paper/opposition_agents_mtg.tex) ([build instructions](paper/README.md)).
 
@@ -45,6 +46,7 @@ This project builds an agentic framework where multiple AI agents compete in Mag
 
 - **Game Engine**: Full Comprehensive Rules (CR) implementation with state-based actions, triggers, and replacement effects
 - **Knowledge Graph**: Neo4j + n10s (OWL ontology import) + APOC (graph algorithms) for card knowledge, combo detection, and strategic reasoning
+- **Collective Intelligence Layer**: append-only learned evidence nodes from multiple agents/runs (`LearnedSynergyEvidence`, `LearnedCardOutcome`, `KGExtensionEvent`) to build shared strategic memory
 - **Agent Architecture**: LangChain-based LLM agents, random agents, neural reasoning modules, and active inference for decision-making under uncertainty
 - **Training**: AlphaZero-style self-play plus V+M+C world model dream training, JEPA (LeWM) latent prediction, reward shaping, and transfer learning (Standard $\to$ Commander)
 - **Knowledge Graph**: Neo4j card/combo/archetype ontology + GraphSAGE embeddings + RAG query strategies
@@ -244,6 +246,17 @@ The architecture separates concerns:
 - **Knowledge**: Strategic information (combos, synergies, archetypes)
 - **Agents**: Decision-making (LLM reasoning, neural networks, uncertainty tracking)
 - **Training**: Improvement (self-play, reward signals, model updates)
+
+### Collective Graph Intelligence
+
+Beyond single-agent play quality, the framework is designed to support a collective-intelligence loop:
+
+1. Multiple heterogeneous agents play games and emit structured traces.
+2. The enrichment pipeline extracts repeated co-occurrence/outcome patterns.
+3. Evidence is written into an append-only graph extension layer with provenance.
+4. Future agents query the enriched graph and benefit from prior agents' experience.
+
+This makes the KG a shared long-term memory, while keeping source card facts immutable.
 
 ### Game Engine
 

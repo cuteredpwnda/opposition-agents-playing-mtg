@@ -43,6 +43,30 @@ items stay for traceability.
 
 ### Done
 
+- [x] **Packaging metadata repaired for the stable stack** — fixed
+      `pyproject.toml` so core dependencies live under `[project]`, aligned
+      `requires-python` with the repo's Python 3.10+ convention, and removed
+      stale dependency pins that blocked `pip install -e .[ml]`
+      (`asyncio-extra`, `pymdp>=0.1`). Editable ML installs now resolve in
+      the local Windows venv.
+
+- [x] **Paper + tech report now document external world-model software** —
+      updated `paper/opposition_agents_mtg.tex` and
+      `paper/agents_tech_report.tex` to state that stage-5 JEPA training now
+      uses `stable-pretraining` with the `stable-worldmodel` ecosystem as the
+      upstream research substrate, and added explicit citations/URLs for
+      `stable-pretraining`, `stable-worldmodel`, and LeWorldModel.
+
+- [x] **Stable stage-5 training pipeline now uses stable-pretraining** —
+      replaced the stale `stable_worldmodel_adapter.py` stage-5 path with a
+      real `stable_pretraining.Manager`-driven JEPA training entrypoint in
+      `scripts/train_stable_worldmodel.py`, switched
+      `scripts/train_pipeline.py --wm-engine` default to `stable`, and added
+      `stable-worldmodel` / `stable-pretraining` to the ML dependency set in
+      `pyproject.toml`. The stable path now trains the repo's MTG JEPA model
+      with the upstream training stack instead of calling nonexistent
+      `stable_worldmodel.WorldModelTrainer` APIs.
+
 - [x] **JEPA stage 4+5 training run (40 games, 20 epochs, cuda)** — completed
       `runs/bg_training_20260429_080748/` in 32 min. Built 201,653 transition
       pairs from 80 trajectories. Prediction loss dropped from 1.36 → ~0.62
@@ -591,7 +615,7 @@ and can be mixed in any combination for tournaments and ablation studies.
 | `game_tokenizer.py` | GameState → fixed-size feature arrays (player, hand, battlefield, stack, phase) | ✅ Complete |
 | `card_embeddings.py` | Card name/text → 128-dim vector (text-based bootstrap) | ✅ Complete |
 | `trajectory.py` | TrajectoryStore: NPZ + HDF5 storage for game trajectories | ✅ Complete |
-| `stable_worldmodel_adapter.py` | Adapter wrapping galilai stable-worldmodel package | ✅ Complete |
+| `stable_worldmodel_adapter.py` | Legacy adapter wrapping an older galilai stable-worldmodel API | 🟡 Partial / legacy |
 | `schmidhuber_worldmodel_adapter.py` | Adapter for Schmidhuber-style forward model | ✅ Complete |
 
 ### src/world_model/training/ — World Model Training
@@ -662,7 +686,7 @@ and can be mixed in any combination for tournaments and ablation studies.
 | `validate_kg.py` | SHACL validation via n10s | ✅ Complete |
 | `deploy.py` | Remote deployment script | ✅ Complete |
 | `push_remote.py` | Git push helper | ✅ Complete |
-| `train_stable_worldmodel.py` | stable-worldmodel training entrypoint | ✅ Complete |
+| `train_stable_worldmodel.py` | stable-pretraining-backed stage-5 JEPA training entrypoint | ✅ Complete |
 
 ### tests/ — Test Suite
 | Area | Files | Status |

@@ -7,7 +7,7 @@ name = "opposition-agents-mtg"
 version = "0.1.0"
 description = "Knowledge-graph-grounded JEPA world models and active-inference LLM agents for Magic: The Gathering"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [
     { name = "Felix Neubürger" },
@@ -37,12 +37,6 @@ classifiers = [
     "Topic :: Games/Entertainment :: Board Games",
 ]
 
-[project.urls]
-Homepage = "https://github.com/cuteredpwnda/opposition-agents-playing-mtg"
-Repository = "https://github.com/cuteredpwnda/opposition-agents-playing-mtg"
-Issues = "https://github.com/cuteredpwnda/opposition-agents-playing-mtg/issues"
-Documentation = "https://github.com/cuteredpwnda/opposition-agents-playing-mtg/tree/main/docs"
-
 dependencies = [
     # Core
     "pydantic>=2.0",
@@ -65,9 +59,6 @@ dependencies = [
     # HTTP
     "httpx>=0.27",
 
-    # Async
-    "asyncio-extra>=1.0; python_version<'3.12'",
-
     # Data
     "numpy>=1.26",
     "scipy>=1.12",
@@ -79,6 +70,12 @@ dependencies = [
     "structlog>=23.0",
 ]
 
+[project.urls]
+Homepage = "https://github.com/cuteredpwnda/opposition-agents-playing-mtg"
+Repository = "https://github.com/cuteredpwnda/opposition-agents-playing-mtg"
+Issues = "https://github.com/cuteredpwnda/opposition-agents-playing-mtg/issues"
+Documentation = "https://github.com/cuteredpwnda/opposition-agents-playing-mtg/tree/main/docs"
+
 [project.optional-dependencies]
 ml = [
     "torch>=2.2",
@@ -86,12 +83,13 @@ ml = [
     "torch-geometric>=2.5",
     "torchmetrics>=1.0",
     "lightning>=2.1",
+    "stable-worldmodel>=0.0.6",
+    "stable-pretraining>=0.1.6",
     "sentence-transformers>=2.2",
     "faiss-cpu>=1.7",
     "scikit-learn>=1.3",
     "matplotlib>=3.8",
     "tensorboard>=2.14",
-    "pymdp>=0.1",
 ]
 ontology = [
     "rdflib>=7.0",

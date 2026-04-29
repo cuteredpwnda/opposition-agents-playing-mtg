@@ -283,6 +283,8 @@ table seeded from the decklist (see \texttt{docs/OPPONENT\_MODELING\_WITH\_DECKL
 \textbf{File:} \texttt{src/agents/world\_model\_agent.py}.
 \textbf{Backbone:} \texttt{src/world\_model/world\_model.py}.
 
+Training now uses the external \texttt{stable-pretraining} orchestration layer and the surrounding \texttt{stable-worldmodel} research stack rather than a bespoke in-repo trainer. Concretely, \texttt{scripts/train\_stable\_worldmodel.py} wraps the local MTG \texttt{WorldModel} in a \texttt{stable\_pretraining.Module} and drives optimisation through \texttt{stable\_pretraining.Manager}; this mirrors the software split used by LeWorldModel, which keeps the architecture and loss local while delegating training/runtime plumbing to the upstream libraries \cite{balestriero2025stable,maes_lelidec2026swm,maes_lelidec2026lewm}.
+
 \medskip\noindent\textbf{Components} (V+M+C, after Ha \& Schmidhuber).
 \begin{align*}
 z_t          &= \mathrm{Enc}_V(o_t)               &&\text{(perceptual encoder, 768-d)} \\
@@ -541,6 +543,7 @@ Training the dynamics jointly minimises
 where $\mathrm{sg}$ is stop-gradient.  We follow the JEPA recipe of
 LeCun \& Assran: predict in representation space, not in pixel space.
 The single tunable knob is $\beta$ (\texttt{--jepa-beta}, default $1.0$).
+In the current repository this loss is still computed by the local MTG model, but the optimisation loop, callback stack, and checkpoint orchestration are delegated to \texttt{stable-pretraining}; \texttt{stable-worldmodel} remains the upstream runtime substrate around data collection and world-model evaluation conventions \cite{balestriero2025stable,maes_lelidec2026swm}.
 
 \subsection{Free energy and active inference}
 Friston's free-energy principle frames perception and action as joint
@@ -603,5 +606,30 @@ locally accurate.
   \item World-model design: \texttt{docs/WORLD\_MODEL\_DESIGN.md}.
   \item Opponent modelling: \texttt{docs/OPPONENT\_MODELING\_WITH\_DECKLIST.md}.
 \end{itemize}
+
+% =========================================================================
+\section{References}
+
+\begin{thebibliography}{9}
+
+\bibitem{balestriero2025stable}
+R.~Balestriero, H.~Van~Assel, S.~BuGhanem, and L.~Maes.
+\newblock stable-pretraining-v1: Foundation Model Research Made Simple.
+\newblock \emph{arXiv:2511.19484}, 2025.
+\newblock Software: \url{https://github.com/galilai-group/stable-pretraining}.
+
+\bibitem{maes_lelidec2026swm}
+L.~Maes, Q.~Le~Lidec, D.~Haramati, N.~Massaudi, D.~Scieur, Y.~LeCun, and R.~Balestriero.
+\newblock stable-worldmodel-v1: Reproducible World Modeling Research and Evaluation.
+\newblock \emph{arXiv:2602.08968}, 2026.
+\newblock Software: \url{https://github.com/galilai-group/stable-worldmodel}.
+
+\bibitem{maes_lelidec2026lewm}
+L.~Maes, Q.~Le~Lidec, D.~Scieur, Y.~LeCun, and R.~Balestriero.
+\newblock LeWorldModel: Stable End-to-End Joint-Embedding Predictive Architecture from Pixels.
+\newblock \emph{arXiv preprint}, 2026.
+\newblock Software: \url{https://github.com/lucas-maes/le-wm}.
+
+\end{thebibliography}
 
 \end{document}
