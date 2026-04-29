@@ -10,111 +10,122 @@
     font=\footnotesize,
     box/.style ={draw, rounded corners=2pt, align=center,
                  minimum height=0.85cm, inner sep=4pt},
-    data/.style={box, fill=gray!10,    minimum width=2.6cm, font=\scriptsize},
-    sym/.style ={box, fill=blue!10,    minimum width=3.6cm},
-    learn/.style={box, fill=orange!18, minimum width=3.6cm, font=\scriptsize},
-    agent/.style={box, fill=green!12,  minimum width=2.6cm, font=\scriptsize},
+    data/.style={box, fill=gray!10,    minimum width=3.2cm, font=\scriptsize},
+    sym/.style ={box, fill=blue!10,    minimum width=4.5cm},
+    learn/.style={box, fill=orange!18, minimum width=5.0cm, font=\scriptsize},
+    agent/.style={box, fill=green!12,  minimum width=3.6cm, font=\scriptsize},
       grp/.style ={draw=black!35, dashed, rounded corners=4pt, inner sep=10pt},
     flow/.style={->, semithick, blue!55!black},
     twoway/.style={<->, semithick, gray!70!black},
     backflow/.style={->, semithick, dashed, red!65!black},
+    spflow/.style={->, semithick, orange!75!black},
+    spflowdash/.style={->, semithick, dashed, orange!65!black},
+    kgflow/.style={->, semithick, dashed, violet!65!black},
     elabel/.style={font=\scriptsize\itshape, fill=white,
                    inner xsep=2pt, inner ysep=1pt}
   ]
 
-  % ---- Column 1: data sources -----------------------------------------
-  % Order chosen so that BOTH KG-bound sources (Scryfall, Spellbook) are
-  % above and BOTH engine-bound sources (Rules, Decklists) are below;
-  % this avoids the rules→engine and spellbook→KG arrows crossing.
+  % ============ NODES ==================================================
+  % Column 1: data sources (x=0)
   \node[data] (scry)  at (0,  3.6) {Scryfall\\(card DB)};
   \node[data] (sb)    at (0,  1.2) {Commander\\Spellbook};
   \node[data] (rules) at (0, -1.2) {Comprehensive\\Rules};
   \node[data] (decks) at (0, -3.6) {Decklists\\(\texttt{data/decks})};
 
-  % ---- Column 2: symbolic substrate ------------------------------------
-  \node[sym] (kg)  at (4.7,  2.4) {\textbf{Knowledge Graph}\\
+  % Column 2: symbolic substrate (x=4.5; box width 4.5cm -> east=6.75)
+  \node[sym] (kg)  at (4.5,  2.4) {\textbf{Knowledge Graph}\\
         Neo4j + n10s (OWL2)\\+ APOC + GraphSAGE};
-  \node[sym] (eng) at (4.7,  0.0) {\textbf{Game Engine}\\
+  \node[sym] (eng) at (4.5,  0.0) {\textbf{Game Engine}\\
         zones, stack, priority,\\phases, combat, triggers,\\state-based actions};
-  \node[sym] (rb)  at (4.7, -2.6) {\textbf{Replay Buffer}\\trajectories $(s_t,a_t,r_t)$};
+  \node[sym] (rb)  at (4.5, -2.6) {\textbf{Replay Buffer}\\
+        trajectories $(s_t,a_t,r_t)$};
 
-  % ---- Column 3: world model V/M/C ------------------------------------
-  \node[learn] (V) at (9.7,  2.4) {V: state encoder\\(Set-Transformer + KG ctx)};
-  \node[learn] (M) at (9.7,  0.0) {M: MDN-LSTM dynamics\\+ JEPA target head};
-  \node[learn] (C) at (9.7, -2.4) {C: controller\\(policy + value heads)};
+  % Column 3: world model V/M/C (x=11; box width 5.0cm -> west=8.5, east=13.5)
+  \node[learn] (V) at (11,  2.4) {V: state encoder\\(Set-Transformer + KG ctx)};
+  \node[learn] (M) at (11,  0.0) {M: MDN-LSTM dynamics\\+ JEPA target head};
+  \node[learn] (C) at (11, -2.4) {C: controller\\(policy + value heads)};
   \begin{pgfonlayer}{background}
-    \node[grp, fit=(V)(M)(C),
-          label={[font=\small\bfseries, yshift=-1pt]above:World Model}] (wm) {};
+    \node[grp, fit=(V)(M)(C)] (wm) {};
   \end{pgfonlayer}
+  \node[font=\small\bfseries, anchor=south, inner sep=2pt]
+      at ([yshift=2pt]wm.north) {World Model};
 
-  % ---- Column 4: agents ------------------------------------------------
-  \node[agent] (a1) at (14.0,  3.0) {Random / Heuristic};
-  \node[agent] (a2) at (14.0,  1.8) {KG-Heuristic};
-  \node[agent] (a3) at (14.0,  0.6) {Ollama LLM};
-  \node[agent] (a4) at (14.0, -0.6) {World-Model};
-  \node[agent] (a5) at (14.0, -1.8) {Active Inference};
-  \node[agent] (a6) at (14.0, -3.0) {LLM-Fusion};
+  % Column 4: agents (x=17; box width 3.6cm -> west=15.2, east=18.8)
+  \node[agent] (a1) at (17,  3.0) {Random / Heuristic};
+  \node[agent] (a2) at (17,  1.8) {KG-Heuristic};
+  \node[agent] (a3) at (17,  0.6) {Ollama LLM};
+  \node[agent] (a4) at (17, -0.6) {World-Model};
+  \node[agent] (a5) at (17, -1.8) {Active Inference};
+  \node[agent] (a6) at (17, -3.0) {LLM-Fusion};
   \begin{pgfonlayer}{background}
-    \node[grp, fit=(a1)(a6),
-          label={[font=\small\bfseries, yshift=-1pt]above:Agent Zoo}] (agents) {};
+    \node[grp, fit=(a1)(a6)] (agents) {};
   \end{pgfonlayer}
+  \node[font=\small\bfseries, anchor=south, inner sep=2pt]
+      at ([yshift=2pt]agents.north) {Agent Zoo};
 
-  % ---- data -> symbolic -----------------------------------------------
-  % Orthogonal routing only: data boxes go east to a vertical bus at
-  % x=2.3, then up/down to the row of their target anchor, then east
-  % into the symbolic substrate. Two right angles per path.
-  \draw[flow] (scry.east)  -- (2.3,  3.6) -- (2.3,  3.0) -- ([yshift= 0.6cm]kg.west)
-              node[elabel, pos=0.83, above=1pt]{cards};
-  \draw[flow] (sb.east)    -- (2.3,  1.2) -- (2.3,  1.8) -- ([yshift=-0.6cm]kg.west)
-              node[elabel, pos=0.83, above=1pt]{combos};
+  % Self-play banner: spans WM-to-agents gap (centered x=14, width 6cm)
+  \node[learn, fill=orange!10, minimum width=6cm, font=\scriptsize]
+    (sp) at (14, 7.0) {\textbf{Self-play}\\(agents $\times$ engine $\to$ rollouts)};
+
+  % ============ ARROWS =================================================
+  % --- data -> symbolic ------------------------------------------------
+  \draw[flow] (scry.east)  -- (2.0,  3.6) -- (2.0,  3.15) -- (3.7, 3.15) -- ([yshift= 0.75cm]kg.west)
+              node[elabel, pos=0.72, above=2pt]{cards};
+  \draw[flow] (sb.east)    -- (2.55, 1.2) -- (2.55, 1.65) -- (3.7, 1.65) -- ([yshift=-0.75cm]kg.west)
+              node[elabel, pos=0.72, below=2pt]{combos};
   \draw[flow] (rules.east) -- (2.3, -1.2) -- (2.3,  0.6) -- ([yshift= 0.6cm]eng.west)
               node[elabel, pos=0.82, above=1pt]{rules};
   \draw[flow] (decks.east) -- (2.3, -3.6) -- (2.3, -0.6) -- ([yshift=-0.6cm]eng.west)
               node[elabel, pos=0.80, above=1pt]{game cfg};
 
-  % ---- engine <-> KG (lookup) -----------------------------------------
-      \draw[twoway] (kg.south) -- node[elabel, xshift=-2pt]{card lookup} (eng.north);
+  % --- KG <-> engine (card lookup) -------------------------------------
+  \draw[twoway] (kg.south) -- (eng.north);
+  \node[elabel, anchor=west] at ([xshift=2pt]$(kg.south)!0.5!(eng.north)$) {card lookup};
 
-  % ---- engine -> replay buffer ----------------------------------------
-  \draw[flow] (eng.south) -- node[elabel]{$(s_t,a_t,r_t)$} (rb.north);
+  % --- engine -> replay buffer (no extra label; RB body labels it) -----
+  \draw[flow] (eng.south) -- (rb.north);
 
-  % ---- training: replay -> M; KG -> V ---------------------------------
-      \draw[flow] (rb.east) -- ++(0.4,0) |- node[elabel,pos=0.74, above=1pt]{train} (M.west);
-  \draw[flow] (kg.east) -- (V.west);
+  % --- world-model training: rb -> M (lane x=7.4), rb -> V (lane x=7.8)
+  \draw[flow] (rb.east) -- (7.4, -2.6) -- (7.4, 0) -- (M.west);
+  \node[elabel] at (7.4, -1.6) {train (JEPA)};
+  \draw[flow] (rb.east) -- (7.8, -2.6) -- (7.8, 2.4) -- (V.west);
+  \node[elabel] at (7.8, 1.4) {features};
 
-  % ---- agent decide_action loop -- routed in the COLUMN GAP between the
-  % symbolic substrate (x=4.7) and the WM (x=9.7), then along far top/bottom
-  % buses, so the arrows never cross any node.
-  \coordinate (busTopL) at (7.2,  4.6);
-  \coordinate (busBotL) at (7.2, -4.6);
-  \coordinate (busTopR) at (14.0, 4.6);
-  \coordinate (busBotR) at (14.0,-4.6);
+  % --- KG ctx -> V (over the top into V.north), lane x=7.0 -------------
+  \draw[flow] (kg.east) -- (7.0, 2.4) -- (7.0, 5.7) -- (11, 5.7) -- (V.north);
+  \node[elabel] at (8.5, 5.7) {KG ctx};
 
-  % engine -> agent (state, legal_actions):
-  % start ON the upper-east edge of the engine's bounding rectangle,
-  % run east into the gap, up to the top bus, across, down into agents.
-  \path (eng.north east) ++(0.7,0) coordinate (engNEgap);
-  \path (eng.south east) ++(0.7,0) coordinate (engSEgap);
-  \draw[flow]
-      (eng.north east) -- (engNEgap)
-      -- (7.2, 4.6) -- (14.0, 4.6)
-        node[elabel, pos=0.55, above=2pt]{state, legal\_actions}
-      -- (a1.north);
+  % --- engine -> agents (state, legal_actions): up x=8.2, bus y=4.5 ----
+  % x=8.2 lane is between sym.east (6.75) and WM.west (8.5); clears all
+  % WM boxes to the right of x=8.5.
+  \draw[flow] (eng.east) -- (8.2, 0) -- (8.2, 4.5) -- (15.2, 4.5) -- (a1.north);
+  \node[elabel] at (12.5, 4.5) {state, legal\_actions};
 
-  % agent -> engine (action):
-  % start at the bottom of the agent column, down to the bottom bus,
-  % across, up the gap, and INTO the lower-east corner of the engine.
-  \draw[backflow]
-      (a6.south) -- (14.0,-4.6)
-      -- (7.2,-4.6)
-        node[elabel, pos=0.55, below=2pt]{action}
-      -- (engSEgap)
-      -- (eng.south east);
+  % --- agents -> engine (action): bus y=-4.5, return up x=7.0 ----------
+  % x=7.0 vertical reuses KG-ctx lane but in disjoint y-range
+  % (here y from -4.5 up to -0.6, KG-ctx uses y=2.4 to 5.7).
+  \draw[backflow] (a6.south) -- (17, -4.5) -- (7.0, -4.5) -- (7.0, -0.6) -- ([yshift=-0.6cm]eng.east);
+  \node[elabel] at (12.0, -4.5) {action};
 
-  % Dotted agent-side lookups (agent->KG, agent->C controller) are
-  % omitted from the figure to keep it readable; they are described in
-  % the body text. Every agent additionally has read access to the KG
-  % and the WM via a thin lookup interface.
+  % --- self-play feedback loop -----------------------------------------
+  % policy: C -> SP via lane x=14.3 (between WM.east 13.5 and agents.west 15.2)
+  \draw[spflowdash] (C.east) -- (14.3, -2.4) -- (14.3, 7.0) -- ([xshift=0.3cm]sp.south);
+  \node[elabel] at (14.3, 1.6) {policy};
+
+  % decisions: agents -> SP via right-side lane x=19.5
+  \draw[spflowdash] (a3.east) -- (19.5, 0.6) -- (19.5, 7.0) -- (sp.east);
+  \node[elabel] at (19.5, 3.5) {decisions};
+
+  % trajectories (orange solid): SP -> RB via top-left envelope
+  % exit slightly left of sp center, lane y=8.0, return down x=-2.0
+  \draw[spflow] ([xshift=-1cm]sp.north) -- ([xshift=-1cm,yshift=1cm]sp.north)
+      -- (-2.0, 8.0) -- (-2.0, -2.6) -- (rb.west);
+  \node[elabel] at (3.5, 8.0) {trajectories $(s_t,a_t,r_t)$};
+
+  % learned-evidence (violet dashed): SP -> KG via top envelope, lane y=9.0
+  \draw[kgflow] ([xshift=1cm]sp.north) -- ([xshift=1cm,yshift=2cm]sp.north)
+      -- (4.5, 9.0) -- (kg.north);
+  \node[elabel] at (9.0, 9.0) {learned-evidence};
 
 \end{tikzpicture}
 \end{document}

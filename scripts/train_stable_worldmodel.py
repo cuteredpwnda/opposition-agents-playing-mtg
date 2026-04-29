@@ -15,6 +15,22 @@ import lightning as pl
 import stable_pretraining as spt
 import torch
 
+# Suppress stable_pretraining's noisy "self.parameters gives callbacks parameters"
+# warning. It fires every time their internal ModuleSummary callback iterates
+# parameters() without with_callbacks=False — harmless but very repetitive.
+try:
+    from loguru import logger as _spt_logger
+    _spt_logger.add(
+        lambda msg: None,
+        filter=lambda record: (
+            record["name"].startswith("stable_pretraining")
+            and "with_callbacks=False" in record["message"]
+        ),
+        level=0,
+    )
+except Exception:
+    pass
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
