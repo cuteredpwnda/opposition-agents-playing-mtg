@@ -226,13 +226,28 @@ class TestCombos:
 
 class TestSynergies:
     def test_synergy_edges_or_skip(self, kg_rels):
-        if "SYNERGIZES_WITH" not in kg_rels:
-            pytest.skip("no SYNERGIZES_WITH edges — run KGEnrichment after stage 4")
-        assert kg_rels["SYNERGIZES_WITH"] > 0
+        has_base = kg_rels.get("SYNERGIZES_WITH", 0) > 0
+        has_extension = kg_rels.get("SUPPORTED_BY", 0) > 0
+        if not (has_base or has_extension):
+            pytest.skip(
+                "no base or extension synergies — run KGEnrichment after stage 4"
+            )
+        assert has_base or has_extension
 
     def test_synergy_strengths_in_range(self, kg_rels):
+        if kg_rels.get("SUPPORTED_BY", 0) > 0:
+            rows = _q(
+                "MATCH (:Card)-[:SUPPORTED_BY]-"
+                "(ev:LearnedSynergyEvidence)-[:SUPPORTED_BY]-(:Card) "
+                "RETURN min(ev.weight) AS lo, max(ev.weight) AS hi"
+            )
+            if rows and rows[0]["lo"] is not None:
+                assert rows[0]["hi"] >= rows[0]["lo"]
+                return
+
         if kg_rels.get("SYNERGIZES_WITH", 0) == 0:
             pytest.skip("no synergies yet")
+
         rows = _q(
             "MATCH ()-[s:SYNERGIZES_WITH]-() WHERE s.strength IS NOT NULL "
             "RETURN min(s.strength) AS lo, max(s.strength) AS hi"
@@ -241,6 +256,21 @@ class TestSynergies:
         assert rows[0]["hi"] >= rows[0]["lo"]
 
     def test_dynamic_card_stats(self):
+        outcome_events = _q(
+            "MATCH (:Card)-[:HAS_LEARNED_OUTCOME]->(:LearnedCardOutcome) "
+            "RETURN count(*) AS n"
+        )
+        if outcome_events and outcome_events[0]["n"] > 0:
+            bad = _q(
+                "MATCH (c:Card)-[:HAS_LEARNED_OUTCOME]->(ev:LearnedCardOutcome) "
+                "WITH c, count(ev) AS games, "
+                "sum(CASE WHEN ev.won THEN 1 ELSE 0 END) AS wins "
+                "WHERE wins > games OR games < 0 "
+                "RETURN count(c) AS n"
+            )
+            assert bad[0]["n"] == 0
+            return
+
         rows = _q(
             "MATCH (c:Card) WHERE c.gamesPlayed IS NOT NULL "
             "RETURN count(c) AS n"

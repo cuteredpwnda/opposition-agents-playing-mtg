@@ -158,19 +158,39 @@ class SelfPlayTrainer:
             kg = MTGKnowledgeGraph()
             winner_cards = [card["name"] for card in decks[winner_id] if "name" in card]
             loser_cards = [card["name"] for card in decks[loser_id] if "name" in card] if loser_id else []
+            run_id = f"self_play_game_{winner_id}_{result.turns}"
 
             # Add syntactic synergy edges for cards present together in winner deck
             unique_winner_cards = list(dict.fromkeys(winner_cards))
             for i, card_a in enumerate(unique_winner_cards):
                 for card_b in unique_winner_cards[i + 1 : i + 4]:
-                    await kg.add_synergy(card_a, card_b, weight=1.0)
+                    await kg.add_synergy(
+                        card_a,
+                        card_b,
+                        weight=1.0,
+                        run_id=run_id,
+                        source="self_play_online",
+                        metadata={"winner": winner_id, "turns": result.turns},
+                    )
 
             # Update win rate stats
             for card in set(unique_winner_cards):
-                await kg.update_card_stats(card, won=True)
+                await kg.update_card_stats(
+                    card,
+                    won=True,
+                    run_id=run_id,
+                    source="self_play_online",
+                    metadata={"winner": winner_id, "turns": result.turns},
+                )
 
             for card in set(loser_cards):
-                await kg.update_card_stats(card, won=False)
+                await kg.update_card_stats(
+                    card,
+                    won=False,
+                    run_id=run_id,
+                    source="self_play_online",
+                    metadata={"winner": winner_id, "turns": result.turns},
+                )
 
         except Exception:
             raise

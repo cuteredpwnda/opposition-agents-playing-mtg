@@ -748,15 +748,34 @@ This single query performs multi-hop reasoning that would require multiple vecto
 
 #### 2. Episodic Accumulation
 
-Every game the agent plays can write back to the KG:
+Every game the agent plays can write back to the KG.
+
+Important architectural rule: deterministic base graph facts (Scryfall +
+ontology imports) are treated as immutable. Learned self-play knowledge is
+written as append-only extension evidence events.
 
 ```cypher
-// After winning with a particular line of play:
-MERGE (g:Game {id: $game_id})
-SET g.winner = $winner, g.turns = $turns, g.format = 'commander'
-MERGE (s:Strategy {name: $strategy})
-MERGE (g)-[:USED_STRATEGY]->(s)
-MERGE (s)-[:EFFECTIVE_AGAINST]->(archetype:Archetype {name: $opponent_archetype})
+// Append-only learned synergy evidence (no base-edge mutation):
+MATCH (a:Card {cardName: $card_a})
+MATCH (b:Card {cardName: $card_b})
+CREATE (ev:LearnedSynergyEvidence:KGExtensionEvent {
+  runId: $run_id,
+  source: 'self_play',
+  observedAt: datetime(),
+  weight: $weight
+})
+CREATE (a)-[:SUPPORTED_BY]->(ev)
+CREATE (ev)-[:SUPPORTED_BY]->(b)
+
+// Append-only per-card outcomes:
+MATCH (c:Card {cardName: $card_name})
+CREATE (o:LearnedCardOutcome:KGExtensionEvent {
+  runId: $run_id,
+  source: 'self_play',
+  observedAt: datetime(),
+  won: $won
+})
+CREATE (c)-[:HAS_LEARNED_OUTCOME]->(o)
 ```
 
 Over thousands of games, the KG builds a **stratified experience map**: which strategies work against which archetypes, which combos are reliable vs fragile, which cards over/underperform relative to their EDHREC popularity. This is genuine *learning from experience*, stored in a form that is queryable, explainable, and persistent.

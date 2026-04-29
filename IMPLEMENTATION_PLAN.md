@@ -43,6 +43,19 @@ items stay for traceability.
 
 ### Done
 
+- [x] **Append-only KG extension layer for self-play learning** — switched
+      enrichment writes to evidence/event objects so deterministic graph facts
+      remain untouched: `src/knowledge/knowledge_graph.py::add_synergy` now
+      appends `(:LearnedSynergyEvidence:KGExtensionEvent)` linked via
+      `:SUPPORTED_BY`; `update_card_stats` appends
+      `(:LearnedCardOutcome:KGExtensionEvent)` via `:HAS_LEARNED_OUTCOME`.
+      `get_synergies_for` now returns a union of base
+      `:SYNERGIZES_WITH` and learned extension evidence. Provenance (`runId`,
+      `source`, metadata) is threaded from `src/knowledge/kg_enrichment.py`
+      and `src/training/self_play.py`. Added focused tests in
+      `tests/test_kg_extension_layer.py` and updated
+      `tests/test_kg_cookbook.py` for extension-aware validation.
+
 - [x] **Archived JEPA checkpoint verified + smoke benchmark run** — confirmed
       on-disk JEPA weights under `checkpoints/jepa/` (`jepa_epoch_10.pt` …
       `jepa_epoch_60.pt`, `jepa_final.pt`) and ran
@@ -814,8 +827,8 @@ every downstream training and benchmark signal is meaningful.
 
 #### A.3 — KG Auto-Enrichment from Self-Play
 - [x] **Combo discovery:** `KGEnrichment._discover_combos()` — queries trajectories for repeated multi-card co-occurrences in wins → proposes combo edges
-- [x] **Synergy discovery:** `KGEnrichment._discover_synergies()` — cards with co-occurrence lift above threshold → SYNERGIZES_WITH edges with learned weights
-- [x] **Card valuation update:** `KGEnrichment._write_card_stats()` → updates win-rate statistics per card in Neo4j
+- [x] **Synergy discovery:** `KGEnrichment._discover_synergies()` — cards with co-occurrence lift above threshold → append-only `LearnedSynergyEvidence` extension events (queried alongside base synergies)
+- [x] **Card valuation update:** `KGEnrichment._write_card_stats()` → appends per-card `LearnedCardOutcome` extension evidence (no deterministic node mutation)
 - [ ] **Archetype evolution:** Cluster winning decklists → detect emergent archetypes → create new Archetype nodes
 
 #### A.4 — Surprise Detection & KG Correction

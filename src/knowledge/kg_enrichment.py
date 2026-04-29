@@ -13,7 +13,7 @@ This closes the self-play → KG feedback loop (Phase A.3 of IMPLEMENTATION_PLAN
 from __future__ import annotations
 
 import logging
-from collections import Counter, defaultdict
+from collections import Counter
 from dataclasses import dataclass, field
 from itertools import combinations
 from typing import TYPE_CHECKING, Any
@@ -35,6 +35,8 @@ class EnrichmentConfig:
     max_combo_size: int = 3             # Max cards in a discovered combo
     min_games_for_stats: int = 10       # Min games before updating card stats
     synergy_edge_weight: float = 0.1    # Increment per co-occurrence
+    run_id: str = "kg_enrichment"
+    source: str = "self_play_batch"
 
 
 @dataclass
@@ -254,7 +256,16 @@ class KGEnrichment:
         for syn in synergies:
             try:
                 await self.kg.add_synergy(
-                    syn["card_a"], syn["card_b"], weight=syn["weight"]
+                    syn["card_a"],
+                    syn["card_b"],
+                    weight=syn["weight"],
+                    run_id=self.config.run_id,
+                    source=self.config.source,
+                    metadata={
+                        "coOccurrences": syn["co_occurrences"],
+                        "pairWinRate": syn["pair_win_rate"],
+                        "lift": syn["lift"],
+                    },
                 )
                 written += 1
             except Exception as e:
@@ -272,7 +283,23 @@ class KGEnrichment:
                 continue
             wins = card_wins.get(card_name, 0)
             try:
-                await self.kg.update_card_stats(card_name, won=(wins > games // 2))
+                losses = max(games - wins, 0)
+                for _ in range(wins):
+                    await self.kg.update_card_stats(
+                        card_name,
+                        won=True,
+                        run_id=self.config.run_id,
+                        source=self.config.source,
+                        metadata={"gamesObserved": games, "winsObserved": wins},
+                    )
+                for _ in range(losses):
+                    await self.kg.update_card_stats(
+                        card_name,
+                        won=False,
+                        run_id=self.config.run_id,
+                        source=self.config.source,
+                        metadata={"gamesObserved": games, "winsObserved": wins},
+                    )
                 updated += 1
             except Exception as e:
                 logger.debug("Failed to update stats for %s: %s", card_name, e)
