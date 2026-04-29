@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../../../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>src.engine.game_state &#8212; opposition-agents-playing-mtg  documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/basic.css?v=686e5160" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/alabaster.css?v=27fed22d" />
+    <script src="../../../_static/documentation_options.js?v=5929fcd5"></script>
+    <script src="../../../_static/doctools.js?v=9bcbadda"></script>
+    <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+   
+  <link rel="stylesheet" href="../../../_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <h1>Source code for src.engine.game_state</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Core game state dataclasses.</span>
+
+<span class="sd">References:</span>
+<span class="sd">- mtg-player (MIT): Pydantic v2 game models — adapted structure</span>
+<span class="sd">  https://github.com/theRealMarkCastillo/mtg-player</span>
+<span class="sd">- open-mtg (MIT): Phase enum with index, deep-copyable state</span>
+<span class="sd">  https://github.com/hlynurd/open-mtg</span>
+<span class="sd">- Argentum Engine: Immutable state pattern (reference)</span>
+<span class="sd">  https://github.com/wingedsheep/argentum-engine</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">uuid</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span><span class="p">,</span> <span class="n">field</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">enum</span><span class="w"> </span><span class="kn">import</span> <span class="n">Enum</span><span class="p">,</span> <span class="n">auto</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Optional</span>
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Enums (mapped to OWL individuals in mtg-ontology-v1.0.owl)</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+
+<div class="viewcode-block" id="Zone">
+<a class="viewcode-back" href="../../../api_engine.html#src.engine.game_state.Zone">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">Zone</span><span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="n">Enum</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;MTG game zones — mirrors mtg:Zone in the ontology.&quot;&quot;&quot;</span>
+
+    <span class="n">LIBRARY</span> <span class="o">=</span> <span class="s2">&quot;library&quot;</span>
+    <span class="n">HAND</span> <span class="o">=</span> <span class="s2">&quot;hand&quot;</span>
+    <span class="n">BATTLEFIELD</span> <span class="o">=</span> <span class="s2">&quot;battlefield&quot;</span>
+    <span class="n">GRAVEYARD</span> <span class="o">=</span> <span class="s2">&quot;graveyard&quot;</span>
+    <span class="n">EXILE</span> <span class="o">=</span> <span class="s2">&quot;exile&quot;</span>
+    <span class="n">STACK</span> <span class="o">=</span> <span class="s2">&quot;stack&quot;</span>
+    <span class="n">COMMAND_ZONE</span> <span class="o">=</span> <span class="s2">&quot;command_zone&quot;</span></div>
+
+
+
+<div class="viewcode-block" id="Phase">
+<a class="viewcode-back" href="../../../api_engine.html#src.engine.game_state.Phase">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">Phase</span><span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="n">Enum</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Turn phases/steps — mirrors mtg:Phase in the ontology.&quot;&quot;&quot;</span>
+
+    <span class="n">UNTAP</span> <span class="o">=</span> <span class="s2">&quot;untap&quot;</span>
+    <span class="n">UPKEEP</span> <span class="o">=</span> <span class="s2">&quot;upkeep&quot;</span>
+    <span class="n">DRAW</span> <span class="o">=</span> <span class="s2">&quot;draw&quot;</span>
+    <span class="n">MAIN_1</span> <span class="o">=</span> <span class="s2">&quot;main_1&quot;</span>
+    <span class="n">COMBAT_BEGIN</span> <span class="o">=</span> <span class="s2">&quot;combat_begin&quot;</span>
+    <span class="n">COMBAT_ATTACKERS</span> <span class="o">=</span> <span class="s2">&quot;combat_attackers&quot;</span>
+    <span class="n">COMBAT_BLOCKERS</span> <span class="o">=</span> <span class="s2">&quot;combat_blockers&quot;</span>
+    <span class="n">COMBAT_DAMAGE</span> <span class="o">=</span> <span class="s2">&quot;combat_damage&quot;</span>
+    <span class="n">COMBAT_END</span> <span class="o">=</span> <span class="s2">&quot;combat_end&quot;</span>
+    <span class="n">MAIN_2</span> <span class="o">=</span> <span class="s2">&quot;main_2&quot;</span>
+    <span class="n">END_STEP</span> <span class="o">=</span> <span class="s2">&quot;end_step&quot;</span>
+    <span class="n">CLEANUP</span> <span class="o">=</span> <span class="s2">&quot;cleanup&quot;</span></div>
+
+
+
+<div class="viewcode-block" id="Color">
+<a class="viewcode-back" href="../../../api_engine.html#src.engine.game_state.Color">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">Color</span><span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="n">Enum</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Mana colors — mirrors mtg:Color in the ontology.&quot;&quot;&quot;</span>
+
+    <span class="n">WHITE</span> <span class="o">=</span> <span class="s2">&quot;W&quot;</span>
+    <span class="n">BLUE</span> <span class="o">=</span> <span class="s2">&quot;U&quot;</span>
+    <span class="n">BLACK</span> <span class="o">=</span> <span class="s2">&quot;B&quot;</span>
+    <span class="n">RED</span> <span class="o">=</span> <span class="s2">&quot;R&quot;</span>
+    <span class="n">GREEN</span> <span class="o">=</span> <span class="s2">&quot;G&quot;</span></div>
+
+
+
+<div class="viewcode-block" id="ActionType">
+<a class="viewcode-back" href="../../../api_engine.html#src.engine.game_state.ActionType">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">ActionType</span><span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="n">Enum</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Types of game actions a player can take.&quot;&quot;&quot;</span>
+
+    <span class="n">PLAY_LAND</span> <span class="o">=</span> <span class="n">auto</span><span class="p">()</span>
+    <span class="n">CAST_SPELL</span> <span class="o">=</span> <span class="n">auto</span><span class="p">()</span>
+    <span class="n">ACTIVATE_ABILITY</span> <span class="o">=</span> <span class="n">auto</span><span class="p">()</span>
+    <span class="n">DECLARE_ATTACKERS</span> <span class="o">=</span> <span class="n">auto</span><span class="p">()</span>
+    <span class="n">DECLARE_BLOCKERS</span> <span class="o">=</span> <span class="n">auto</span><span class="p">()</span>
+    <span class="n">PASS_PRIORITY</span> <span class="o">=</span> <span class="n">auto</span><span class="p">()</span>
+    <span class="n">CONCEDE</span> <span class="o">=</span> <span class="n">auto</span><span class="p">()</span>
+    <span class="n">SPECIAL_ACTION</span> <span class="o">=</span> <span class="n">auto</span><span class="p">()</span></div>
+
+
+
+<div class="viewcode-block" id="TriggerType">
+<a class="viewcode-back" href="../../../api_engine.html#src.engine.game_state.TriggerType">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">TriggerType</span><span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="n">Enum</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Types of triggers (when X happens, ability triggers).&quot;&quot;&quot;</span>
+    
+    <span class="n">ENTERS_BATTLEFIELD</span> <span class="o">=</span> <span class="s2">&quot;enters_battlefield&quot;</span>
+    <span class="n">LEAVES_BATTLEFIELD</span> <span class="o">=</span> <span class="s2">&quot;leaves_battlefield&quot;</span>
+    <span class="n">ATTACKS</span> <span class="o">=</span> <span class="s2">&quot;attacks&quot;</span>
+    <span class="n">BLOCKS</span> <span class="o">=</span> <span class="s2">&quot;blocks&quot;</span>
+    <span class="n">CAST</span> <span class="o">=</span> <span class="s2">&quot;cast&quot;</span>
+    <span class="n">DEALT_DAMAGE</span> <span class="o">=</span> <span class="s2">&quot;dealt_damage&quot;</span>
+    <span class="n">CREATURE_DIES</span> <span class="o">=</span> <span class="s2">&quot;creature_dies&quot;</span>
+    <span class="n">LIFE_GAIN</span> <span class="o">=</span> <span class="s2">&quot;life_gain&quot;</span>
+    <span class="n">COMBAT_DAMAGE</span> <span class="o">=</span> <span class="s2">&quot;combat_damage&quot;</span>
+    <span class="n">LANDFALL</span> <span class="o">=</span> <span class="s2">&quot;landfall&quot;</span>
+    <span class="n">UPKEEP</span> <span class="o">=</span> <span class="s2">&quot;upkeep&quot;</span>
+    <span class="n">END_STEP</span> <span class="o">=</span> <span class="s2">&quot;end_step&quot;</span>
+    <span class="n">BEGINNING_OF_COMBAT</span> <span class="o">=</span> <span class="s2">&quot;beginning_of_combat&quot;</span></div>
+
+
+
+<div class="viewcode-block" id="Trigger">
+<a class="viewcode-back" href="../../../api_engine.html#src.engine.game_state.Trigger">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Trigger</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A triggered ability awaiting resolution.&quot;&quot;&quot;</span>
+    
+    <span class="n">trigger_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="k">lambda</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">uuid</span><span class="o">.</span><span class="n">uuid4</span><span class="p">()))</span>
+    <span class="n">source_card_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>  <span class="c1"># Which card is triggering</span>
+    <span class="n">controller_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>  <span class="c1"># Who controls the trigger</span>
+    <span class="n">trigger_type</span><span class="p">:</span> <span class="n">TriggerType</span> <span class="o">=</span> <span class="n">TriggerType</span><span class="o">.</span><span class="n">ENTERS_BATTLEFIELD</span>
+    <span class="n">description</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>  <span class="c1"># &quot;draw a card&quot;, &quot;deal 1 damage&quot;, etc.</span>
+    <span class="n">on_stack</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>  <span class="c1"># Whether this trigger has been put on stack</span></div>
+
+
+
+<div class="viewcode-block" id="Ability">
+<a class="viewcode-back" href="../../../api_engine.html#src.engine.game_state.Ability">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Ability</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;An activated ability on a permanent that can be controlled by player.&quot;&quot;&quot;</span>
+    
+    <span class="n">ability_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="k">lambda</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">uuid</span><span class="o">.</span><span class="n">uuid4</span><span class="p">()))</span>
+    <span class="n">source_card_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>  <span class="c1"># Which card has this ability</span>
+    <span class="n">controller_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>  <span class="c1"># Who controls the ability</span>
+    <span class="n">cost</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>  <span class="c1"># Mana cost: &quot;{T}&quot;, &quot;{2}{U}&quot;, &quot;{1}{B}&quot;, etc.</span>
+    <span class="n">effect</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>  <span class="c1"># &quot;Add {R}&quot;, &quot;Draw a card&quot;, &quot;Deal 1 damage to target&quot;, etc.</span>
+    <span class="n">can_use_any_time</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>  <span class="c1"># True for mana abilities (can use anytime)</span>
+    <span class="n">description</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>  <span class="c1"># Full ability text for logging</span></div>
+
+
+
+<div class="viewcode-block" id="StaticAbility">
+<a class="viewcode-back" href="../../../api_engine.html#src.engine.game_state.StaticAbility">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">StaticAbility</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A static ability that continuously modifies game state (not activated or triggered).&quot;&quot;&quot;</span>
+    
+    <span class="n">static_ability_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="k">lambda</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">uuid</span><span class="o">.</span><span class="n">uuid4</span><span class="p">()))</span>
+    <span class="n">source_card_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>  <span class="c1"># Which card has this static ability</span>
+    <span class="n">controller_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>  <span class="c1"># Who controls the static ability</span>
+    <span class="n">scope</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>  <span class="c1"># &quot;creatures_you_control&quot;, &quot;all_creatures&quot;, &quot;artifacts_you_control&quot;, etc.</span>
+    <span class="n">effect_type</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>  <span class="c1"># &quot;power_toughness&quot;, &quot;keyword&quot;, &quot;protection&quot;, &quot;indestructible&quot;, etc.</span>
+    <span class="n">power_mod</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span>  <span class="c1"># Power modifier (e.g., +1)</span>
+    <span class="n">toughness_mod</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span>  <span class="c1"># Toughness modifier (e.g., +1)</span>
+    <span class="n">keywords</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">list</span><span class="p">)</span>  <span class="c1"># Keywords to add (flying, deathtouched, etc.)</span>
+    <span class="n">subtype_filter</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>  <span class="c1"># Optional subtype restriction (e.g., &quot;goblin&quot;, &quot;elf&quot;)</span>
+    <span class="n">description</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>  <span class="c1"># Full ability text for logging</span></div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Data Models</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+
+<div class="viewcode-block" id="CardInstance">
+<a class="viewcode-back" href="../../../api_engine.html#src.engine.game_state.CardInstance">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">CardInstance</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A specific instance of a card in a game (may differ from the oracle card).&quot;&quot;&quot;</span>
+
+    <span class="n">instance_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="k">lambda</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">uuid</span><span class="o">.</span><span class="n">uuid4</span><span class="p">()))</span>
+    <span class="n">card_data</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">dict</span><span class="p">)</span>  <span class="c1"># Scryfall card object</span>
+    <span class="n">zone</span><span class="p">:</span> <span class="n">Zone</span> <span class="o">=</span> <span class="n">Zone</span><span class="o">.</span><span class="n">LIBRARY</span>
+    <span class="n">owner_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+    <span class="n">controller_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+    <span class="n">tapped</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="n">counters</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">dict</span><span class="p">)</span>
+    <span class="n">attached_to</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">damage_marked</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="n">summoning_sick</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span>
+    <span class="n">turn_entered</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span>  <span class="c1"># Track which turn creature entered (0 = pre-game)</span>
+    <span class="n">face_down</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="n">known_to</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">set</span><span class="p">)</span>  <span class="c1"># Which players know the identity of this card</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">name</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">card_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;name&quot;</span><span class="p">,</span> <span class="s2">&quot;Unknown&quot;</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">oracle_text</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">card_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;oracle_text&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">type_line</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">card_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;type_line&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">mana_cost</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">card_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;mana_cost&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">cmc</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">card_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;cmc&quot;</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span>
+
+<div class="viewcode-block" id="CardInstance.is_creature">
+<a class="viewcode-back" href="../../../api_engine.html#src.engine.game_state.CardInstance.is_creature">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">is_creature</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s2">&quot;Creature&quot;</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">type_line</span></div>
+
+
+<div class="viewcode-block" id="CardInstance.is_land">
+<a class="viewcode-back" href="../../../api_engine.html#src.engine.game_state.CardInstance.is_land">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">is_land</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s2">&quot;Land&quot;</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">type_line</span></div>
+
+
+<div class="viewcode-block" id="CardInstance.is_instant">
+<a class="viewcode-back" href="../../../api_engine.html#src.engine.game_state.CardInstance.is_instant">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">is_instant</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s2">&quot;Instant&quot;</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">type_line</span></div>
+
+
+<div class="viewcode-block" id="CardInstance.is_artifact">
+<a class="viewcode-back" href="../../../api_engine.html#src.engine.game_state.CardInstance.is_artifact">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">is_artifact</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s2">&quot;Artifact&quot;</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">type_line</span></div>
+
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">power</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">card_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;power&quot;</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">toughness</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">card_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;toughness&quot;</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">is_token</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Whether this card instance is a token (CR 111.1).</span>
+
+<span class="sd">        Tokens must be flagged explicitly via ``card_data[&#39;is_token&#39;]`` or</span>
+<span class="sd">        ``card_data[&#39;token&#39;]``. We intentionally do *not* infer token-ness</span>
+<span class="sd">        from a missing ``set`` field, because user-supplied / synthetic deck</span>
+<span class="sd">        dictionaries (e.g., the archetype benchmark decks) routinely omit</span>
+<span class="sd">        ``set`` and would otherwise be wiped out by CR 704.5d on the first</span>
+<span class="sd">        state-based-action check.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="nb">bool</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">card_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;is_token&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
+            <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">card_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;token&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
+        <span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">keywords</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Extract keywords from oracle text and keywords field.&quot;&quot;&quot;</span>
+        <span class="n">oracle_keywords</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">card_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;keywords&quot;</span><span class="p">,</span> <span class="p">[])</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">oracle_keywords</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+            <span class="n">oracle_keywords</span> <span class="o">=</span> <span class="p">[</span><span class="n">oracle_keywords</span><span class="p">]</span>
+        <span class="c1"># Also parse from oracle text</span>
+        <span class="n">text_keywords</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">oracle</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">oracle_text</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+        <span class="n">keyword_list</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;flying&quot;</span><span class="p">,</span> <span class="s2">&quot;flash&quot;</span><span class="p">,</span> <span class="s2">&quot;lifelink&quot;</span><span class="p">,</span> <span class="s2">&quot;deathtouch&quot;</span><span class="p">,</span> <span class="s2">&quot;trample&quot;</span><span class="p">,</span> 
+                        <span class="s2">&quot;menace&quot;</span><span class="p">,</span> <span class="s2">&quot;shadow&quot;</span><span class="p">,</span> <span class="s2">&quot;unblockable&quot;</span><span class="p">,</span> <span class="s2">&quot;vigilance&quot;</span><span class="p">,</span> <span class="s2">&quot;reach&quot;</span><span class="p">]</span>
+        <span class="k">for</span> <span class="n">kw</span> <span class="ow">in</span> <span class="n">keyword_list</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">kw</span> <span class="ow">in</span> <span class="n">oracle</span><span class="p">:</span>
+                <span class="n">text_keywords</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">kw</span><span class="p">)</span>
+        <span class="k">return</span> <span class="nb">list</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">oracle_keywords</span> <span class="o">+</span> <span class="n">text_keywords</span><span class="p">))</span></div>
+
+
+
+<div class="viewcode-block" id="PlayerState">
+<a class="viewcode-back" href="../../../api_engine.html#src.engine.game_state.PlayerState">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">PlayerState</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;State of a single player in the game.&quot;&quot;&quot;</span>
+
+    <span class="n">player_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+    <span class="n">life_total</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">20</span>  <span class="c1"># 40 for Commander</span>
+    <span class="n">mana_pool</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span>
+        <span class="n">default_factory</span><span class="o">=</span><span class="k">lambda</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;W&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">&quot;U&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">&quot;B&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">&quot;R&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">&quot;G&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">&quot;C&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">}</span>
+    <span class="p">)</span>
+    <span class="n">commander_tax</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="n">commander_damage_received</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">dict</span><span class="p">)</span>
+    <span class="n">has_drawn_for_turn</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="n">land_plays_remaining</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span>
+    <span class="n">max_hand_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">7</span>
+    <span class="n">mulligans_taken</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="n">passed_priority</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="n">is_human</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="c1"># Player-level counters (CR 122)</span>
+    <span class="n">poison_counters</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="n">energy_counters</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="n">experience_counters</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span></div>
+
+
+
+<div class="viewcode-block" id="Action">
+<a class="viewcode-back" href="../../../api_engine.html#src.engine.game_state.Action">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Action</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A game action chosen by a player.&quot;&quot;&quot;</span>
+
+    <span class="n">action_type</span><span class="p">:</span> <span class="n">ActionType</span>
+    <span class="n">player_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+    <span class="n">player</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+    <span class="n">card_instance_id</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">targets</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">list</span><span class="p">)</span>
+    <span class="n">metadata</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">dict</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">__post_init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">player_id</span> <span class="ow">and</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">player</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">player</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">player_id</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">player</span> <span class="ow">and</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">player_id</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">player_id</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">player</span></div>
+
+
+
+<div class="viewcode-block" id="StackItem">
+<a class="viewcode-back" href="../../../api_engine.html#src.engine.game_state.StackItem">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">StackItem</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;An item on the stack (spell or ability).&quot;&quot;&quot;</span>
+
+    <span class="n">item_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="k">lambda</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">uuid</span><span class="o">.</span><span class="n">uuid4</span><span class="p">()))</span>
+    <span class="n">source_card_id</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">controller_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+    <span class="n">targets</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">list</span><span class="p">)</span>
+    <span class="n">is_spell</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span>  <span class="c1"># False = ability</span>
+    <span class="n">card_data</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">dict</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="CombatState">
+<a class="viewcode-back" href="../../../api_engine.html#src.engine.game_state.CombatState">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">CombatState</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Tracks declared attackers &amp; blockers during combat.&quot;&quot;&quot;</span>
+
+    <span class="n">attackers</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">dict</span><span class="p">)</span>  <span class="c1"># attacker_id -&gt; defending_player_id</span>
+    <span class="n">blockers</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">dict</span><span class="p">)</span>  <span class="c1"># attacker_id -&gt; [blocker_ids]</span>
+    <span class="n">damage_assignment_order</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">dict</span><span class="p">)</span></div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Command-zone objects (CR 408 / 113.6.1 / 309 / 901)</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+
+<div class="viewcode-block" id="DayNight">
+<a class="viewcode-back" href="../../../api_engine.html#src.engine.game_state.DayNight">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">DayNight</span><span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="n">Enum</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Day/Night designation (CR 726). &#39;NEITHER&#39; is the pre-game default.&quot;&quot;&quot;</span>
+
+    <span class="n">NEITHER</span> <span class="o">=</span> <span class="s2">&quot;neither&quot;</span>
+    <span class="n">DAY</span> <span class="o">=</span> <span class="s2">&quot;day&quot;</span>
+    <span class="n">NIGHT</span> <span class="o">=</span> <span class="s2">&quot;night&quot;</span></div>
+
+
+
+<div class="viewcode-block" id="Emblem">
+<a class="viewcode-back" href="../../../api_engine.html#src.engine.game_state.Emblem">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Emblem</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;An emblem in the command zone (CR 114).</span>
+
+<span class="sd">    Emblems are colorless, typeless, nameless game objects with the listed</span>
+<span class="sd">    ability. They are never put into another zone — they remain in their</span>
+<span class="sd">    owner&#39;s command zone for the rest of the game.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">emblem_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="k">lambda</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">uuid</span><span class="o">.</span><span class="n">uuid4</span><span class="p">()))</span>
+    <span class="n">controller_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+    <span class="n">source</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>  <span class="c1"># e.g. &quot;Sorin, Solemn Visitor emblem&quot;</span>
+    <span class="n">text</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>    <span class="c1"># the granted ability</span></div>
+
+
+
+<div class="viewcode-block" id="Dungeon">
+<a class="viewcode-back" href="../../../api_engine.html#src.engine.game_state.Dungeon">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Dungeon</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A dungeon a player is venturing into (CR 309).</span>
+
+<span class="sd">    Dungeons live in their controller&#39;s command zone. ``rooms`` is the</span>
+<span class="sd">    ordered list of room names; ``current_room`` is the 0-based index of</span>
+<span class="sd">    the room the player most recently entered (-1 means &quot;not yet entered&quot; /</span>
+<span class="sd">    just chose this dungeon). When the player completes the bottom-most</span>
+<span class="sd">    room, the dungeon is removed from the command zone.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">dungeon_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="k">lambda</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">uuid</span><span class="o">.</span><span class="n">uuid4</span><span class="p">()))</span>
+    <span class="n">controller_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+    <span class="n">rooms</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">list</span><span class="p">)</span>
+    <span class="n">current_room</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span>
+    <span class="n">completed</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span></div>
+
+
+
+<div class="viewcode-block" id="CommandZoneObject">
+<a class="viewcode-back" href="../../../api_engine.html#src.engine.game_state.CommandZoneObject">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">CommandZoneObject</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Generic command-zone object: vanguard avatar, conspiracy, plane, scheme, attraction etc.</span>
+
+<span class="sd">    Used as a catch-all for non-card command-zone entities that don&#39;t fit</span>
+<span class="sd">    Emblem/Dungeon. ``kind`` is one of: &quot;vanguard&quot;, &quot;conspiracy&quot;, &quot;plane&quot;,</span>
+<span class="sd">    &quot;scheme&quot;, &quot;attraction&quot;, &quot;phenomenon&quot;.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">object_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="k">lambda</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">uuid</span><span class="o">.</span><span class="n">uuid4</span><span class="p">()))</span>
+    <span class="n">controller_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+    <span class="n">kind</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+    <span class="n">card_data</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">dict</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="GameState">
+<a class="viewcode-back" href="../../../api_engine.html#src.engine.game_state.GameState">[docs]</a>
+<span class="nd">@dataclass</span><span class="p">(</span><span class="n">init</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">GameState</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Complete state of a game — the single source of truth.&quot;&quot;&quot;</span>
+
+    <span class="n">game_id</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="nb">format</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">turn_number</span><span class="p">:</span> <span class="nb">int</span>
+    <span class="n">active_player_index</span><span class="p">:</span> <span class="nb">int</span>
+    <span class="n">priority_player_index</span><span class="p">:</span> <span class="nb">int</span>
+    <span class="n">phase</span><span class="p">:</span> <span class="n">Phase</span>
+    <span class="n">players</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">PlayerState</span><span class="p">]</span>
+    <span class="n">cards</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">CardInstance</span><span class="p">]</span>
+    <span class="n">stack</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">StackItem</span><span class="p">]</span>
+    <span class="n">triggered_abilities</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Trigger</span><span class="p">]</span>
+    <span class="n">combat</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">CombatState</span><span class="p">]</span>
+    <span class="n">game_log</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
+    <span class="n">game_over</span><span class="p">:</span> <span class="nb">bool</span>
+    <span class="n">winner</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
+    <span class="n">commanders</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span>  <span class="c1"># player_id -&gt; commander card instance id (legacy alias; first commander)</span>
+    <span class="c1"># Command-zone objects beyond cards (CR 113.6.1, 114, 309, 726, 901, ...)</span>
+    <span class="n">emblems</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Emblem</span><span class="p">]</span>
+    <span class="n">dungeons</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Dungeon</span><span class="p">]</span>
+    <span class="n">command_zone_objects</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">CommandZoneObject</span><span class="p">]</span>
+    <span class="c1"># Day/Night designation (CR 726)</span>
+    <span class="n">day_night</span><span class="p">:</span> <span class="n">DayNight</span>
+    <span class="c1"># The Initiative (Commander Legends: Battle for Baldur&#39;s Gate) — player_id who has it.</span>
+    <span class="n">the_initiative</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
+    <span class="c1"># The Monarch — player_id who is currently the monarch.</span>
+    <span class="n">monarch</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">game_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="nb">format</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;standard&quot;</span><span class="p">,</span>
+        <span class="n">turn_number</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+        <span class="n">active_player_index</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+        <span class="n">priority_player_index</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+        <span class="n">phase</span><span class="p">:</span> <span class="n">Phase</span> <span class="o">=</span> <span class="n">Phase</span><span class="o">.</span><span class="n">UNTAP</span><span class="p">,</span>
+        <span class="n">players</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">cards</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">stack</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">triggered_abilities</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">combat</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">game_log</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">game_over</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="n">winner</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">active_player</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">priority_player</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">game_id</span> <span class="o">=</span> <span class="n">game_id</span> <span class="ow">or</span> <span class="nb">str</span><span class="p">(</span><span class="n">uuid</span><span class="o">.</span><span class="n">uuid4</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">format</span> <span class="o">=</span> <span class="nb">format</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">turn_number</span> <span class="o">=</span> <span class="n">turn_number</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">phase</span> <span class="o">=</span> <span class="n">phase</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">players</span> <span class="o">=</span> <span class="n">players</span> <span class="ow">or</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cards</span> <span class="o">=</span> <span class="n">cards</span> <span class="ow">or</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">stack</span> <span class="o">=</span> <span class="n">stack</span> <span class="ow">or</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">triggered_abilities</span> <span class="o">=</span> <span class="n">triggered_abilities</span> <span class="ow">or</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">combat</span> <span class="o">=</span> <span class="n">combat</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">game_log</span> <span class="o">=</span> <span class="n">game_log</span> <span class="ow">or</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">game_over</span> <span class="o">=</span> <span class="n">game_over</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">winner</span> <span class="o">=</span> <span class="n">winner</span>
+        <span class="c1"># Canonical multi-commander store (player_id -&gt; [commander instance ids]).</span>
+        <span class="c1"># ``self.commanders`` (the legacy single-id mapping) is exposed as a</span>
+        <span class="c1"># property derived from this list-valued dict.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_commanders_by_player</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="c1"># Command-zone objects (CR 113.6.1) beyond physical cards.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">emblems</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Emblem</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">dungeons</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Dungeon</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">command_zone_objects</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">CommandZoneObject</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="c1"># Designations (CR 726, 702.155, etc.)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">day_night</span><span class="p">:</span> <span class="n">DayNight</span> <span class="o">=</span> <span class="n">DayNight</span><span class="o">.</span><span class="n">NEITHER</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">the_initiative</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">monarch</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">players</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">players</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">players</span><span class="o">.</span><span class="n">values</span><span class="p">())</span>
+
+        <span class="k">if</span> <span class="n">active_player</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">active_player_index</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span>
+                <span class="p">(</span><span class="n">i</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">p</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">players</span><span class="p">)</span> <span class="k">if</span> <span class="n">p</span><span class="o">.</span><span class="n">player_id</span> <span class="o">==</span> <span class="n">active_player</span><span class="p">),</span>
+                <span class="mi">0</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">active_player_index</span> <span class="o">=</span> <span class="n">active_player_index</span>
+
+        <span class="k">if</span> <span class="n">priority_player</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">priority_player_index</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span>
+                <span class="p">(</span><span class="n">i</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">p</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">players</span><span class="p">)</span> <span class="k">if</span> <span class="n">p</span><span class="o">.</span><span class="n">player_id</span> <span class="o">==</span> <span class="n">priority_player</span><span class="p">),</span>
+                <span class="mi">0</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">priority_player_index</span> <span class="o">=</span> <span class="n">priority_player_index</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">active_player</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PlayerState</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">players</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">active_player_index</span><span class="p">]</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">priority_player</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PlayerState</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">players</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">priority_player_index</span><span class="p">]</span>
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Commander helpers (multi-commander aware: partner / partner-with /</span>
+    <span class="c1"># background / friends-forever).  ``commanders`` is kept as a flat</span>
+    <span class="c1"># ``dict[str, str]`` (player_id -&gt; first commander id) for backward</span>
+    <span class="c1"># compatibility with code that only handles single-commander decks.</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">commanders</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]:</span>
+        <span class="k">return</span> <span class="p">{</span><span class="n">pid</span><span class="p">:</span> <span class="n">ids</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">pid</span><span class="p">,</span> <span class="n">ids</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_commanders_by_player</span><span class="o">.</span><span class="n">items</span><span class="p">()</span> <span class="k">if</span> <span class="n">ids</span><span class="p">}</span>
+
+    <span class="nd">@commanders</span><span class="o">.</span><span class="n">setter</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">commanders</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">new</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">pid</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="p">(</span><span class="n">value</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+                <span class="n">new</span><span class="p">[</span><span class="n">pid</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="n">v</span><span class="p">]</span> <span class="k">if</span> <span class="n">v</span> <span class="k">else</span> <span class="p">[]</span>
+            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="p">(</span><span class="nb">list</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">)):</span>
+                <span class="n">new</span><span class="p">[</span><span class="n">pid</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="n">x</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">v</span> <span class="k">if</span> <span class="n">x</span><span class="p">]</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">new</span><span class="p">[</span><span class="n">pid</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_commanders_by_player</span> <span class="o">=</span> <span class="n">new</span>
+
+<div class="viewcode-block" id="GameState.commander_ids">
+<a class="viewcode-back" href="../../../api_engine.html#src.engine.game_state.GameState.commander_ids">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">commander_ids</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">player_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return all commander instance ids for ``player_id`` (0–2 entries).&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_commanders_by_player</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">player_id</span><span class="p">,</span> <span class="p">[]))</span></div>
+
+
+<div class="viewcode-block" id="GameState.add_commander">
+<a class="viewcode-back" href="../../../api_engine.html#src.engine.game_state.GameState.add_commander">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">add_commander</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">player_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">instance_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Register an additional commander instance for ``player_id``.&quot;&quot;&quot;</span>
+        <span class="n">bucket</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_commanders_by_player</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">player_id</span><span class="p">,</span> <span class="p">[])</span>
+        <span class="k">if</span> <span class="n">instance_id</span> <span class="ow">and</span> <span class="n">instance_id</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">bucket</span><span class="p">:</span>
+            <span class="n">bucket</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">instance_id</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="GameState.cards_in_zone">
+<a class="viewcode-back" href="../../../api_engine.html#src.engine.game_state.GameState.cards_in_zone">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">cards_in_zone</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">player_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">zone</span><span class="p">:</span> <span class="n">Zone</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">CardInstance</span><span class="p">]:</span>
+        <span class="k">return</span> <span class="p">[</span>
+            <span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">cards</span> <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">zone</span> <span class="o">==</span> <span class="n">zone</span> <span class="ow">and</span> <span class="n">c</span><span class="o">.</span><span class="n">controller_id</span> <span class="o">==</span> <span class="n">player_id</span>
+        <span class="p">]</span></div>
+
+
+<div class="viewcode-block" id="GameState.mark_card_known">
+<a class="viewcode-back" href="../../../api_engine.html#src.engine.game_state.GameState.mark_card_known">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">mark_card_known</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">card_instance_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">player_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Mark a specific card instance as known to a player.&quot;&quot;&quot;</span>
+        <span class="n">card</span> <span class="o">=</span> <span class="nb">next</span><span class="p">((</span><span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">cards</span> <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">instance_id</span> <span class="o">==</span> <span class="n">card_instance_id</span><span class="p">),</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">card</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="n">card</span><span class="o">.</span><span class="n">known_to</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">player_id</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="GameState.card_is_known">
+<a class="viewcode-back" href="../../../api_engine.html#src.engine.game_state.GameState.card_is_known">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">card_is_known</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">card_instance_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">player_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Check if a player knows a given card instance.&quot;&quot;&quot;</span>
+        <span class="n">card</span> <span class="o">=</span> <span class="nb">next</span><span class="p">((</span><span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">cards</span> <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">instance_id</span> <span class="o">==</span> <span class="n">card_instance_id</span><span class="p">),</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">return</span> <span class="nb">bool</span><span class="p">(</span><span class="n">card</span> <span class="ow">and</span> <span class="n">player_id</span> <span class="ow">in</span> <span class="n">card</span><span class="o">.</span><span class="n">known_to</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="GameState.log">
+<a class="viewcode-back" href="../../../api_engine.html#src.engine.game_state.GameState.log">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">log</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">message</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">game_log</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">message</span><span class="p">)</span></div>
+</div>
+
+</pre></div>
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="../../../index.html">opposition-agents-playing-mtg</a></h1>
+
+
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="../../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+<p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../repository_map.html">Repository Map</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../components.html">Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api.html">API Reference</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="../../../index.html">Documentation overview</a><ul>
+  <li><a href="../../index.html">Module code</a><ul>
+  </ul></li>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &#169;2026, Data Science Lab FHSWF.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 8.1.3</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+    </div>
+
+    
+
+    
+  </body>
+</html>

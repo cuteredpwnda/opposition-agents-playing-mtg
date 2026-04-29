@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../../../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>src.engine.state_based_actions &#8212; opposition-agents-playing-mtg  documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/basic.css?v=686e5160" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/alabaster.css?v=27fed22d" />
+    <script src="../../../_static/documentation_options.js?v=5929fcd5"></script>
+    <script src="../../../_static/doctools.js?v=9bcbadda"></script>
+    <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+   
+  <link rel="stylesheet" href="../../../_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <h1>Source code for src.engine.state_based_actions</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">State-based actions (CR 704) — automatic effects checked multiple times per turn.</span>
+
+<span class="sd">Handles: lethal damage, 0-toughness creatures, commander damage, empty draw,</span>
+<span class="sd">player action legal but impossible, deck size rules, etc.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.engine.game_state</span><span class="w"> </span><span class="kn">import</span> <span class="n">GameState</span><span class="p">,</span> <span class="n">Zone</span>
+
+
+<div class="viewcode-block" id="check_state_based_actions">
+<a class="viewcode-back" href="../../../api_engine.html#src.engine.state_based_actions.check_state_based_actions">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">check_state_based_actions</span><span class="p">(</span><span class="n">game_state</span><span class="p">:</span> <span class="n">GameState</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">GameState</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Check and apply all state-based actions.</span>
+<span class="sd">    </span>
+<span class="sd">    SBAs are checked:</span>
+<span class="sd">    - After each player&#39;s action resolves</span>
+<span class="sd">    - After the stack is resolved</span>
+<span class="sd">    - Before passing priority</span>
+<span class="sd">    </span>
+<span class="sd">    They&#39;re applied simultaneously, not one at a time.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># Move to-be-destroyed creatures to graveyard</span>
+    <span class="k">for</span> <span class="n">zone_key</span> <span class="ow">in</span> <span class="nb">list</span><span class="p">(</span><span class="n">game_state</span><span class="o">.</span><span class="n">cards_in_zone</span><span class="o">.</span><span class="n">keys</span><span class="p">()):</span>
+        <span class="n">pid</span><span class="p">,</span> <span class="n">zone_name</span> <span class="o">=</span> <span class="n">zone_key</span>
+        <span class="k">if</span> <span class="n">zone_name</span> <span class="o">!=</span> <span class="s2">&quot;battlefield&quot;</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="n">cards</span> <span class="o">=</span> <span class="n">game_state</span><span class="o">.</span><span class="n">cards_in_zone</span><span class="p">[</span><span class="n">zone_key</span><span class="p">]</span>
+        <span class="n">survivors</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">card</span> <span class="ow">in</span> <span class="n">cards</span><span class="p">:</span>
+            <span class="c1"># Creature has 0 or less toughness → dies</span>
+            <span class="k">if</span> <span class="n">card</span><span class="o">.</span><span class="n">is_creature</span> <span class="ow">and</span> <span class="n">card</span><span class="o">.</span><span class="n">toughness</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">card</span><span class="o">.</span><span class="n">toughness</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="n">game_state</span><span class="o">.</span><span class="n">cards_in_zone</span><span class="o">.</span><span class="n">setdefault</span><span class="p">((</span><span class="n">pid</span><span class="p">,</span> <span class="s2">&quot;graveyard&quot;</span><span class="p">),</span> <span class="p">[])</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">card</span><span class="p">)</span>
+                <span class="k">continue</span>
+            <span class="c1"># Creature has lethal damage → dies</span>
+            <span class="k">if</span> <span class="n">card</span><span class="o">.</span><span class="n">is_creature</span> <span class="ow">and</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">card</span><span class="p">,</span> <span class="s2">&quot;damage&quot;</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="p">(</span><span class="n">card</span><span class="o">.</span><span class="n">toughness</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">):</span>
+                <span class="n">game_state</span><span class="o">.</span><span class="n">cards_in_zone</span><span class="o">.</span><span class="n">setdefault</span><span class="p">((</span><span class="n">pid</span><span class="p">,</span> <span class="s2">&quot;graveyard&quot;</span><span class="p">),</span> <span class="p">[])</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">card</span><span class="p">)</span>
+                <span class="k">continue</span>
+            <span class="n">survivors</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">card</span><span class="p">)</span>
+        <span class="n">game_state</span><span class="o">.</span><span class="n">cards_in_zone</span><span class="p">[</span><span class="n">zone_key</span><span class="p">]</span> <span class="o">=</span> <span class="n">survivors</span>
+
+    <span class="c1"># Check lifetotal SBAs</span>
+    <span class="k">for</span> <span class="n">pid</span><span class="p">,</span> <span class="n">pstate</span> <span class="ow">in</span> <span class="n">game_state</span><span class="o">.</span><span class="n">players</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="c1"># Player has 0 or less life → loses</span>
+        <span class="k">if</span> <span class="n">pstate</span><span class="o">.</span><span class="n">life</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">game_state</span><span class="o">.</span><span class="n">game_over</span> <span class="o">=</span> <span class="kc">True</span>
+            <span class="n">game_state</span><span class="o">.</span><span class="n">winner</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span><span class="n">p</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">game_state</span><span class="o">.</span><span class="n">players</span> <span class="k">if</span> <span class="n">p</span> <span class="o">!=</span> <span class="n">pid</span><span class="p">)</span>
+            <span class="k">break</span>
+        <span class="c1"># Commander damage (21+ combat damage from single commander) → loses</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">pstate</span><span class="p">,</span> <span class="s1">&#39;commander_damage&#39;</span><span class="p">):</span>
+            <span class="n">pstate</span><span class="o">.</span><span class="n">commander_damage</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">opponent_id</span><span class="p">,</span> <span class="n">damage</span> <span class="ow">in</span> <span class="n">pstate</span><span class="o">.</span><span class="n">commander_damage</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">if</span> <span class="n">damage</span> <span class="o">&gt;=</span> <span class="mi">21</span><span class="p">:</span>
+                <span class="n">game_state</span><span class="o">.</span><span class="n">game_over</span> <span class="o">=</span> <span class="kc">True</span>
+                <span class="n">game_state</span><span class="o">.</span><span class="n">winner</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span><span class="n">p</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">game_state</span><span class="o">.</span><span class="n">players</span> <span class="k">if</span> <span class="n">p</span> <span class="o">!=</span> <span class="n">pid</span><span class="p">)</span>
+                <span class="k">break</span>
+
+    <span class="c1"># Check draw empties (trying to draw from empty library)</span>
+    <span class="k">for</span> <span class="n">zone_key</span> <span class="ow">in</span> <span class="nb">list</span><span class="p">(</span><span class="n">game_state</span><span class="o">.</span><span class="n">cards_in_zone</span><span class="o">.</span><span class="n">keys</span><span class="p">()):</span>
+        <span class="n">pid</span><span class="p">,</span> <span class="n">zone_name</span> <span class="o">=</span> <span class="n">zone_key</span>
+        <span class="k">if</span> <span class="n">zone_name</span> <span class="o">!=</span> <span class="s2">&quot;library&quot;</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">game_state</span><span class="o">.</span><span class="n">cards_in_zone</span><span class="p">[</span><span class="n">zone_key</span><span class="p">])</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="c1"># At next draw step, player loses (for now)</span>
+            <span class="c1"># In full implementation: queue draw-loss effect</span>
+            <span class="k">pass</span>
+
+    <span class="k">return</span> <span class="n">game_state</span></div>
+
+</pre></div>
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="../../../index.html">opposition-agents-playing-mtg</a></h1>
+
+
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="../../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+<p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../repository_map.html">Repository Map</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../components.html">Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api.html">API Reference</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="../../../index.html">Documentation overview</a><ul>
+  <li><a href="../../index.html">Module code</a><ul>
+  </ul></li>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &#169;2026, Data Science Lab FHSWF.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 8.1.3</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+    </div>
+
+    
+
+    
+  </body>
+</html>

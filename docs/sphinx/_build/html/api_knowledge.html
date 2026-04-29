@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="./">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Knowledge API &#8212; opposition-agents-playing-mtg  documentation</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="_static/basic.css?v=686e5160" />
+    <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=27fed22d" />
+    <script src="_static/documentation_options.js?v=5929fcd5"></script>
+    <script src="_static/doctools.js?v=9bcbadda"></script>
+    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="World Model API" href="api_world_model.html" />
+    <link rel="prev" title="Orchestrator API" href="api_orchestrator.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <section id="module-src.knowledge.kg_builder">
+<span id="knowledge-api"></span><h1>Knowledge API<a class="headerlink" href="#module-src.knowledge.kg_builder" title="Link to this heading">¶</a></h1>
+<p>KG builder — populate Neo4j from Scryfall, Commander Spellbook, EDHREC.</p>
+<p>Uses batch MERGE operations via the neo4j Python driver.</p>
+<dl class="py class">
+<dt class="sig sig-object py" id="src.knowledge.kg_builder.KGBuilder">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">src.knowledge.kg_builder.</span></span><span class="sig-name descname"><span class="pre">KGBuilder</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">uri</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'bolt://localhost:7687'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">user</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'neo4j'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">password</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'mtgpassword'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/src/knowledge/kg_builder.html#KGBuilder"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.knowledge.kg_builder.KGBuilder" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Populates the Neo4j knowledge graph from external data sources.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="src.knowledge.kg_builder.KGBuilder.close">
+<em class="property"><span class="pre">async</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">close</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="reference internal" href="_modules/src/knowledge/kg_builder.html#KGBuilder.close"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.knowledge.kg_builder.KGBuilder.close" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.knowledge.kg_builder.KGBuilder.import_combos">
+<em class="property"><span class="pre">async</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">import_combos</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">combos_json_path</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">int</span></span></span><a class="reference internal" href="_modules/src/knowledge/kg_builder.html#KGBuilder.import_combos"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.knowledge.kg_builder.KGBuilder.import_combos" title="Link to this definition">¶</a></dt>
+<dd><p>Import combos from a Commander Spellbook JSON dump.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.knowledge.kg_builder.KGBuilder.import_legalities">
+<em class="property"><span class="pre">async</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">import_legalities</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">bulk_json_path</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="reference internal" href="_modules/src/knowledge/kg_builder.html#KGBuilder.import_legalities"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.knowledge.kg_builder.KGBuilder.import_legalities" title="Link to this definition">¶</a></dt>
+<dd><p>Create LEGAL_IN / BANNED_IN edges from Scryfall legality data.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.knowledge.kg_builder.KGBuilder.import_scryfall_cards">
+<em class="property"><span class="pre">async</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">import_scryfall_cards</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">bulk_json_path</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">int</span></span></span><a class="reference internal" href="_modules/src/knowledge/kg_builder.html#KGBuilder.import_scryfall_cards"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.knowledge.kg_builder.KGBuilder.import_scryfall_cards" title="Link to this definition">¶</a></dt>
+<dd><p>Import cards from a Scryfall oracle-cards bulk JSON file.</p>
+<p>Each card becomes a (:Card) node with appropriate sub-labels
+(e.g., :Creature, :Instant) matching the OWL class hierarchy.</p>
+</dd></dl>
+
+</dd></dl>
+
+<p id="module-src.knowledge.knowledge_graph">Neo4j-backed MTG Knowledge Graph.</p>
+<p>All strategic knowledge lives in Neo4j, with:
+- n10s for OWL ontology schema (TBox)
+- APOC for graph algorithms (PageRank, community detection, path expansion)
+- Native vector indexes for semantic similarity search</p>
+<p>Reference: KGPlatform (MIT) — <a class="reference external" href="https://github.com/DataScienceLabFHSWF/KGPlatform">https://github.com/DataScienceLabFHSWF/KGPlatform</a></p>
+<dl class="py class">
+<dt class="sig sig-object py" id="src.knowledge.knowledge_graph.MTGKnowledgeGraph">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">src.knowledge.knowledge_graph.</span></span><span class="sig-name descname"><span class="pre">MTGKnowledgeGraph</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">uri</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'bolt://localhost:7687'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">user</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'neo4j'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">password</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'mtgpassword'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/src/knowledge/knowledge_graph.html#MTGKnowledgeGraph"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.knowledge.knowledge_graph.MTGKnowledgeGraph" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Neo4j-backed knowledge graph for MTG strategic reasoning.</p>
+<dl class="simple">
+<dt>Node labels (from OWL): Card, Creature, Instant, Sorcery, Enchantment,</dt><dd><p>Artifact, Planeswalker, Land, Combo, Archetype, Keyword, Effect, …</p>
+</dd>
+<dt>Relationship types (from OWL): PART_OF_COMBO, SYNERGIZES_WITH, COUNTERS,</dt><dd><p>ENABLES, HAS_KEYWORD, BELONGS_TO_ARCHETYPE, LEGAL_IN, …</p>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="src.knowledge.knowledge_graph.MTGKnowledgeGraph.add_synergy">
+<em class="property"><span class="pre">async</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">add_synergy</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">card_a</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">card_b</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">weight</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">1.0</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="reference internal" href="_modules/src/knowledge/knowledge_graph.html#MTGKnowledgeGraph.add_synergy"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.knowledge.knowledge_graph.MTGKnowledgeGraph.add_synergy" title="Link to this definition">¶</a></dt>
+<dd><p>Add or boost a SYNERGIZES_WITH relationship between two cards.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.knowledge.knowledge_graph.MTGKnowledgeGraph.close">
+<em class="property"><span class="pre">async</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">close</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="reference internal" href="_modules/src/knowledge/knowledge_graph.html#MTGKnowledgeGraph.close"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.knowledge.knowledge_graph.MTGKnowledgeGraph.close" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.knowledge.knowledge_graph.MTGKnowledgeGraph.detect_available_combos">
+<em class="property"><span class="pre">async</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">detect_available_combos</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">available_cards</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><span class="pre">dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="_modules/src/knowledge/knowledge_graph.html#MTGKnowledgeGraph.detect_available_combos"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.knowledge.knowledge_graph.MTGKnowledgeGraph.detect_available_combos" title="Link to this definition">¶</a></dt>
+<dd><p>Find combos where ALL pieces are in the available card list.</p>
+<p>Returns rich payloads identical in shape to
+<a class="reference internal" href="#src.knowledge.knowledge_graph.MTGKnowledgeGraph.get_combos_containing" title="src.knowledge.knowledge_graph.MTGKnowledgeGraph.get_combos_containing"><code class="xref py py-meth docutils literal notranslate"><span class="pre">get_combos_containing()</span></code></a> so callers can render names,
+outcome categories, and magnitudes uniformly.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.knowledge.knowledge_graph.MTGKnowledgeGraph.detect_near_combos">
+<em class="property"><span class="pre">async</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">detect_near_combos</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">available_cards</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><span class="pre">dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="_modules/src/knowledge/knowledge_graph.html#MTGKnowledgeGraph.detect_near_combos"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.knowledge.knowledge_graph.MTGKnowledgeGraph.detect_near_combos" title="Link to this definition">¶</a></dt>
+<dd><p>Find combos where all pieces except one are available.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.knowledge.knowledge_graph.MTGKnowledgeGraph.get_answers_to">
+<em class="property"><span class="pre">async</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">get_answers_to</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">card_name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><span class="pre">dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="_modules/src/knowledge/knowledge_graph.html#MTGKnowledgeGraph.get_answers_to"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.knowledge.knowledge_graph.MTGKnowledgeGraph.get_answers_to" title="Link to this definition">¶</a></dt>
+<dd><p>Find cards that counter/answer a given card.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.knowledge.knowledge_graph.MTGKnowledgeGraph.get_archetype_signature_cards">
+<em class="property"><span class="pre">async</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">get_archetype_signature_cards</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">archetype_name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><span class="pre">dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="_modules/src/knowledge/knowledge_graph.html#MTGKnowledgeGraph.get_archetype_signature_cards"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.knowledge.knowledge_graph.MTGKnowledgeGraph.get_archetype_signature_cards" title="Link to this definition">¶</a></dt>
+<dd><p>Get the signature/staple cards for an archetype.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.knowledge.knowledge_graph.MTGKnowledgeGraph.get_combos_by_outcome">
+<em class="property"><span class="pre">async</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">get_combos_by_outcome</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">category</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">magnitude</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">limit</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">50</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><span class="pre">dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="_modules/src/knowledge/knowledge_graph.html#MTGKnowledgeGraph.get_combos_by_outcome"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.knowledge.knowledge_graph.MTGKnowledgeGraph.get_combos_by_outcome" title="Link to this definition">¶</a></dt>
+<dd><p>Find all combos producing a given outcome category.</p>
+<p>Example:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="k">await</span> <span class="n">kg</span><span class="o">.</span><span class="n">get_combos_by_outcome</span><span class="p">(</span><span class="s2">&quot;mana&quot;</span><span class="p">,</span> <span class="n">magnitude</span><span class="o">=</span><span class="s2">&quot;infinite&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">magnitude</span></code> is one of <code class="docutils literal notranslate"><span class="pre">infinite</span></code> / <code class="docutils literal notranslate"><span class="pre">arbitrary</span></code> /
+<code class="docutils literal notranslate"><span class="pre">near_infinite</span></code> / <code class="docutils literal notranslate"><span class="pre">finite</span></code>; if <code class="docutils literal notranslate"><span class="pre">None</span></code> all magnitudes match.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.knowledge.knowledge_graph.MTGKnowledgeGraph.get_combos_containing">
+<em class="property"><span class="pre">async</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">get_combos_containing</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">card_name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><span class="pre">dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="_modules/src/knowledge/knowledge_graph.html#MTGKnowledgeGraph.get_combos_containing"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.knowledge.knowledge_graph.MTGKnowledgeGraph.get_combos_containing" title="Link to this definition">¶</a></dt>
+<dd><p>Find all combos that include a given card.</p>
+<p>Returns the structured combo data: <code class="docutils literal notranslate"><span class="pre">comboName</span></code> (joined card
+names), <code class="docutils literal notranslate"><span class="pre">pieces</span></code>, <code class="docutils literal notranslate"><span class="pre">outcomeCategories</span></code> / <code class="docutils literal notranslate"><span class="pre">outcomeMagnitudes</span></code>
+from the new ontology, plus a flat <code class="docutils literal notranslate"><span class="pre">outcomes</span></code> list with
+per-outcome (category, magnitude, displayName, feature) records.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.knowledge.knowledge_graph.MTGKnowledgeGraph.get_related_combos_by_outcome">
+<em class="property"><span class="pre">async</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">get_related_combos_by_outcome</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">combo_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">limit</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">25</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><span class="pre">dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="_modules/src/knowledge/knowledge_graph.html#MTGKnowledgeGraph.get_related_combos_by_outcome"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.knowledge.knowledge_graph.MTGKnowledgeGraph.get_related_combos_by_outcome" title="Link to this definition">¶</a></dt>
+<dd><p>Find combos sharing at least one outcome with <code class="docutils literal notranslate"><span class="pre">combo_id</span></code>.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.knowledge.knowledge_graph.MTGKnowledgeGraph.get_strategic_context">
+<em class="property"><span class="pre">async</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">get_strategic_context</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">hand</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">battlefield</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">opponent_cards</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="_modules/src/knowledge/knowledge_graph.html#MTGKnowledgeGraph.get_strategic_context"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.knowledge.knowledge_graph.MTGKnowledgeGraph.get_strategic_context" title="Link to this definition">¶</a></dt>
+<dd><p>Get full strategic context for agent decision-making.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.knowledge.knowledge_graph.MTGKnowledgeGraph.get_synergies_for">
+<em class="property"><span class="pre">async</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">get_synergies_for</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">card_name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><span class="pre">dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="_modules/src/knowledge/knowledge_graph.html#MTGKnowledgeGraph.get_synergies_for"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.knowledge.knowledge_graph.MTGKnowledgeGraph.get_synergies_for" title="Link to this definition">¶</a></dt>
+<dd><p>Find cards that synergize with a given card.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.knowledge.knowledge_graph.MTGKnowledgeGraph.infer_archetype_from_cards">
+<em class="property"><span class="pre">async</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">infer_archetype_from_cards</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">cards_seen</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><span class="pre">dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="_modules/src/knowledge/knowledge_graph.html#MTGKnowledgeGraph.infer_archetype_from_cards"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.knowledge.knowledge_graph.MTGKnowledgeGraph.infer_archetype_from_cards" title="Link to this definition">¶</a></dt>
+<dd><p>Given cards observed, rank likely archetypes.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.knowledge.knowledge_graph.MTGKnowledgeGraph.list_outcome_categories">
+<em class="property"><span class="pre">async</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">list_outcome_categories</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><span class="pre">dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="_modules/src/knowledge/knowledge_graph.html#MTGKnowledgeGraph.list_outcome_categories"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.knowledge.knowledge_graph.MTGKnowledgeGraph.list_outcome_categories" title="Link to this definition">¶</a></dt>
+<dd><p>Inventory all outcome buckets and how many combos they cover.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.knowledge.knowledge_graph.MTGKnowledgeGraph.subgraph_context">
+<em class="property"><span class="pre">async</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">subgraph_context</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">card_name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">depth</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">2</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="_modules/src/knowledge/knowledge_graph.html#MTGKnowledgeGraph.subgraph_context"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.knowledge.knowledge_graph.MTGKnowledgeGraph.subgraph_context" title="Link to this definition">¶</a></dt>
+<dd><p>APOC subgraph expansion — get strategic context around a card.</p>
+<p>Returns the local neighborhood: combos, synergies, counters, archetypes
+within <cite>depth</cite> hops.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.knowledge.knowledge_graph.MTGKnowledgeGraph.update_card_stats">
+<em class="property"><span class="pre">async</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">update_card_stats</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">card_name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">won</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="reference internal" href="_modules/src/knowledge/knowledge_graph.html#MTGKnowledgeGraph.update_card_stats"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.knowledge.knowledge_graph.MTGKnowledgeGraph.update_card_stats" title="Link to this definition">¶</a></dt>
+<dd><p>Update win/loss statistics for a card.</p>
+</dd></dl>
+
+</dd></dl>
+
+<p id="module-src.knowledge.combo_database">Combo data fetchers.</p>
+<p>Primary source: Commander Spellbook (<a class="reference external" href="https://commanderspellbook.com/">https://commanderspellbook.com/</a>).
+Supplemental: EDHREC commander combo pages (<a class="reference external" href="https://json.edhrec.com/">https://json.edhrec.com/</a>).</p>
+<dl class="simple">
+<dt>Both fetchers are deliberately polite:</dt><dd><ul class="simple">
+<li><p>fixed base delay between successful requests</p></li>
+<li><p>full-jitter exponential backoff on 429 / 5xx</p></li>
+<li><p>honours <code class="docutils literal notranslate"><span class="pre">Retry-After</span></code></p></li>
+<li><p>incremental persistence so a network blip never loses progress</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py function">
+<dt class="sig sig-object py" id="src.knowledge.combo_database.fetch_all_combos">
+<em class="property"><span class="k"><span class="pre">async</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">src.knowledge.combo_database.</span></span><span class="sig-name descname"><span class="pre">fetch_all_combos</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">output_path</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'data/combos.json'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">page_size</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">100</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">save_every</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">10</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_retries</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">8</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">base_delay</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">1.0</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">int</span></span></span><a class="reference internal" href="_modules/src/knowledge/combo_database.html#fetch_all_combos"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.knowledge.combo_database.fetch_all_combos" title="Link to this definition">¶</a></dt>
+<dd><p>Download the full combo database from Commander Spellbook.</p>
+<p>Persists incrementally so a 429 / network blip never loses progress.
+Reuses an existing <code class="docutils literal notranslate"><span class="pre">output_path</span></code> file iff it parses as a non-empty
+JSON list (delete the file to force a refresh).</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="src.knowledge.combo_database.fetch_combos_merged">
+<em class="property"><span class="k"><span class="pre">async</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">src.knowledge.combo_database.</span></span><span class="sig-name descname"><span class="pre">fetch_combos_merged</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">spellbook_path</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'data/combos.json'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">edhrec_path</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'data/combos_edhrec.json'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">merged_path</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'data/combos_merged.json'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">use_edhrec</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">int</span></span></span><a class="reference internal" href="_modules/src/knowledge/combo_database.html#fetch_combos_merged"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.knowledge.combo_database.fetch_combos_merged" title="Link to this definition">¶</a></dt>
+<dd><p>Convenience: fetch both sources and write a merged file.</p>
+<p>Spellbook entries are kept verbatim; EDHREC entries are appended only
+if their card-set isn’t already covered by a Spellbook entry.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="src.knowledge.combo_database.fetch_edhrec_combos">
+<em class="property"><span class="k"><span class="pre">async</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">src.knowledge.combo_database.</span></span><span class="sig-name descname"><span class="pre">fetch_edhrec_combos</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">output_path</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'data/combos_edhrec.json'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_retries</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">8</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">base_delay</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">1.0</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">int</span></span></span><a class="reference internal" href="_modules/src/knowledge/combo_database.html#fetch_edhrec_combos"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.knowledge.combo_database.fetch_edhrec_combos" title="Link to this definition">¶</a></dt>
+<dd><p>Fetch the global EDHREC combos page.</p>
+<p>EDHREC exposes a JSON mirror of its rendered pages at
+<code class="docutils literal notranslate"><span class="pre">https://json.edhrec.com/pages/&lt;slug&gt;.json</span></code>.  The combos index lives
+at <code class="docutils literal notranslate"><span class="pre">/pages/combos.json</span></code> and contains a <code class="docutils literal notranslate"><span class="pre">cardlists</span></code> payload of the
+most-played commander combos, each with a <code class="docutils literal notranslate"><span class="pre">cards</span></code> field of card
+names.  This is <em>not</em> exhaustive (Spellbook is the canonical source)
+but it captures the popular / metagame-relevant combos and gives a
+fallback when Spellbook is rate-limited or down.</p>
+<p>Output schema is intentionally compatible with our combo importer:
+a list of <code class="docutils literal notranslate"><span class="pre">{&quot;uses&quot;:</span> <span class="pre">[{&quot;card&quot;:</span> <span class="pre">{&quot;name&quot;:</span> <span class="pre">str}},</span> <span class="pre">...],</span> <span class="pre">&quot;results&quot;:</span> <span class="pre">[...],</span>
+<span class="pre">&quot;source&quot;:</span> <span class="pre">&quot;edhrec&quot;}</span></code> records.</p>
+</dd></dl>
+
+</section>
+
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="index.html">opposition-agents-playing-mtg</a></h1>
+
+
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+<p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="repository_map.html">Repository Map</a></li>
+<li class="toctree-l1"><a class="reference internal" href="components.html">Components</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="api.html">API Reference</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="api_agents.html">Agents API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api_engine.html">Engine API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api_orchestrator.html">Orchestrator API</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Knowledge API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api_world_model.html">World Model API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api_training.html">Training API</a></li>
+</ul>
+</li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="index.html">Documentation overview</a><ul>
+  <li><a href="api.html">API Reference</a><ul>
+      <li>Previous: <a href="api_orchestrator.html" title="previous chapter">Orchestrator API</a></li>
+      <li>Next: <a href="api_world_model.html" title="next chapter">World Model API</a></li>
+  </ul></li>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &#169;2026, Data Science Lab FHSWF.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 8.1.3</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+      |
+      <a href="_sources/api_knowledge.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>

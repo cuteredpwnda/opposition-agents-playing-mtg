@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../../../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>src.knowledge.knowledge_graph &#8212; opposition-agents-playing-mtg  documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/basic.css?v=686e5160" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/alabaster.css?v=27fed22d" />
+    <script src="../../../_static/documentation_options.js?v=5929fcd5"></script>
+    <script src="../../../_static/doctools.js?v=9bcbadda"></script>
+    <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+   
+  <link rel="stylesheet" href="../../../_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <h1>Source code for src.knowledge.knowledge_graph</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Neo4j-backed MTG Knowledge Graph.</span>
+
+<span class="sd">All strategic knowledge lives in Neo4j, with:</span>
+<span class="sd">- n10s for OWL ontology schema (TBox)</span>
+<span class="sd">- APOC for graph algorithms (PageRank, community detection, path expansion)</span>
+<span class="sd">- Native vector indexes for semantic similarity search</span>
+
+<span class="sd">Reference: KGPlatform (MIT) — https://github.com/DataScienceLabFHSWF/KGPlatform</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">neo4j</span><span class="w"> </span><span class="kn">import</span> <span class="n">AsyncGraphDatabase</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.config</span><span class="w"> </span><span class="kn">import</span> <span class="n">settings</span>
+
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="MTGKnowledgeGraph">
+<a class="viewcode-back" href="../../../api_knowledge.html#src.knowledge.knowledge_graph.MTGKnowledgeGraph">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">MTGKnowledgeGraph</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Neo4j-backed knowledge graph for MTG strategic reasoning.</span>
+
+<span class="sd">    Node labels (from OWL): Card, Creature, Instant, Sorcery, Enchantment,</span>
+<span class="sd">        Artifact, Planeswalker, Land, Combo, Archetype, Keyword, Effect, ...</span>
+<span class="sd">    Relationship types (from OWL): PART_OF_COMBO, SYNERGIZES_WITH, COUNTERS,</span>
+<span class="sd">        ENABLES, HAS_KEYWORD, BELONGS_TO_ARCHETYPE, LEGAL_IN, ...</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">uri</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">settings</span><span class="o">.</span><span class="n">neo4j_uri</span><span class="p">,</span>
+        <span class="n">user</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">settings</span><span class="o">.</span><span class="n">neo4j_user</span><span class="p">,</span>
+        <span class="n">password</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">settings</span><span class="o">.</span><span class="n">neo4j_password</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">driver</span> <span class="o">=</span> <span class="n">AsyncGraphDatabase</span><span class="o">.</span><span class="n">driver</span><span class="p">(</span><span class="n">uri</span><span class="p">,</span> <span class="n">auth</span><span class="o">=</span><span class="p">(</span><span class="n">user</span><span class="p">,</span> <span class="n">password</span><span class="p">))</span>
+
+<div class="viewcode-block" id="MTGKnowledgeGraph.close">
+<a class="viewcode-back" href="../../../api_knowledge.html#src.knowledge.knowledge_graph.MTGKnowledgeGraph.close">[docs]</a>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">close</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">driver</span><span class="o">.</span><span class="n">close</span><span class="p">()</span></div>
+
+
+    <span class="c1"># -----------------------------------------------------------------------</span>
+    <span class="c1"># Combo queries</span>
+    <span class="c1"># -----------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="MTGKnowledgeGraph.get_combos_containing">
+<a class="viewcode-back" href="../../../api_knowledge.html#src.knowledge.knowledge_graph.MTGKnowledgeGraph.get_combos_containing">[docs]</a>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">get_combos_containing</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">card_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Find all combos that include a given card.</span>
+
+<span class="sd">        Returns the structured combo data: ``comboName`` (joined card</span>
+<span class="sd">        names), ``pieces``, ``outcomeCategories`` / ``outcomeMagnitudes``</span>
+<span class="sd">        from the new ontology, plus a flat ``outcomes`` list with</span>
+<span class="sd">        per-outcome (category, magnitude, displayName, feature) records.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">query</span> <span class="o">=</span> <span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">        MATCH (c:Card {cardName: $card_name})-[:PART_OF_COMBO]-&gt;(combo:Combo)</span>
+<span class="s2">        OPTIONAL MATCH (combo)&lt;-[:PART_OF_COMBO]-(piece:Card)</span>
+<span class="s2">        OPTIONAL MATCH (combo)-[r:PRODUCES]-&gt;(o:Outcome)</span>
+<span class="s2">        RETURN combo.comboId AS comboId,</span>
+<span class="s2">               combo.comboName AS comboName,</span>
+<span class="s2">               combo.comboDescription AS description,</span>
+<span class="s2">               combo.outcomeCategories AS outcomeCategories,</span>
+<span class="s2">               combo.outcomeMagnitudes AS outcomeMagnitudes,</span>
+<span class="s2">               combo.cardCount AS cardCount,</span>
+<span class="s2">               collect(DISTINCT piece.cardName) AS pieces,</span>
+<span class="s2">               collect(DISTINCT {</span>
+<span class="s2">                   category: o.category,</span>
+<span class="s2">                   magnitude: o.magnitude,</span>
+<span class="s2">                   displayName: o.displayName,</span>
+<span class="s2">                   feature: r.feature</span>
+<span class="s2">               }) AS outcomes</span>
+<span class="s2">        ORDER BY combo.cardCount ASC</span>
+<span class="s2">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_run_query</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">card_name</span><span class="o">=</span><span class="n">card_name</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="MTGKnowledgeGraph.detect_available_combos">
+<a class="viewcode-back" href="../../../api_knowledge.html#src.knowledge.knowledge_graph.MTGKnowledgeGraph.detect_available_combos">[docs]</a>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">detect_available_combos</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">available_cards</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Find combos where ALL pieces are in the available card list.</span>
+
+<span class="sd">        Returns rich payloads identical in shape to</span>
+<span class="sd">        :meth:`get_combos_containing` so callers can render names,</span>
+<span class="sd">        outcome categories, and magnitudes uniformly.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">available_cards</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">[]</span>
+        <span class="n">query</span> <span class="o">=</span> <span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">        MATCH (combo:Combo)</span>
+<span class="s2">        WITH combo, [(combo)&lt;-[:PART_OF_COMBO]-(c:Card) | c.cardName] AS pieces</span>
+<span class="s2">        WHERE size(pieces) &gt; 0 AND ALL(piece IN pieces WHERE piece IN $available)</span>
+<span class="s2">        OPTIONAL MATCH (combo)-[r:PRODUCES]-&gt;(o:Outcome)</span>
+<span class="s2">        RETURN combo.comboId AS comboId,</span>
+<span class="s2">               combo.comboName AS comboName,</span>
+<span class="s2">               combo.comboDescription AS description,</span>
+<span class="s2">               combo.outcomeCategories AS outcomeCategories,</span>
+<span class="s2">               combo.outcomeMagnitudes AS outcomeMagnitudes,</span>
+<span class="s2">               combo.cardCount AS cardCount,</span>
+<span class="s2">               pieces,</span>
+<span class="s2">               collect(DISTINCT {</span>
+<span class="s2">                   category: o.category,</span>
+<span class="s2">                   magnitude: o.magnitude,</span>
+<span class="s2">                   displayName: o.displayName,</span>
+<span class="s2">                   feature: r.feature</span>
+<span class="s2">               }) AS outcomes</span>
+<span class="s2">        ORDER BY combo.cardCount ASC</span>
+<span class="s2">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_run_query</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">available</span><span class="o">=</span><span class="n">available_cards</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="MTGKnowledgeGraph.detect_near_combos">
+<a class="viewcode-back" href="../../../api_knowledge.html#src.knowledge.knowledge_graph.MTGKnowledgeGraph.detect_near_combos">[docs]</a>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">detect_near_combos</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">available_cards</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Find combos where all pieces except one are available.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">available_cards</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">[]</span>
+        <span class="n">query</span> <span class="o">=</span> <span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">        MATCH (combo:Combo)</span>
+<span class="s2">        WITH combo, [(combo)&lt;-[:PART_OF_COMBO]-(c:Card) | c.cardName] AS pieces</span>
+<span class="s2">        WITH combo, pieces,</span>
+<span class="s2">             [p IN pieces WHERE NOT p IN $available] AS missing</span>
+<span class="s2">        WHERE size(pieces) &gt; 1 AND size(missing) = 1</span>
+<span class="s2">        OPTIONAL MATCH (combo)-[r:PRODUCES]-&gt;(o:Outcome)</span>
+<span class="s2">        RETURN combo.comboId AS comboId,</span>
+<span class="s2">               combo.comboName AS comboName,</span>
+<span class="s2">               combo.comboDescription AS description,</span>
+<span class="s2">               combo.outcomeCategories AS outcomeCategories,</span>
+<span class="s2">               combo.outcomeMagnitudes AS outcomeMagnitudes,</span>
+<span class="s2">               combo.cardCount AS cardCount,</span>
+<span class="s2">               pieces,</span>
+<span class="s2">               missing[0] AS missingPiece,</span>
+<span class="s2">               collect(DISTINCT {</span>
+<span class="s2">                   category: o.category,</span>
+<span class="s2">                   magnitude: o.magnitude,</span>
+<span class="s2">                   displayName: o.displayName,</span>
+<span class="s2">                   feature: r.feature</span>
+<span class="s2">               }) AS outcomes</span>
+<span class="s2">        ORDER BY combo.cardCount ASC</span>
+<span class="s2">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_run_query</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">available</span><span class="o">=</span><span class="n">available_cards</span><span class="p">)</span></div>
+
+
+    <span class="c1"># -----------------------------------------------------------------------</span>
+    <span class="c1"># Outcome-driven combo queries (new ontology)</span>
+    <span class="c1"># -----------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="MTGKnowledgeGraph.get_combos_by_outcome">
+<a class="viewcode-back" href="../../../api_knowledge.html#src.knowledge.knowledge_graph.MTGKnowledgeGraph.get_combos_by_outcome">[docs]</a>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">get_combos_by_outcome</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">category</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">magnitude</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">limit</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">50</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Find all combos producing a given outcome category.</span>
+
+<span class="sd">        Example::</span>
+
+<span class="sd">            await kg.get_combos_by_outcome(&quot;mana&quot;, magnitude=&quot;infinite&quot;)</span>
+
+<span class="sd">        ``magnitude`` is one of ``infinite`` / ``arbitrary`` /</span>
+<span class="sd">        ``near_infinite`` / ``finite``; if ``None`` all magnitudes match.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">query</span> <span class="o">=</span> <span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">        MATCH (combo:Combo)-[:PRODUCES]-&gt;(o:Outcome)</span>
+<span class="s2">        WHERE o.category = $category</span>
+<span class="s2">          AND ($magnitude IS NULL OR o.magnitude = $magnitude)</span>
+<span class="s2">        WITH combo, o</span>
+<span class="s2">        OPTIONAL MATCH (combo)&lt;-[:PART_OF_COMBO]-(c:Card)</span>
+<span class="s2">        RETURN combo.comboId AS comboId,</span>
+<span class="s2">               combo.comboName AS comboName,</span>
+<span class="s2">               combo.cardCount AS cardCount,</span>
+<span class="s2">               o.displayName AS outcomeName,</span>
+<span class="s2">               o.category AS category,</span>
+<span class="s2">               o.magnitude AS magnitude,</span>
+<span class="s2">               collect(DISTINCT c.cardName) AS pieces</span>
+<span class="s2">        ORDER BY combo.cardCount ASC</span>
+<span class="s2">        LIMIT $limit</span>
+<span class="s2">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_run_query</span><span class="p">(</span>
+            <span class="n">query</span><span class="p">,</span> <span class="n">category</span><span class="o">=</span><span class="n">category</span><span class="p">,</span> <span class="n">magnitude</span><span class="o">=</span><span class="n">magnitude</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="n">limit</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="MTGKnowledgeGraph.get_related_combos_by_outcome">
+<a class="viewcode-back" href="../../../api_knowledge.html#src.knowledge.knowledge_graph.MTGKnowledgeGraph.get_related_combos_by_outcome">[docs]</a>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">get_related_combos_by_outcome</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">combo_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">limit</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">25</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Find combos sharing at least one outcome with ``combo_id``.&quot;&quot;&quot;</span>
+        <span class="n">query</span> <span class="o">=</span> <span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">        MATCH (src:Combo {comboId: $combo_id})-[:PRODUCES]-&gt;(o:Outcome)</span>
+<span class="s2">              &lt;-[:PRODUCES]-(other:Combo)</span>
+<span class="s2">        WHERE other.comboId &lt;&gt; $combo_id</span>
+<span class="s2">        WITH other, collect(DISTINCT o.displayName) AS sharedOutcomes</span>
+<span class="s2">        OPTIONAL MATCH (other)&lt;-[:PART_OF_COMBO]-(c:Card)</span>
+<span class="s2">        RETURN other.comboId AS comboId,</span>
+<span class="s2">               other.comboName AS comboName,</span>
+<span class="s2">               other.cardCount AS cardCount,</span>
+<span class="s2">               sharedOutcomes,</span>
+<span class="s2">               collect(DISTINCT c.cardName) AS pieces</span>
+<span class="s2">        ORDER BY size(sharedOutcomes) DESC, other.cardCount ASC</span>
+<span class="s2">        LIMIT $limit</span>
+<span class="s2">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_run_query</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">combo_id</span><span class="o">=</span><span class="n">combo_id</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="n">limit</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="MTGKnowledgeGraph.list_outcome_categories">
+<a class="viewcode-back" href="../../../api_knowledge.html#src.knowledge.knowledge_graph.MTGKnowledgeGraph.list_outcome_categories">[docs]</a>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">list_outcome_categories</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Inventory all outcome buckets and how many combos they cover.&quot;&quot;&quot;</span>
+        <span class="n">query</span> <span class="o">=</span> <span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">        MATCH (combo:Combo)-[:PRODUCES]-&gt;(o:Outcome)</span>
+<span class="s2">        RETURN o.outcomeId AS outcomeId,</span>
+<span class="s2">               o.category AS category,</span>
+<span class="s2">               o.magnitude AS magnitude,</span>
+<span class="s2">               o.displayName AS displayName,</span>
+<span class="s2">               count(DISTINCT combo) AS comboCount</span>
+<span class="s2">        ORDER BY comboCount DESC</span>
+<span class="s2">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_run_query</span><span class="p">(</span><span class="n">query</span><span class="p">)</span></div>
+
+
+    <span class="c1"># -----------------------------------------------------------------------</span>
+    <span class="c1"># Synergy &amp; counter-play queries</span>
+    <span class="c1"># -----------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="MTGKnowledgeGraph.get_synergies_for">
+<a class="viewcode-back" href="../../../api_knowledge.html#src.knowledge.knowledge_graph.MTGKnowledgeGraph.get_synergies_for">[docs]</a>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">get_synergies_for</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">card_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Find cards that synergize with a given card.&quot;&quot;&quot;</span>
+        <span class="n">query</span> <span class="o">=</span> <span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">        MATCH (c:Card {cardName: $card_name})-[s:SYNERGIZES_WITH]-(other:Card)</span>
+<span class="s2">        RETURN other.cardName AS card,</span>
+<span class="s2">               s.strength AS strength,</span>
+<span class="s2">               s.description AS description</span>
+<span class="s2">        ORDER BY s.strength DESC</span>
+<span class="s2">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_run_query</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">card_name</span><span class="o">=</span><span class="n">card_name</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="MTGKnowledgeGraph.get_answers_to">
+<a class="viewcode-back" href="../../../api_knowledge.html#src.knowledge.knowledge_graph.MTGKnowledgeGraph.get_answers_to">[docs]</a>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">get_answers_to</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">card_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Find cards that counter/answer a given card.&quot;&quot;&quot;</span>
+        <span class="n">query</span> <span class="o">=</span> <span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">        MATCH (answer:Card)-[:COUNTERS]-&gt;(threat:Card {cardName: $card_name})</span>
+<span class="s2">        OPTIONAL MATCH (answer)-[:LEGAL_IN]-&gt;(f:Format)</span>
+<span class="s2">        RETURN answer.cardName AS card,</span>
+<span class="s2">               answer.manaCostText AS cost,</span>
+<span class="s2">               answer.typeLine AS type,</span>
+<span class="s2">               collect(DISTINCT f.name) AS formats</span>
+<span class="s2">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_run_query</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">card_name</span><span class="o">=</span><span class="n">card_name</span><span class="p">)</span></div>
+
+
+    <span class="c1"># -----------------------------------------------------------------------</span>
+    <span class="c1"># Archetype queries</span>
+    <span class="c1"># -----------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="MTGKnowledgeGraph.infer_archetype_from_cards">
+<a class="viewcode-back" href="../../../api_knowledge.html#src.knowledge.knowledge_graph.MTGKnowledgeGraph.infer_archetype_from_cards">[docs]</a>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">infer_archetype_from_cards</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">cards_seen</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Given cards observed, rank likely archetypes.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">cards_seen</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">[]</span>
+        <span class="n">query</span> <span class="o">=</span> <span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">        UNWIND $cards AS cardName</span>
+<span class="s2">        MATCH (c:Card {cardName: cardName})-[:BELONGS_TO_ARCHETYPE]-&gt;(a:Archetype)</span>
+<span class="s2">        WITH a, count(DISTINCT cardName) AS matchCount</span>
+<span class="s2">        RETURN a.name AS archetype,</span>
+<span class="s2">               matchCount,</span>
+<span class="s2">               toFloat(matchCount) / size($cards) AS confidence</span>
+<span class="s2">        ORDER BY confidence DESC</span>
+<span class="s2">        LIMIT 5</span>
+<span class="s2">        &quot;&quot;&quot;</span>
+        <span class="n">results</span> <span class="o">=</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_run_query</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">cards</span><span class="o">=</span><span class="n">cards_seen</span><span class="p">)</span>
+        <span class="c1"># If no archetype matches, return empty list</span>
+        <span class="k">return</span> <span class="n">results</span> <span class="k">if</span> <span class="n">results</span> <span class="k">else</span> <span class="p">[]</span></div>
+
+
+<div class="viewcode-block" id="MTGKnowledgeGraph.get_archetype_signature_cards">
+<a class="viewcode-back" href="../../../api_knowledge.html#src.knowledge.knowledge_graph.MTGKnowledgeGraph.get_archetype_signature_cards">[docs]</a>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">get_archetype_signature_cards</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">archetype_name</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get the signature/staple cards for an archetype.&quot;&quot;&quot;</span>
+        <span class="n">query</span> <span class="o">=</span> <span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">        MATCH (a:Archetype {name: $name})&lt;-[:BELONGS_TO_ARCHETYPE]-(c:Card)</span>
+<span class="s2">        RETURN c.cardName AS card, c.manaCostText AS cost, c.typeLine AS type</span>
+<span class="s2">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_run_query</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="n">archetype_name</span><span class="p">)</span></div>
+
+
+    <span class="c1"># -----------------------------------------------------------------------</span>
+    <span class="c1"># APOC-powered graph exploration</span>
+    <span class="c1"># -----------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="MTGKnowledgeGraph.subgraph_context">
+<a class="viewcode-back" href="../../../api_knowledge.html#src.knowledge.knowledge_graph.MTGKnowledgeGraph.subgraph_context">[docs]</a>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">subgraph_context</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">card_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">depth</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">2</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;APOC subgraph expansion — get strategic context around a card.</span>
+
+<span class="sd">        Returns the local neighborhood: combos, synergies, counters, archetypes</span>
+<span class="sd">        within `depth` hops.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">query</span> <span class="o">=</span> <span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">        MATCH (start:Card {cardName: $card_name})</span>
+<span class="s2">        CALL apoc.path.subgraphAll(start, {</span>
+<span class="s2">          maxLevel: $depth,</span>
+<span class="s2">          relationshipFilter:</span>
+<span class="s2">            &#39;PART_OF_COMBO|SYNERGIZES_WITH|COUNTERS|ENABLES|BELONGS_TO_ARCHETYPE|HAS_KEYWORD&#39;</span>
+<span class="s2">        }) YIELD nodes, relationships</span>
+<span class="s2">        RETURN</span>
+<span class="s2">          [n IN nodes |</span>
+<span class="s2">            labels(n)[0] + &#39;: &#39; + coalesce(n.cardName, n.name, n.comboDescription, &#39;&#39;)</span>
+<span class="s2">          ] AS entities,</span>
+<span class="s2">          [r IN relationships | type(r)] AS edge_types</span>
+<span class="s2">        &quot;&quot;&quot;</span>
+        <span class="n">results</span> <span class="o">=</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_run_query</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">card_name</span><span class="o">=</span><span class="n">card_name</span><span class="p">,</span> <span class="n">depth</span><span class="o">=</span><span class="n">depth</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">results</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="n">results</span> <span class="k">else</span> <span class="p">{}</span></div>
+
+
+    <span class="c1"># -----------------------------------------------------------------------</span>
+    <span class="c1"># Composite strategic context (used by agents)</span>
+    <span class="c1"># -----------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="MTGKnowledgeGraph.get_strategic_context">
+<a class="viewcode-back" href="../../../api_knowledge.html#src.knowledge.knowledge_graph.MTGKnowledgeGraph.get_strategic_context">[docs]</a>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">get_strategic_context</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">hand</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+        <span class="n">battlefield</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+        <span class="n">opponent_cards</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get full strategic context for agent decision-making.&quot;&quot;&quot;</span>
+        <span class="n">available</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">hand</span> <span class="o">+</span> <span class="n">battlefield</span><span class="p">))</span>
+        <span class="n">combos</span> <span class="o">=</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">detect_available_combos</span><span class="p">(</span><span class="n">available</span><span class="p">)</span>
+        <span class="n">near</span> <span class="o">=</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">detect_near_combos</span><span class="p">(</span><span class="n">available</span><span class="p">)</span>
+
+        <span class="n">threats</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">card</span> <span class="ow">in</span> <span class="n">opponent_cards</span><span class="p">[:</span><span class="mi">5</span><span class="p">]:</span>  <span class="c1"># Limit to 5 opponent cards for perf</span>
+            <span class="n">answers</span> <span class="o">=</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_answers_to</span><span class="p">(</span><span class="n">card</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">answers</span><span class="p">:</span>
+                <span class="n">threats</span><span class="o">.</span><span class="n">append</span><span class="p">({</span><span class="s2">&quot;threat&quot;</span><span class="p">:</span> <span class="n">card</span><span class="p">,</span> <span class="s2">&quot;answers&quot;</span><span class="p">:</span> <span class="n">answers</span><span class="p">[:</span><span class="mi">3</span><span class="p">]})</span>
+
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s2">&quot;available_combos&quot;</span><span class="p">:</span> <span class="n">combos</span><span class="p">[:</span><span class="mi">10</span><span class="p">],</span>
+            <span class="s2">&quot;near_combos&quot;</span><span class="p">:</span> <span class="n">near</span><span class="p">[:</span><span class="mi">10</span><span class="p">],</span>
+            <span class="s2">&quot;threat_answers&quot;</span><span class="p">:</span> <span class="n">threats</span><span class="p">,</span>
+        <span class="p">}</span></div>
+
+
+    <span class="c1"># -----------------------------------------------------------------------</span>
+    <span class="c1"># Auto-enrichment support (from self-play)</span>
+    <span class="c1"># -----------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="MTGKnowledgeGraph.add_synergy">
+<a class="viewcode-back" href="../../../api_knowledge.html#src.knowledge.knowledge_graph.MTGKnowledgeGraph.add_synergy">[docs]</a>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">add_synergy</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">card_a</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">card_b</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">weight</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1.0</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Add or boost a SYNERGIZES_WITH relationship between two cards.&quot;&quot;&quot;</span>
+        <span class="n">query</span> <span class="o">=</span> <span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">        MERGE (a:Card {cardName: $card_a})</span>
+<span class="s2">        MERGE (b:Card {cardName: $card_b})</span>
+<span class="s2">        MERGE (a)-[r:SYNERGIZES_WITH]-(b)</span>
+<span class="s2">        ON CREATE SET r.strength = $weight</span>
+<span class="s2">        ON MATCH SET r.strength = coalesce(r.strength, 0.0) + $weight</span>
+<span class="s2">        &quot;&quot;&quot;</span>
+        <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_run_query</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">card_a</span><span class="o">=</span><span class="n">card_a</span><span class="p">,</span> <span class="n">card_b</span><span class="o">=</span><span class="n">card_b</span><span class="p">,</span> <span class="n">weight</span><span class="o">=</span><span class="n">weight</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="MTGKnowledgeGraph.update_card_stats">
+<a class="viewcode-back" href="../../../api_knowledge.html#src.knowledge.knowledge_graph.MTGKnowledgeGraph.update_card_stats">[docs]</a>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">update_card_stats</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">card_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">won</span><span class="p">:</span> <span class="nb">bool</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Update win/loss statistics for a card.&quot;&quot;&quot;</span>
+        <span class="n">query</span> <span class="o">=</span> <span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">        MERGE (c:Card {cardName: $card_name})</span>
+<span class="s2">        SET c.gamesPlayed = coalesce(c.gamesPlayed, 0) + 1,</span>
+<span class="s2">            c.gamesWon = coalesce(c.gamesWon, 0) + CASE WHEN $won THEN 1 ELSE 0 END,</span>
+<span class="s2">            c.winRate = toFloat(coalesce(c.gamesWon, 0)) / coalesce(c.gamesPlayed, 1)</span>
+<span class="s2">        &quot;&quot;&quot;</span>
+        <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_run_query</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">card_name</span><span class="o">=</span><span class="n">card_name</span><span class="p">,</span> <span class="n">won</span><span class="o">=</span><span class="n">won</span><span class="p">)</span></div>
+
+
+    <span class="c1"># -----------------------------------------------------------------------</span>
+    <span class="c1"># Internal</span>
+    <span class="c1"># -----------------------------------------------------------------------</span>
+
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">_run_query</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">query</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="o">**</span><span class="n">params</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+        <span class="k">async</span> <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">driver</span><span class="o">.</span><span class="n">session</span><span class="p">()</span> <span class="k">as</span> <span class="n">session</span><span class="p">:</span>
+            <span class="n">result</span> <span class="o">=</span> <span class="k">await</span> <span class="n">session</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="o">**</span><span class="n">params</span><span class="p">)</span>
+            <span class="k">return</span> <span class="p">[</span><span class="nb">dict</span><span class="p">(</span><span class="n">record</span><span class="p">)</span> <span class="k">async</span> <span class="k">for</span> <span class="n">record</span> <span class="ow">in</span> <span class="n">result</span><span class="p">]</span></div>
+
+</pre></div>
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="../../../index.html">opposition-agents-playing-mtg</a></h1>
+
+
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="../../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+<p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../repository_map.html">Repository Map</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../components.html">Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api.html">API Reference</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="../../../index.html">Documentation overview</a><ul>
+  <li><a href="../../index.html">Module code</a><ul>
+  </ul></li>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &#169;2026, Data Science Lab FHSWF.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 8.1.3</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+    </div>
+
+    
+
+    
+  </body>
+</html>

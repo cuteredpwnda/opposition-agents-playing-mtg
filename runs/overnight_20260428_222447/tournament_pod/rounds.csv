@@ -1,0 +1,8 @@
+round,game,seating,winner_agent,turns,elapsed_sec,log_path,error
+1,1,"[""llm_fusion"", ""heuristic"", ""random"", ""kg_heuristic""]",,0,248.22,runs\overnight_20260428_222447\tournament_pod\logs\game_0001.log,list index out of range
+2,2,"[""heuristic"", ""kg_heuristic"", ""llm_fusion"", ""random""]",,0,3110.98,runs\overnight_20260428_222447\tournament_pod\logs\game_0002.log,list index out of range
+3,3,"[""heuristic"", ""random"", ""llm_fusion"", ""kg_heuristic""]",random,18,410.31,runs\overnight_20260428_222447\tournament_pod\logs\game_0003.log,
+4,4,"[""llm_fusion"", ""kg_heuristic"", ""random"", ""heuristic""]",kg_heuristic,31,355.81,runs\overnight_20260428_222447\tournament_pod\logs\game_0004.log,
+5,5,"[""kg_heuristic"", ""random"", ""heuristic"", ""llm_fusion""]",llm_fusion,27,551.85,runs\overnight_20260428_222447\tournament_pod\logs\game_0005.log,
+6,6,"[""kg_heuristic"", ""llm_fusion"", ""random"", ""heuristic""]",random,13,414.64,runs\overnight_20260428_222447\tournament_pod\logs\game_0006.log,
+7,7,"[""heuristic"", ""llm_fusion"", ""kg_heuristic"", ""random""]",kg_heuristic,39,5636.15,runs\overnight_20260428_222447\tournament_pod\logs\game_0007.log,

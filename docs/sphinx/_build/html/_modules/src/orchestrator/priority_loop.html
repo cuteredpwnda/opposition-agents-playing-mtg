@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../../../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>src.orchestrator.priority_loop &#8212; opposition-agents-playing-mtg  documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/basic.css?v=686e5160" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/alabaster.css?v=27fed22d" />
+    <script src="../../../_static/documentation_options.js?v=5929fcd5"></script>
+    <script src="../../../_static/doctools.js?v=9bcbadda"></script>
+    <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+   
+  <link rel="stylesheet" href="../../../_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <h1>Source code for src.orchestrator.priority_loop</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Priority passing logic — APNAP order for multiplayer.</span>
+
+<span class="sd">In MTG, after any game event players receive priority in Active Player,</span>
+<span class="sd">Non-Active Player (APNAP) order. An item on the stack resolves only when</span>
+<span class="sd">all players pass priority in succession without adding anything.</span>
+
+<span class="sd">Reference: Section 5.3 of PLAN.md, CR 117.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.engine.game_state</span><span class="w"> </span><span class="kn">import</span> <span class="n">GameState</span><span class="p">,</span> <span class="n">ActionType</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.engine.stack</span><span class="w"> </span><span class="kn">import</span> <span class="n">is_empty</span> <span class="k">as</span> <span class="n">stack_is_empty</span><span class="p">,</span> <span class="n">resolve_top</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.engine.mana</span><span class="w"> </span><span class="kn">import</span> <span class="n">potential_mana</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_format_mana</span><span class="p">(</span><span class="n">pool</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Render a mana dict as ``{W}{U}{B}…`` ordered WUBRGC, or ``∅`` if empty.&quot;&quot;&quot;</span>
+    <span class="n">parts</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="s2">&quot;WUBRGC&quot;</span><span class="p">:</span>
+        <span class="n">n</span> <span class="o">=</span> <span class="n">pool</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n</span><span class="p">):</span>
+            <span class="n">parts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;{&quot;</span> <span class="o">+</span> <span class="n">c</span> <span class="o">+</span> <span class="s2">&quot;}&quot;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="s2">&quot;&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">parts</span><span class="p">)</span> <span class="k">if</span> <span class="n">parts</span> <span class="k">else</span> <span class="s2">&quot;∅&quot;</span>
+
+
+<div class="viewcode-block" id="get_priority_order">
+<a class="viewcode-back" href="../../../api_orchestrator.html#src.orchestrator.priority_loop.get_priority_order">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">get_priority_order</span><span class="p">(</span><span class="n">game_state</span><span class="p">:</span> <span class="n">GameState</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return player IDs in APNAP order starting from active player.&quot;&quot;&quot;</span>
+    <span class="n">player_ids</span> <span class="o">=</span> <span class="p">[</span><span class="n">p</span><span class="o">.</span><span class="n">player_id</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">game_state</span><span class="o">.</span><span class="n">players</span><span class="p">]</span>
+    <span class="n">active_player_id</span> <span class="o">=</span> <span class="n">game_state</span><span class="o">.</span><span class="n">active_player</span><span class="o">.</span><span class="n">player_id</span>
+    
+    <span class="k">if</span> <span class="n">active_player_id</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">player_ids</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">player_ids</span>
+    
+    <span class="n">idx</span> <span class="o">=</span> <span class="n">player_ids</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="n">active_player_id</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">player_ids</span><span class="p">[</span><span class="n">idx</span><span class="p">:]</span> <span class="o">+</span> <span class="n">player_ids</span><span class="p">[:</span><span class="n">idx</span><span class="p">]</span></div>
+
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_summarize_actions</span><span class="p">(</span><span class="n">actions</span><span class="p">,</span> <span class="n">game_state</span><span class="p">:</span> <span class="n">GameState</span><span class="p">,</span> <span class="n">max_items</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">10</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Render a compact one-line summary of legal actions for the log.</span>
+
+<span class="sd">    Groups by ``(kind, card name)`` so that e.g. three identical</span>
+<span class="sd">    ``Activate(Mountain)`` actions render as ``Activate(Mountain) ×3``.</span>
+<span class="sd">    Truncates to ``max_items`` distinct entries.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">cards_by_id</span> <span class="o">=</span> <span class="p">{</span><span class="n">c</span><span class="o">.</span><span class="n">instance_id</span><span class="p">:</span> <span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">game_state</span><span class="o">.</span><span class="n">cards</span><span class="p">}</span>
+    <span class="n">KIND_SHORT</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;PLAY_LAND&quot;</span><span class="p">:</span> <span class="s2">&quot;Play&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;CAST_SPELL&quot;</span><span class="p">:</span> <span class="s2">&quot;Cast&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;ACTIVATE_ABILITY&quot;</span><span class="p">:</span> <span class="s2">&quot;Activate&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;DECLARE_ATTACKER&quot;</span><span class="p">:</span> <span class="s2">&quot;Attack&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;DECLARE_BLOCKER&quot;</span><span class="p">:</span> <span class="s2">&quot;Block&quot;</span><span class="p">,</span>
+    <span class="p">}</span>
+    <span class="c1"># Preserve insertion order while counting duplicates.</span>
+    <span class="n">counts</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">actions</span><span class="p">:</span>
+        <span class="n">kind</span> <span class="o">=</span> <span class="n">a</span><span class="o">.</span><span class="n">action_type</span><span class="o">.</span><span class="n">name</span> <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">a</span><span class="o">.</span><span class="n">action_type</span><span class="p">,</span> <span class="s2">&quot;name&quot;</span><span class="p">)</span> <span class="k">else</span> <span class="nb">str</span><span class="p">(</span><span class="n">a</span><span class="o">.</span><span class="n">action_type</span><span class="p">)</span>
+        <span class="n">kind_short</span> <span class="o">=</span> <span class="n">KIND_SHORT</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">kind</span><span class="p">,</span> <span class="n">kind</span><span class="o">.</span><span class="n">title</span><span class="p">())</span>
+        <span class="n">cid</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="s2">&quot;card_instance_id&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">cid</span> <span class="ow">and</span> <span class="n">cid</span> <span class="ow">in</span> <span class="n">cards_by_id</span><span class="p">:</span>
+            <span class="n">label</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">kind_short</span><span class="si">}</span><span class="s2">(</span><span class="si">{</span><span class="n">cards_by_id</span><span class="p">[</span><span class="n">cid</span><span class="p">]</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">)&quot;</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">label</span> <span class="o">=</span> <span class="n">kind_short</span>
+        <span class="n">counts</span><span class="p">[</span><span class="n">label</span><span class="p">]</span> <span class="o">=</span> <span class="n">counts</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">label</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span>
+
+    <span class="n">parts</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="p">(</span><span class="n">label</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">counts</span><span class="o">.</span><span class="n">items</span><span class="p">()):</span>
+        <span class="k">if</span> <span class="n">i</span> <span class="o">&gt;=</span> <span class="n">max_items</span><span class="p">:</span>
+            <span class="n">parts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;…&quot;</span><span class="p">)</span>
+            <span class="k">break</span>
+        <span class="n">parts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">label</span> <span class="k">if</span> <span class="n">n</span> <span class="o">==</span> <span class="mi">1</span> <span class="k">else</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">label</span><span class="si">}</span><span class="s2"> ×</span><span class="si">{</span><span class="n">n</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="s2">&quot;, &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">parts</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_is_noise_only</span><span class="p">(</span><span class="n">actions</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;True if the only non-pass action is CONCEDE — not worth logging.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">actions</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">True</span>
+    <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">actions</span><span class="p">:</span>
+        <span class="n">kind</span> <span class="o">=</span> <span class="n">a</span><span class="o">.</span><span class="n">action_type</span><span class="o">.</span><span class="n">name</span> <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">a</span><span class="o">.</span><span class="n">action_type</span><span class="p">,</span> <span class="s2">&quot;name&quot;</span><span class="p">)</span> <span class="k">else</span> <span class="nb">str</span><span class="p">(</span><span class="n">a</span><span class="o">.</span><span class="n">action_type</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">kind</span> <span class="o">!=</span> <span class="s2">&quot;CONCEDE&quot;</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">False</span>
+    <span class="k">return</span> <span class="kc">True</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_sync_priority_player</span><span class="p">(</span><span class="n">game_state</span><span class="p">:</span> <span class="n">GameState</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Ensure priority player is valid when players are removed mid-game.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">game_state</span><span class="o">.</span><span class="n">players</span><span class="p">:</span>
+        <span class="n">game_state</span><span class="o">.</span><span class="n">priority_player_index</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">return</span>
+
+    <span class="k">if</span> <span class="n">game_state</span><span class="o">.</span><span class="n">priority_player_index</span> <span class="o">&lt;</span> <span class="mi">0</span> <span class="ow">or</span> <span class="n">game_state</span><span class="o">.</span><span class="n">priority_player_index</span> <span class="o">&gt;=</span> <span class="nb">len</span><span class="p">(</span><span class="n">game_state</span><span class="o">.</span><span class="n">players</span><span class="p">):</span>
+        <span class="n">game_state</span><span class="o">.</span><span class="n">priority_player_index</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">return</span>
+
+    <span class="n">current</span> <span class="o">=</span> <span class="n">game_state</span><span class="o">.</span><span class="n">players</span><span class="p">[</span><span class="n">game_state</span><span class="o">.</span><span class="n">priority_player_index</span><span class="p">]</span><span class="o">.</span><span class="n">player_id</span>
+    <span class="k">if</span> <span class="n">current</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">[</span><span class="n">p</span><span class="o">.</span><span class="n">player_id</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">game_state</span><span class="o">.</span><span class="n">players</span><span class="p">]:</span>
+        <span class="n">game_state</span><span class="o">.</span><span class="n">priority_player_index</span> <span class="o">=</span> <span class="mi">0</span>
+
+
+<div class="viewcode-block" id="advance_priority">
+<a class="viewcode-back" href="../../../api_orchestrator.html#src.orchestrator.priority_loop.advance_priority">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">advance_priority</span><span class="p">(</span><span class="n">game_state</span><span class="p">:</span> <span class="n">GameState</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">GameState</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Move priority to the next player in APNAP order.&quot;&quot;&quot;</span>
+    <span class="n">_sync_priority_player</span><span class="p">(</span><span class="n">game_state</span><span class="p">)</span>
+
+    <span class="n">order</span> <span class="o">=</span> <span class="n">get_priority_order</span><span class="p">(</span><span class="n">game_state</span><span class="p">)</span>
+    <span class="n">current_priority_id</span> <span class="o">=</span> <span class="n">game_state</span><span class="o">.</span><span class="n">priority_player</span><span class="o">.</span><span class="n">player_id</span>
+
+    <span class="k">if</span> <span class="n">current_priority_id</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">order</span><span class="p">:</span>
+        <span class="n">game_state</span><span class="o">.</span><span class="n">priority_player_index</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">return</span> <span class="n">game_state</span>
+
+    <span class="n">idx</span> <span class="o">=</span> <span class="n">order</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="n">current_priority_id</span><span class="p">)</span>
+    <span class="n">next_idx</span> <span class="o">=</span> <span class="p">(</span><span class="n">idx</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">%</span> <span class="nb">len</span><span class="p">(</span><span class="n">order</span><span class="p">)</span>
+    <span class="n">next_player_id</span> <span class="o">=</span> <span class="n">order</span><span class="p">[</span><span class="n">next_idx</span><span class="p">]</span>
+
+    <span class="c1"># Find index of next player in players list</span>
+    <span class="n">game_state</span><span class="o">.</span><span class="n">priority_player_index</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span>
+        <span class="n">i</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">p</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">game_state</span><span class="o">.</span><span class="n">players</span><span class="p">)</span> <span class="k">if</span> <span class="n">p</span><span class="o">.</span><span class="n">player_id</span> <span class="o">==</span> <span class="n">next_player_id</span>
+    <span class="p">)</span>
+    <span class="k">return</span> <span class="n">game_state</span></div>
+
+
+
+<div class="viewcode-block" id="all_players_passed">
+<a class="viewcode-back" href="../../../api_orchestrator.html#src.orchestrator.priority_loop.all_players_passed">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">all_players_passed</span><span class="p">(</span>
+    <span class="n">game_state</span><span class="p">:</span> <span class="n">GameState</span><span class="p">,</span> <span class="n">passed</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Check if all players have passed priority in order.&quot;&quot;&quot;</span>
+    <span class="n">all_player_ids</span> <span class="o">=</span> <span class="p">{</span><span class="n">p</span><span class="o">.</span><span class="n">player_id</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">game_state</span><span class="o">.</span><span class="n">players</span><span class="p">}</span>
+    <span class="k">return</span> <span class="n">all_player_ids</span> <span class="o">==</span> <span class="n">passed</span></div>
+
+
+
+<div class="viewcode-block" id="priority_action_result">
+<a class="viewcode-back" href="../../../api_orchestrator.html#src.orchestrator.priority_loop.priority_action_result">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">priority_action_result</span><span class="p">(</span>
+    <span class="n">game_state</span><span class="p">:</span> <span class="n">GameState</span><span class="p">,</span>
+    <span class="n">passed_players</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Determine what happens after a priority pass.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        &#39;resolve&#39;       — all passed, stack non-empty → resolve top</span>
+<span class="sd">        &#39;advance_phase&#39; — all passed, stack empty → move to next phase</span>
+<span class="sd">        &#39;continue&#39;      — not all passed, keep going</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">all_players_passed</span><span class="p">(</span><span class="n">game_state</span><span class="p">,</span> <span class="n">passed_players</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">stack_is_empty</span><span class="p">(</span><span class="n">game_state</span><span class="p">):</span>
+            <span class="k">return</span> <span class="s2">&quot;advance_phase&quot;</span>
+        <span class="k">return</span> <span class="s2">&quot;resolve&quot;</span>
+    <span class="k">return</span> <span class="s2">&quot;continue&quot;</span></div>
+
+
+
+<div class="viewcode-block" id="run_priority_loop">
+<a class="viewcode-back" href="../../../api_orchestrator.html#src.orchestrator.priority_loop.run_priority_loop">[docs]</a>
+<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">run_priority_loop</span><span class="p">(</span>
+    <span class="n">game_state</span><span class="p">:</span> <span class="n">GameState</span><span class="p">,</span>
+    <span class="n">agents</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">object</span><span class="p">],</span>
+    <span class="n">rules_engine</span><span class="p">:</span> <span class="nb">object</span><span class="p">,</span>
+    <span class="n">collector</span><span class="p">:</span> <span class="nb">object</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">GameState</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Execute a full priority loop.</span>
+<span class="sd">    </span>
+<span class="sd">    Optional `collector` is a SelfPlayCollector (or equivalent) used to record</span>
+<span class="sd">    states and actions during self-play.</span>
+<span class="sd">    </span>
+<span class="sd">    This is the core MTG action resolution mechanic:</span>
+<span class="sd">    1. Current priority player acts (cast spell, activate ability, pass)</span>
+<span class="sd">    2. If they pass, priority moves to next player in APNAP order</span>
+<span class="sd">    3. When all players pass in succession, resolve top of stack (if any)</span>
+<span class="sd">    4. Repeat until stack is empty and all pass</span>
+<span class="sd">    </span>
+<span class="sd">    Args:</span>
+<span class="sd">        game_state: Current game state with priority tracking</span>
+<span class="sd">        agents: Mapping of player_id → agent with decide_action() method</span>
+<span class="sd">        rules_engine: RulesEngine instance for get_legal_actions() and execute_action()</span>
+<span class="sd">    </span>
+<span class="sd">    Returns:</span>
+<span class="sd">        Updated game state with priority loop completed</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">passed_players</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+    
+    <span class="n">loop_iterations</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="c1"># Pure safety net. In a correctly-implemented agent the loop terminates</span>
+    <span class="c1"># in O(#players × actions-this-turn) iterations because every player</span>
+    <span class="c1"># eventually passes. The cap protects against pathological agents that</span>
+    <span class="c1"># never pass; it should never fire in normal play.</span>
+    <span class="n">max_iterations</span> <span class="o">=</span> <span class="mi">500</span>
+
+    <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+        <span class="n">loop_iterations</span> <span class="o">+=</span> <span class="mi">1</span>
+        <span class="k">if</span> <span class="n">loop_iterations</span> <span class="o">&gt;</span> <span class="n">max_iterations</span><span class="p">:</span>
+            <span class="n">game_state</span><span class="o">.</span><span class="n">log</span><span class="p">(</span>
+                <span class="s2">&quot;Priority loop aborted: exceeded max iterations (forcing phase end)&quot;</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="n">game_state</span>
+
+        <span class="k">if</span> <span class="n">game_state</span><span class="o">.</span><span class="n">game_over</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">game_state</span>
+
+        <span class="c1"># Get current priority player</span>
+        <span class="n">priority_player_id</span> <span class="o">=</span> <span class="n">game_state</span><span class="o">.</span><span class="n">priority_player</span><span class="o">.</span><span class="n">player_id</span>
+        <span class="n">agent</span> <span class="o">=</span> <span class="n">agents</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">priority_player_id</span><span class="p">)</span>
+        
+        <span class="c1"># Get legal actions for this player given current game state</span>
+        <span class="n">legal_actions</span> <span class="o">=</span> <span class="n">rules_engine</span><span class="o">.</span><span class="n">get_legal_actions</span><span class="p">(</span><span class="n">game_state</span><span class="p">,</span> <span class="n">priority_player_id</span><span class="p">)</span>
+        
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">legal_actions</span><span class="p">:</span>
+            <span class="c1"># This shouldn&#39;t happen; PASS_PRIORITY should always be legal</span>
+            <span class="n">game_state</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;ERROR: No legal actions for </span><span class="si">{</span><span class="n">priority_player_id</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">game_state</span>
+
+        <span class="c1"># Log legal actions every time a player gets priority. CR mandates</span>
+        <span class="c1"># that legality is re-evaluated after every game event, so the log</span>
+        <span class="c1"># mirrors that. We always emit a line — even when the only options</span>
+        <span class="c1"># are pass / concede — so the trace stays auditable.</span>
+        <span class="n">non_pass</span> <span class="o">=</span> <span class="p">[</span><span class="n">a</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">legal_actions</span> <span class="k">if</span> <span class="n">a</span><span class="o">.</span><span class="n">action_type</span> <span class="o">!=</span> <span class="n">ActionType</span><span class="o">.</span><span class="n">PASS_PRIORITY</span><span class="p">]</span>
+        <span class="n">pp</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span>
+            <span class="p">(</span><span class="n">p</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">game_state</span><span class="o">.</span><span class="n">players</span> <span class="k">if</span> <span class="n">p</span><span class="o">.</span><span class="n">player_id</span> <span class="o">==</span> <span class="n">priority_player_id</span><span class="p">),</span>
+            <span class="kc">None</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">label</span> <span class="o">=</span> <span class="p">(</span><span class="n">pp</span><span class="o">.</span><span class="n">name</span> <span class="ow">or</span> <span class="n">pp</span><span class="o">.</span><span class="n">player_id</span><span class="p">)</span> <span class="k">if</span> <span class="n">pp</span> <span class="k">else</span> <span class="n">priority_player_id</span>
+        <span class="k">if</span> <span class="n">pp</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">pool_str</span> <span class="o">=</span> <span class="n">_format_mana</span><span class="p">(</span><span class="n">pp</span><span class="o">.</span><span class="n">mana_pool</span><span class="p">)</span>
+            <span class="n">potential_str</span> <span class="o">=</span> <span class="n">_format_mana</span><span class="p">(</span><span class="n">potential_mana</span><span class="p">(</span><span class="n">game_state</span><span class="p">,</span> <span class="n">pp</span><span class="p">))</span>
+            <span class="c1"># Only show &quot;pool&quot; when something is actually floating, so we</span>
+            <span class="c1"># don&#39;t double up &quot;pool: ∅&quot; on every line.</span>
+            <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">v</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">pp</span><span class="o">.</span><span class="n">mana_pool</span><span class="o">.</span><span class="n">values</span><span class="p">()):</span>
+                <span class="n">mana_tag</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;  [pool: </span><span class="si">{</span><span class="n">pool_str</span><span class="si">}</span><span class="s2"> | potential: </span><span class="si">{</span><span class="n">potential_str</span><span class="si">}</span><span class="s2">]&quot;</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">mana_tag</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;  [open mana: </span><span class="si">{</span><span class="n">potential_str</span><span class="si">}</span><span class="s2">]&quot;</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">mana_tag</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">non_pass</span> <span class="ow">or</span> <span class="n">_is_noise_only</span><span class="p">(</span><span class="n">non_pass</span><span class="p">):</span>
+            <span class="n">game_state</span><span class="o">.</span><span class="n">log</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;      ? </span><span class="si">{</span><span class="n">label</span><span class="si">}</span><span class="s2"> legal actions: NONE</span><span class="si">{</span><span class="n">mana_tag</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">game_state</span><span class="o">.</span><span class="n">log</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;      ? </span><span class="si">{</span><span class="n">label</span><span class="si">}</span><span class="s2"> legal actions (</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">non_pass</span><span class="p">)</span><span class="si">}</span><span class="s2">): &quot;</span>
+                <span class="o">+</span> <span class="n">_summarize_actions</span><span class="p">(</span><span class="n">non_pass</span><span class="p">,</span> <span class="n">game_state</span><span class="p">)</span>
+                <span class="o">+</span> <span class="n">mana_tag</span>
+            <span class="p">)</span>
+
+<span class="c1"># Collector sees current state before action</span>
+        <span class="k">if</span> <span class="n">collector</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">collector</span><span class="o">.</span><span class="n">on_state</span><span class="p">(</span><span class="n">game_state</span><span class="p">,</span> <span class="n">game_state</span><span class="o">.</span><span class="n">priority_player_index</span><span class="p">)</span>
+
+        <span class="c1"># Agent decides what to do</span>
+        <span class="n">action</span> <span class="o">=</span> <span class="k">await</span> <span class="n">agent</span><span class="o">.</span><span class="n">decide_action</span><span class="p">(</span><span class="n">game_state</span><span class="p">,</span> <span class="n">legal_actions</span><span class="p">)</span>
+
+        <span class="c1"># Notify all agents of action</span>
+        <span class="k">for</span> <span class="n">agent_obj</span> <span class="ow">in</span> <span class="n">agents</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
+            <span class="k">await</span> <span class="n">agent_obj</span><span class="o">.</span><span class="n">observe</span><span class="p">(</span><span class="n">game_state</span><span class="p">,</span> <span class="n">action</span><span class="p">)</span>
+
+        <span class="c1"># Collector records action</span>
+        <span class="k">if</span> <span class="n">collector</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">reasoning</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">agent</span><span class="p">,</span> <span class="s2">&quot;last_reasoning&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="n">agent_name</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">agent</span><span class="p">,</span> <span class="s2">&quot;name&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">collector</span><span class="o">.</span><span class="n">on_action</span><span class="p">(</span>
+                    <span class="n">action</span><span class="p">,</span>
+                    <span class="n">reward</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>
+                    <span class="n">done</span><span class="o">=</span><span class="n">game_state</span><span class="o">.</span><span class="n">game_over</span><span class="p">,</span>
+                    <span class="n">reasoning</span><span class="o">=</span><span class="n">reasoning</span><span class="p">,</span>
+                    <span class="n">agent_name</span><span class="o">=</span><span class="n">agent_name</span><span class="p">,</span>
+                <span class="p">)</span>
+            <span class="k">except</span> <span class="ne">TypeError</span><span class="p">:</span>
+                <span class="c1"># Older collectors with a narrower signature.</span>
+                <span class="n">collector</span><span class="o">.</span><span class="n">on_action</span><span class="p">(</span><span class="n">action</span><span class="p">,</span> <span class="n">reward</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">done</span><span class="o">=</span><span class="n">game_state</span><span class="o">.</span><span class="n">game_over</span><span class="p">)</span>
+        
+        <span class="k">if</span> <span class="n">action</span><span class="o">.</span><span class="n">action_type</span> <span class="o">==</span> <span class="n">ActionType</span><span class="o">.</span><span class="n">PASS_PRIORITY</span><span class="p">:</span>
+            <span class="c1"># Player passed priority</span>
+            <span class="n">passed_players</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">priority_player_id</span><span class="p">)</span>
+            <span class="n">pp</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span>
+                <span class="p">(</span><span class="n">p</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">game_state</span><span class="o">.</span><span class="n">players</span> <span class="k">if</span> <span class="n">p</span><span class="o">.</span><span class="n">player_id</span> <span class="o">==</span> <span class="n">priority_player_id</span><span class="p">),</span>
+                <span class="kc">None</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">label</span> <span class="o">=</span> <span class="p">(</span><span class="n">pp</span><span class="o">.</span><span class="n">name</span> <span class="ow">or</span> <span class="n">pp</span><span class="o">.</span><span class="n">player_id</span><span class="p">)</span> <span class="k">if</span> <span class="n">pp</span> <span class="k">else</span> <span class="n">priority_player_id</span>
+            <span class="n">game_state</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;      · </span><span class="si">{</span><span class="n">label</span><span class="si">}</span><span class="s2"> passes&quot;</span><span class="p">)</span>
+            
+            <span class="c1"># Check if all players passed</span>
+            <span class="k">if</span> <span class="n">all_players_passed</span><span class="p">(</span><span class="n">game_state</span><span class="p">,</span> <span class="n">passed_players</span><span class="p">):</span>
+                <span class="c1"># All players passed in sequence</span>
+                <span class="k">if</span> <span class="n">stack_is_empty</span><span class="p">(</span><span class="n">game_state</span><span class="p">):</span>
+                    <span class="c1"># Stack is empty, priority loop ends</span>
+                    <span class="k">return</span> <span class="n">game_state</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="c1"># Stack has items, resolve top</span>
+                    <span class="n">game_state</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="s2">&quot;      · all pass → resolving stack&quot;</span><span class="p">)</span>
+                    
+                    <span class="c1"># Resolve top of stack using the new resolve_stack_item method</span>
+                    <span class="n">game_state</span> <span class="o">=</span> <span class="n">rules_engine</span><span class="o">.</span><span class="n">resolve_stack_item</span><span class="p">(</span><span class="n">game_state</span><span class="p">)</span>
+                    
+                    <span class="c1"># After resolution, reset passed set and give AP priority again</span>
+                    <span class="n">passed_players</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+                    <span class="n">game_state</span><span class="o">.</span><span class="n">priority_player_index</span> <span class="o">=</span> <span class="n">game_state</span><span class="o">.</span><span class="n">active_player_index</span>
+                    <span class="k">continue</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="c1"># Not all passed yet, move priority to next player</span>
+                <span class="n">game_state</span> <span class="o">=</span> <span class="n">advance_priority</span><span class="p">(</span><span class="n">game_state</span><span class="p">)</span>
+                <span class="k">continue</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># Player took an action (cast spell, activate ability, etc.)</span>
+            <span class="n">game_state</span> <span class="o">=</span> <span class="n">rules_engine</span><span class="o">.</span><span class="n">execute_action</span><span class="p">(</span><span class="n">game_state</span><span class="p">,</span> <span class="n">action</span><span class="p">)</span>
+            
+            <span class="c1"># After action, reset passed set (new action added to stack or board changed)</span>
+            <span class="n">passed_players</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+            
+            <span class="c1"># Priority goes to next player in APNAP order</span>
+            <span class="n">game_state</span> <span class="o">=</span> <span class="n">advance_priority</span><span class="p">(</span><span class="n">game_state</span><span class="p">)</span>
+            
+            <span class="c1"># Check SBAs immediately after action</span>
+            <span class="n">rules_engine</span><span class="o">.</span><span class="n">check_state_based_actions</span><span class="p">(</span><span class="n">game_state</span><span class="p">)</span>
+            
+            <span class="k">continue</span></div>
+
+</pre></div>
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="../../../index.html">opposition-agents-playing-mtg</a></h1>
+
+
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="../../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+<p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../repository_map.html">Repository Map</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../components.html">Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api.html">API Reference</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="../../../index.html">Documentation overview</a><ul>
+  <li><a href="../../index.html">Module code</a><ul>
+  </ul></li>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &#169;2026, Data Science Lab FHSWF.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 8.1.3</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+    </div>
+
+    
+
+    
+  </body>
+</html>

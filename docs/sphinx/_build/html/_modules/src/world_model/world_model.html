@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../../../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>src.world_model.world_model &#8212; opposition-agents-playing-mtg  documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/basic.css?v=686e5160" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/alabaster.css?v=27fed22d" />
+    <script src="../../../_static/documentation_options.js?v=5929fcd5"></script>
+    <script src="../../../_static/doctools.js?v=9bcbadda"></script>
+    <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+   
+  <link rel="stylesheet" href="../../../_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <h1>Source code for src.world_model.world_model</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">World Model Orchestrator — Combines V + M + C.</span>
+
+<span class="sd">Provides high-level API for:</span>
+<span class="sd">- Encoding real game states into latent space</span>
+<span class="sd">- One-step and multi-step predictions (&quot;dreaming&quot;)</span>
+<span class="sd">- Action selection from real or dreamed states</span>
+<span class="sd">- MCTS-style planning in latent space (&quot;dream search&quot;)</span>
+
+<span class="sd">This is the main entry point for using the world model.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Optional</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+
+<span class="k">try</span><span class="p">:</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
+<span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+    <span class="k">raise</span> <span class="ne">ImportError</span><span class="p">(</span><span class="s2">&quot;World model requires PyTorch. Install with: pip install torch&quot;</span><span class="p">)</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">.controller</span><span class="w"> </span><span class="kn">import</span> <span class="n">Controller</span><span class="p">,</span> <span class="n">ControllerConfig</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.dynamics_model</span><span class="w"> </span><span class="kn">import</span> <span class="n">DynamicsModel</span><span class="p">,</span> <span class="n">DynamicsModelConfig</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.jepa_predictor</span><span class="w"> </span><span class="kn">import</span> <span class="n">JEPAPredictor</span><span class="p">,</span> <span class="n">JEPAPredictorConfig</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.state_encoder</span><span class="w"> </span><span class="kn">import</span> <span class="n">StateEncoder</span><span class="p">,</span> <span class="n">StateEncoderConfig</span>
+
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="WorldModelConfig">
+<a class="viewcode-back" href="../../../api_world_model.html#src.world_model.world_model.WorldModelConfig">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">WorldModelConfig</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Top-level configuration combining V + M + C + optional JEPA predictor.&quot;&quot;&quot;</span>
+
+    <span class="n">encoder</span><span class="p">:</span> <span class="n">StateEncoderConfig</span> <span class="o">=</span> <span class="kc">None</span>      <span class="c1"># type: ignore[assignment]</span>
+    <span class="n">dynamics</span><span class="p">:</span> <span class="n">DynamicsModelConfig</span> <span class="o">=</span> <span class="kc">None</span>     <span class="c1"># type: ignore[assignment]</span>
+    <span class="n">controller</span><span class="p">:</span> <span class="n">ControllerConfig</span> <span class="o">=</span> <span class="kc">None</span>      <span class="c1"># type: ignore[assignment]</span>
+    <span class="c1"># JEPA predictor config.  Set use_jepa=True to enable the JEPA training path.</span>
+    <span class="c1"># When enabled, JEPAPredictor is used alongside (not replacing) the MDN-LSTM</span>
+    <span class="c1"># to provide the LeWM-style prediction + KL loss during training.</span>
+    <span class="n">jepa</span><span class="p">:</span> <span class="n">JEPAPredictorConfig</span> <span class="o">=</span> <span class="kc">None</span>         <span class="c1"># type: ignore[assignment]</span>
+    <span class="n">use_jepa</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="n">dream_steps</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">50</span>       <span class="c1"># Max steps per dream rollout</span>
+    <span class="n">dream_temperature</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1.15</span>  <span class="c1"># τ &gt; 1 for harder dreams</span>
+    <span class="n">num_dream_rollouts</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">8</span>  <span class="c1"># Parallel rollouts for dream search</span>
+    <span class="n">discount</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.99</span>       <span class="c1"># Reward discount factor</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">__post_init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">encoder</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">encoder</span> <span class="o">=</span> <span class="n">StateEncoderConfig</span><span class="p">()</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">dynamics</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">dynamics</span> <span class="o">=</span> <span class="n">DynamicsModelConfig</span><span class="p">()</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">controller</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">controller</span> <span class="o">=</span> <span class="n">ControllerConfig</span><span class="p">()</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">jepa</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">jepa</span> <span class="o">=</span> <span class="n">JEPAPredictorConfig</span><span class="p">(</span>
+                <span class="n">latent_dim</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">encoder</span><span class="o">.</span><span class="n">latent_dim</span><span class="p">,</span>
+                <span class="n">action_dim</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">dynamics</span><span class="o">.</span><span class="n">action_dim</span><span class="p">,</span>
+            <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="WorldModel">
+<a class="viewcode-back" href="../../../api_world_model.html#src.world_model.world_model.WorldModel">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">WorldModel</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Full V + M + C world model for MTG.</span>
+
+<span class="sd">    Usage:</span>
+<span class="sd">        wm = WorldModel(config)</span>
+
+<span class="sd">        # Encode a real game state</span>
+<span class="sd">        z, mu, logvar = wm.encode(tokenized_features)</span>
+
+<span class="sd">        # Predict next state after an action</span>
+<span class="sd">        z_next, h_next, done = wm.predict(z, action, h)</span>
+
+<span class="sd">        # Select an action</span>
+<span class="sd">        action_idx, log_prob = wm.act(z, h, legal_actions, legal_mask)</span>
+
+<span class="sd">        # Dream: simulate a full game in latent space</span>
+<span class="sd">        trajectory = wm.dream(z_start, h_start, action_fn)</span>
+
+<span class="sd">        # Dream search: evaluate actions via multiple rollouts</span>
+<span class="sd">        best_action = wm.dream_search(z, h, legal_actions)</span>
+
+<span class="sd">        # Save / load</span>
+<span class="sd">        wm.save(&quot;checkpoints/world_model.pt&quot;)</span>
+<span class="sd">        wm = WorldModel.load(&quot;checkpoints/world_model.pt&quot;)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="n">WorldModelConfig</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">config</span> <span class="o">=</span> <span class="n">config</span> <span class="ow">or</span> <span class="n">WorldModelConfig</span><span class="p">()</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">encoder</span> <span class="o">=</span> <span class="n">StateEncoder</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">encoder</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">dynamics</span> <span class="o">=</span> <span class="n">DynamicsModel</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">dynamics</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">controller</span> <span class="o">=</span> <span class="n">Controller</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">controller</span><span class="p">)</span>
+        <span class="c1"># Optional JEPA predictor — the &quot;M&quot; in LeWM style.</span>
+        <span class="c1"># None when use_jepa=False so existing code paths are unaffected.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">jepa_predictor</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JEPAPredictor</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">JEPAPredictor</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">jepa</span><span class="p">)</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">use_jepa</span> <span class="k">else</span> <span class="kc">None</span>
+        <span class="p">)</span>
+
+    <span class="c1"># -- Encoding -----------------------------------------------------------</span>
+
+<div class="viewcode-block" id="WorldModel.encode">
+<a class="viewcode-back" href="../../../api_world_model.html#src.world_model.world_model.WorldModel.encode">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">encode</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">features</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">],</span>
+        <span class="n">kg_embedding</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Encode tokenized game state into latent space.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            features:     Dict of batched tensors from GameTokenizer.</span>
+<span class="sd">            kg_embedding: Optional (batch, kg_embed_dim) context vector from</span>
+<span class="sd">                          KGContextEncoder.  Fused before the VAE bottleneck</span>
+<span class="sd">                          when StateEncoderConfig.kg_embed_dim &gt; 0.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            z, mu, logvar from the state encoder (V)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">encoder</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="n">features</span><span class="p">,</span> <span class="n">kg_embedding</span><span class="o">=</span><span class="n">kg_embedding</span><span class="p">)</span></div>
+
+
+    <span class="c1"># -- Prediction ---------------------------------------------------------</span>
+
+<div class="viewcode-block" id="WorldModel.predict">
+<a class="viewcode-back" href="../../../api_world_model.html#src.world_model.world_model.WorldModel.predict">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">predict</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">z</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">action</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">hidden</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">temperature</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]],</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Predict next latent state given current state and action.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            z: Current latent state</span>
+<span class="sd">            action: Encoded action</span>
+<span class="sd">            hidden: RNN hidden state</span>
+<span class="sd">            temperature: Override default temperature</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            z_next, hidden_next, done_probability</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">temp</span> <span class="o">=</span> <span class="n">temperature</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">dream_temperature</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">dynamics</span><span class="o">.</span><span class="n">step</span><span class="p">(</span><span class="n">z</span><span class="p">,</span> <span class="n">action</span><span class="p">,</span> <span class="n">hidden</span><span class="p">,</span> <span class="n">temperature</span><span class="o">=</span><span class="n">temp</span><span class="p">)</span></div>
+
+
+    <span class="c1"># -- Action Selection ---------------------------------------------------</span>
+
+<div class="viewcode-block" id="WorldModel.act">
+<a class="viewcode-back" href="../../../api_world_model.html#src.world_model.world_model.WorldModel.act">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">act</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">z</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">h</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">legal_action_encodings</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">legal_action_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">deterministic</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Select an action using the controller.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            z: Current latent state</span>
+<span class="sd">            h: Dynamics model hidden state</span>
+<span class="sd">            legal_action_encodings: Encoded legal actions</span>
+<span class="sd">            legal_action_mask: Mask for valid actions</span>
+<span class="sd">            deterministic: Greedy selection</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            action_idx, log_probability</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">controller</span><span class="o">.</span><span class="n">select_action</span><span class="p">(</span>
+            <span class="n">z</span><span class="p">,</span> <span class="n">h</span><span class="p">,</span> <span class="n">legal_action_encodings</span><span class="p">,</span> <span class="n">legal_action_mask</span><span class="p">,</span> <span class="n">deterministic</span>
+        <span class="p">)</span></div>
+
+
+    <span class="c1"># -- Dreaming -----------------------------------------------------------</span>
+
+<div class="viewcode-block" id="WorldModel.dream">
+<a class="viewcode-back" href="../../../api_world_model.html#src.world_model.world_model.WorldModel.dream">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">dream</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">z_start</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">hidden_start</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">legal_actions_fn</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">temperature</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Roll out a full game trajectory in latent space (&quot;dreaming&quot;).</span>
+
+<span class="sd">        The agent plays inside its own world model, never touching the</span>
+<span class="sd">        real game engine. This enables cheap generation of training data.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            z_start: Starting latent state</span>
+<span class="sd">            hidden_start: Starting RNN hidden state</span>
+<span class="sd">            legal_actions_fn: Callable(z, h) → (action_encodings, mask).</span>
+<span class="sd">                             In dream mode, we approximate legal actions.</span>
+<span class="sd">            temperature: Dream temperature (higher = harder)</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            List of step dicts with z, action, reward, done at each step.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">temp</span> <span class="o">=</span> <span class="n">temperature</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">dream_temperature</span>
+        <span class="n">z</span> <span class="o">=</span> <span class="n">z_start</span>
+        <span class="n">h</span> <span class="o">=</span> <span class="n">hidden_start</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">dynamics</span><span class="o">.</span><span class="n">initial_hidden</span><span class="p">(</span><span class="n">z</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="mi">0</span><span class="p">))</span>
+        <span class="n">trajectory</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">dream_steps</span><span class="p">):</span>
+            <span class="c1"># Get hidden vector for controller</span>
+            <span class="n">h_vec</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">dynamics</span><span class="o">.</span><span class="n">get_hidden_state_vector</span><span class="p">(</span><span class="n">h</span><span class="p">)</span>
+
+            <span class="c1"># Get available actions (in dream mode, this is approximate)</span>
+            <span class="k">if</span> <span class="n">legal_actions_fn</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">action_encs</span><span class="p">,</span> <span class="n">action_mask</span> <span class="o">=</span> <span class="n">legal_actions_fn</span><span class="p">(</span><span class="n">z</span><span class="p">,</span> <span class="n">h_vec</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="c1"># Fallback: use controller&#39;s raw output as action</span>
+                <span class="n">action_vec</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">controller</span><span class="p">(</span><span class="n">z</span><span class="p">,</span> <span class="n">h_vec</span><span class="p">)</span>
+                <span class="c1"># Package as single &quot;action&quot;</span>
+                <span class="n">action_encs</span> <span class="o">=</span> <span class="n">action_vec</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+                <span class="n">action_mask</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">z</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="mi">0</span><span class="p">),</span> <span class="mi">1</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">z</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+
+            <span class="c1"># Controller selects action</span>
+            <span class="n">action_idx</span><span class="p">,</span> <span class="n">log_prob</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">controller</span><span class="o">.</span><span class="n">select_action</span><span class="p">(</span>
+                <span class="n">z</span><span class="p">,</span> <span class="n">h_vec</span><span class="p">,</span> <span class="n">action_encs</span><span class="p">,</span> <span class="n">action_mask</span>
+            <span class="p">)</span>
+
+            <span class="c1"># Use the selected action encoding</span>
+            <span class="n">batch_idx</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">z</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="mi">0</span><span class="p">),</span> <span class="n">device</span><span class="o">=</span><span class="n">z</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+            <span class="n">action</span> <span class="o">=</span> <span class="n">action_encs</span><span class="p">[</span><span class="n">batch_idx</span><span class="p">,</span> <span class="n">action_idx</span><span class="p">]</span>
+
+            <span class="c1"># Dynamics model predicts next state</span>
+            <span class="n">z_next</span><span class="p">,</span> <span class="n">h_next</span><span class="p">,</span> <span class="n">done_prob</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">dynamics</span><span class="o">.</span><span class="n">step</span><span class="p">(</span><span class="n">z</span><span class="p">,</span> <span class="n">action</span><span class="p">,</span> <span class="n">h</span><span class="p">,</span> <span class="n">temperature</span><span class="o">=</span><span class="n">temp</span><span class="p">)</span>
+
+            <span class="c1"># Predict reward</span>
+            <span class="n">h_flat</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">dynamics</span><span class="o">.</span><span class="n">get_hidden_state_vector</span><span class="p">(</span><span class="n">h</span><span class="p">)</span>
+            <span class="n">reward_pred</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">dynamics</span><span class="o">.</span><span class="n">reward_head</span><span class="p">(</span><span class="n">h_flat</span><span class="p">)</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+
+            <span class="n">trajectory</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+                <span class="s2">&quot;z&quot;</span><span class="p">:</span> <span class="n">z</span><span class="o">.</span><span class="n">detach</span><span class="p">(),</span>
+                <span class="s2">&quot;action_idx&quot;</span><span class="p">:</span> <span class="n">action_idx</span><span class="p">,</span>
+                <span class="s2">&quot;action&quot;</span><span class="p">:</span> <span class="n">action</span><span class="o">.</span><span class="n">detach</span><span class="p">(),</span>
+                <span class="s2">&quot;log_prob&quot;</span><span class="p">:</span> <span class="n">log_prob</span><span class="p">,</span>  <span class="c1"># keep gradient path for policy gradient</span>
+                <span class="s2">&quot;z_next&quot;</span><span class="p">:</span> <span class="n">z_next</span><span class="o">.</span><span class="n">detach</span><span class="p">(),</span>
+                <span class="s2">&quot;reward&quot;</span><span class="p">:</span> <span class="n">reward_pred</span><span class="o">.</span><span class="n">detach</span><span class="p">(),</span>
+                <span class="s2">&quot;done_prob&quot;</span><span class="p">:</span> <span class="n">done_prob</span><span class="o">.</span><span class="n">detach</span><span class="p">(),</span>
+            <span class="p">})</span>
+
+            <span class="n">z</span> <span class="o">=</span> <span class="n">z_next</span>
+            <span class="n">h</span> <span class="o">=</span> <span class="n">h_next</span>
+
+            <span class="c1"># Stop if game predicted as over</span>
+            <span class="k">if</span> <span class="n">done_prob</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">()</span> <span class="o">&gt;</span> <span class="mf">0.5</span><span class="p">:</span>
+                <span class="k">break</span>
+
+        <span class="k">return</span> <span class="n">trajectory</span></div>
+
+
+<div class="viewcode-block" id="WorldModel.dream_search">
+<a class="viewcode-back" href="../../../api_world_model.html#src.world_model.world_model.WorldModel.dream_search">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">dream_search</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">z</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">hidden</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]],</span>
+        <span class="n">legal_action_encodings</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">legal_action_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">num_rollouts</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">rollout_depth</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">10</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;MCTS-style search in latent space.</span>
+
+<span class="sd">        For each legal action, simulate multiple rollouts using the dynamics</span>
+<span class="sd">        model and score based on predicted cumulative reward.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            z: Current latent state (batch=1)</span>
+<span class="sd">            hidden: RNN hidden state</span>
+<span class="sd">            legal_action_encodings: (1, num_actions, action_dim)</span>
+<span class="sd">            legal_action_mask: (1, num_actions)</span>
+<span class="sd">            num_rollouts: Rollouts per action to average</span>
+<span class="sd">            rollout_depth: Steps to simulate per rollout</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            best_action_idx, raw action scores</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">n_rollouts</span> <span class="o">=</span> <span class="n">num_rollouts</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">num_dream_rollouts</span>
+        <span class="n">num_actions</span> <span class="o">=</span> <span class="n">legal_action_encodings</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">action_scores</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">num_actions</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">z</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">legal_action_mask</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">valid_actions</span> <span class="o">=</span> <span class="n">legal_action_mask</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">nonzero</span><span class="p">(</span><span class="n">as_tuple</span><span class="o">=</span><span class="kc">True</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">valid_actions</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">num_actions</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">z</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">action_idx</span> <span class="ow">in</span> <span class="n">valid_actions</span><span class="p">:</span>
+            <span class="n">action</span> <span class="o">=</span> <span class="n">legal_action_encodings</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="n">action_idx</span><span class="p">]</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+            <span class="n">total_reward</span> <span class="o">=</span> <span class="mf">0.0</span>
+
+            <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_rollouts</span><span class="p">):</span>
+                <span class="n">z_sim</span> <span class="o">=</span> <span class="n">z</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
+                <span class="n">h_sim</span> <span class="o">=</span> <span class="p">(</span><span class="n">hidden</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">clone</span><span class="p">(),</span> <span class="n">hidden</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">clone</span><span class="p">())</span> <span class="k">if</span> <span class="n">hidden</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">dynamics</span><span class="o">.</span><span class="n">initial_hidden</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+
+                <span class="c1"># Apply the candidate action</span>
+                <span class="n">z_sim</span><span class="p">,</span> <span class="n">h_sim</span><span class="p">,</span> <span class="n">done</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">dynamics</span><span class="o">.</span><span class="n">step</span><span class="p">(</span><span class="n">z_sim</span><span class="p">,</span> <span class="n">action</span><span class="p">,</span> <span class="n">h_sim</span><span class="p">,</span> <span class="n">temperature</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">dream_temperature</span><span class="p">)</span>
+                <span class="n">rollout_reward</span> <span class="o">=</span> <span class="mf">0.0</span>
+                <span class="n">discount</span> <span class="o">=</span> <span class="mf">1.0</span>
+
+                <span class="c1"># Continue rollout with controller policy</span>
+                <span class="k">for</span> <span class="n">depth</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">rollout_depth</span><span class="p">):</span>
+                    <span class="k">if</span> <span class="n">done</span><span class="o">.</span><span class="n">item</span><span class="p">()</span> <span class="o">&gt;</span> <span class="mf">0.5</span><span class="p">:</span>
+                        <span class="k">break</span>
+
+                    <span class="n">h_vec</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">dynamics</span><span class="o">.</span><span class="n">get_hidden_state_vector</span><span class="p">(</span><span class="n">h_sim</span><span class="p">)</span>
+                    <span class="c1"># Use forward output as action (simplified — no legal action check in dreams)</span>
+                    <span class="n">a_vec</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">controller</span><span class="p">(</span><span class="n">z_sim</span><span class="p">,</span> <span class="n">h_vec</span><span class="p">)</span>
+
+                    <span class="n">z_sim</span><span class="p">,</span> <span class="n">h_sim</span><span class="p">,</span> <span class="n">done</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">dynamics</span><span class="o">.</span><span class="n">step</span><span class="p">(</span><span class="n">z_sim</span><span class="p">,</span> <span class="n">a_vec</span><span class="p">,</span> <span class="n">h_sim</span><span class="p">,</span> <span class="n">temperature</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">dream_temperature</span><span class="p">)</span>
+                    <span class="n">r</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">dynamics</span><span class="o">.</span><span class="n">reward_head</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">dynamics</span><span class="o">.</span><span class="n">get_hidden_state_vector</span><span class="p">(</span><span class="n">h_sim</span><span class="p">))</span>
+                    <span class="n">rollout_reward</span> <span class="o">+=</span> <span class="n">discount</span> <span class="o">*</span> <span class="n">r</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
+                    <span class="n">discount</span> <span class="o">*=</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">discount</span>
+
+                <span class="n">total_reward</span> <span class="o">+=</span> <span class="n">rollout_reward</span>
+
+            <span class="n">action_scores</span><span class="p">[</span><span class="n">action_idx</span><span class="p">]</span> <span class="o">=</span> <span class="n">total_reward</span> <span class="o">/</span> <span class="n">n_rollouts</span>
+
+        <span class="n">best_idx</span> <span class="o">=</span> <span class="n">action_scores</span><span class="o">.</span><span class="n">argmax</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">best_idx</span><span class="p">,</span> <span class="n">action_scores</span></div>
+
+
+    <span class="c1"># -- JEPA training ------------------------------------------------------</span>
+
+<div class="viewcode-block" id="WorldModel.jepa_training_step">
+<a class="viewcode-back" href="../../../api_world_model.html#src.world_model.world_model.WorldModel.jepa_training_step">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">jepa_training_step</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">features_t</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">],</span>
+        <span class="n">action_t</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">features_next</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">],</span>
+        <span class="n">kg_embedding_t</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">kg_embedding_next</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Full dual-input JEPA training step for one (s_t, a_t, s_{t+1}) transition.</span>
+
+<span class="sd">        Workflow</span>
+<span class="sd">        --------</span>
+<span class="sd">        1. Encode s_t  (+ optional KG context) → z_t, mu_t, logvar_t</span>
+<span class="sd">        2. Encode s_{t+1} (+ optional KG context) → z_{t+1}  (stop-grad target)</span>
+<span class="sd">        3. JEPA predictor: ẑ_{t+1} = predictor(z_t, a_t)</span>
+<span class="sd">        4. Loss = MSE(ẑ_{t+1}, sg(z_{t+1})) + β * KL(N(mu_t, logvar_t) || N(0,I))</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            features_t:       Tokenized game state at time t.</span>
+<span class="sd">            action_t:         Encoded action taken at time t (B, action_dim).</span>
+<span class="sd">            features_next:    Tokenized game state at time t+1.</span>
+<span class="sd">            kg_embedding_t:   Optional KG context for s_t.</span>
+<span class="sd">            kg_embedding_next: Optional KG context for s_{t+1}.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            dict with keys ``&quot;total&quot;``, ``&quot;prediction&quot;``, ``&quot;kl&quot;``.  Backprop</span>
+<span class="sd">            on ``losses[&quot;total&quot;]``.</span>
+
+<span class="sd">        Raises:</span>
+<span class="sd">            RuntimeError: when the model was built with ``use_jepa=False``.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">jepa_predictor</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                <span class="s2">&quot;JEPA predictor is not enabled. &quot;</span>
+                <span class="s2">&quot;Set WorldModelConfig(use_jepa=True) when constructing WorldModel.&quot;</span>
+            <span class="p">)</span>
+
+        <span class="c1"># Encode current state (gradient flows through here)</span>
+        <span class="n">z_t</span><span class="p">,</span> <span class="n">mu_t</span><span class="p">,</span> <span class="n">logvar_t</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">encoder</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="n">features_t</span><span class="p">,</span> <span class="n">kg_embedding</span><span class="o">=</span><span class="n">kg_embedding_t</span><span class="p">)</span>
+
+        <span class="c1"># Encode next state — this is the JEPA target (stop-grad applied in jepa_loss)</span>
+        <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
+            <span class="n">z_next</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">encoder</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="n">features_next</span><span class="p">,</span> <span class="n">kg_embedding</span><span class="o">=</span><span class="n">kg_embedding_next</span><span class="p">)</span>
+
+        <span class="c1"># Predict next embedding</span>
+        <span class="n">z_hat_next</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">jepa_predictor</span><span class="p">(</span><span class="n">z_t</span><span class="p">,</span> <span class="n">action_t</span><span class="p">)</span>
+
+        <span class="c1"># Compute loss</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">jepa_predictor</span><span class="o">.</span><span class="n">jepa_loss</span><span class="p">(</span><span class="n">z_hat_next</span><span class="p">,</span> <span class="n">z_next</span><span class="p">,</span> <span class="n">mu_t</span><span class="p">,</span> <span class="n">logvar_t</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="WorldModel.surprise_score">
+<a class="viewcode-back" href="../../../api_world_model.html#src.world_model.world_model.WorldModel.surprise_score">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">surprise_score</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">features_t</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">],</span>
+        <span class="n">action_t</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">features_next</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">],</span>
+        <span class="n">kg_embedding_t</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">kg_embedding_next</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Per-sample surprise score = MSE(ẑ_{t+1}, z_{t+1}).</span>
+
+<span class="sd">        High values indicate the world model did not expect this transition.</span>
+<span class="sd">        Use as a signal to fall back on KG-based action selection or flag</span>
+<span class="sd">        the episode for human review.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            See :meth:`jepa_training_step` — same signature.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            surprise: (B,) tensor — per-sample MSE in latent space.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">jepa_predictor</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;surprise_score requires use_jepa=True.&quot;</span><span class="p">)</span>
+
+        <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
+            <span class="n">z_t</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">encoder</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="n">features_t</span><span class="p">,</span> <span class="n">kg_embedding</span><span class="o">=</span><span class="n">kg_embedding_t</span><span class="p">)</span>
+            <span class="n">z_next</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">encoder</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="n">features_next</span><span class="p">,</span> <span class="n">kg_embedding</span><span class="o">=</span><span class="n">kg_embedding_next</span><span class="p">)</span>
+            <span class="n">z_hat_next</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">jepa_predictor</span><span class="p">(</span><span class="n">z_t</span><span class="p">,</span> <span class="n">action_t</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">jepa_predictor</span><span class="o">.</span><span class="n">surprise_score</span><span class="p">(</span><span class="n">z_hat_next</span><span class="p">,</span> <span class="n">z_next</span><span class="p">)</span></div>
+
+
+    <span class="c1"># -- Persistence --------------------------------------------------------</span>
+
+<div class="viewcode-block" id="WorldModel.save">
+<a class="viewcode-back" href="../../../api_world_model.html#src.world_model.world_model.WorldModel.save">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">save</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Save full model state (V + M + C + config).&quot;&quot;&quot;</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">makedirs</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">path</span><span class="p">),</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">torch</span><span class="o">.</span><span class="n">save</span><span class="p">(</span>
+            <span class="p">{</span>
+                <span class="s2">&quot;config&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="p">,</span>
+                <span class="s2">&quot;state_dict&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">state_dict</span><span class="p">(),</span>
+            <span class="p">},</span>
+            <span class="n">path</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="WorldModel.load">
+<a class="viewcode-back" href="../../../api_world_model.html#src.world_model.world_model.WorldModel.load">[docs]</a>
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">load</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">device</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;cpu&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">WorldModel</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Load model from checkpoint.</span>
+
+<span class="sd">        Tolerant to several legacy checkpoint shapes:</span>
+
+<span class="sd">        * ``{&quot;config&quot;: WorldModelConfig, &quot;state_dict&quot;: OrderedDict}`` —</span>
+<span class="sd">          the canonical full-model checkpoint produced by :meth:`save`.</span>
+<span class="sd">        * ``{&quot;encoder&quot;: ..., &quot;predictor&quot;: ..., &quot;kg_encoder&quot;: ...}`` —</span>
+<span class="sd">          the JEPA-only checkpoint produced by ``train_pipeline``</span>
+<span class="sd">          stage 5.  Loaded into ``self.encoder`` / ``self.jepa_predictor``</span>
+<span class="sd">          and the rest of the model gets default-initialised weights.</span>
+<span class="sd">        * Any other dict — load whatever sub-state-dicts match by name</span>
+<span class="sd">          and warn about the rest, instead of raising ``KeyError``.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">checkpoint</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">map_location</span><span class="o">=</span><span class="n">device</span><span class="p">,</span> <span class="n">weights_only</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="n">config</span> <span class="o">=</span> <span class="n">checkpoint</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;config&quot;</span><span class="p">)</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">checkpoint</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="k">else</span> <span class="kc">None</span>
+        <span class="n">model</span> <span class="o">=</span> <span class="bp">cls</span><span class="p">(</span><span class="n">config</span><span class="p">)</span> <span class="k">if</span> <span class="n">config</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="bp">cls</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">checkpoint</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">model</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
+
+        <span class="c1"># Canonical full-model checkpoint.</span>
+        <span class="k">if</span> <span class="s2">&quot;state_dict&quot;</span> <span class="ow">in</span> <span class="n">checkpoint</span><span class="p">:</span>
+            <span class="n">model</span><span class="o">.</span><span class="n">load_state_dict</span><span class="p">(</span><span class="n">checkpoint</span><span class="p">[</span><span class="s2">&quot;state_dict&quot;</span><span class="p">])</span>
+            <span class="k">return</span> <span class="n">model</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
+
+        <span class="c1"># JEPA-only / partial checkpoint.  Try to load each sub-module&#39;s</span>
+        <span class="c1"># weights from a top-level key matching its attribute name.</span>
+        <span class="n">loaded</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">skipped</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">attr_name</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;encoder&quot;</span><span class="p">,</span> <span class="s2">&quot;dynamics&quot;</span><span class="p">,</span> <span class="s2">&quot;controller&quot;</span><span class="p">,</span> <span class="s2">&quot;jepa_predictor&quot;</span><span class="p">,</span> <span class="s2">&quot;kg_encoder&quot;</span><span class="p">):</span>
+            <span class="n">sub_state</span> <span class="o">=</span> <span class="n">checkpoint</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">attr_name</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">sub_state</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">attr_name</span> <span class="o">==</span> <span class="s2">&quot;jepa_predictor&quot;</span><span class="p">:</span>
+                <span class="n">sub_state</span> <span class="o">=</span> <span class="n">checkpoint</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;predictor&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">sub_state</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">module</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">attr_name</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">module</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">skipped</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">attr_name</span><span class="p">)</span>
+                <span class="k">continue</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">module</span><span class="o">.</span><span class="n">load_state_dict</span><span class="p">(</span><span class="n">sub_state</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+                <span class="n">loaded</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">attr_name</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                <span class="n">skipped</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">attr_name</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">loaded</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+                <span class="s2">&quot;WorldModel.load partial checkpoint: loaded=</span><span class="si">%s</span><span class="s2"> skipped=</span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span>
+                <span class="n">loaded</span><span class="p">,</span> <span class="n">skipped</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="s2">&quot;WorldModel.load: no recognised state in </span><span class="si">%s</span><span class="s2">; &quot;</span>
+                <span class="s2">&quot;returning default-initialised model.&quot;</span><span class="p">,</span> <span class="n">path</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="n">model</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span></div>
+</div>
+
+</pre></div>
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="../../../index.html">opposition-agents-playing-mtg</a></h1>
+
+
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="../../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+<p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../repository_map.html">Repository Map</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../components.html">Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api.html">API Reference</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="../../../index.html">Documentation overview</a><ul>
+  <li><a href="../../index.html">Module code</a><ul>
+  </ul></li>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &#169;2026, Data Science Lab FHSWF.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 8.1.3</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+    </div>
+
+    
+
+    
+  </body>
+</html>

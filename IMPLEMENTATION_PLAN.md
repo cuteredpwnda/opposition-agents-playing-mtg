@@ -43,6 +43,22 @@ items stay for traceability.
 
 ### Done
 
+- [x] **Paper architecture figure + context pass** — rebuilt Figure 1 with
+      orthogonal routing (right-angle paths only), fixed engine in/out arrow
+      attachment points, and expanded architecture sections in
+      `paper/opposition_agents_mtg.tex` (engine code-pointer table, concrete
+      world-model tensor-shape paragraph, and worked expected-free-energy
+      example).
+- [x] **Agent tech report expansion** — extended
+      `paper/agents_tech_report.tex` with glossary/symbol table, deeper
+      fusion/world-model implementation notes, per-failure debugging recipes,
+      richer reasoning-trace JSON examples, and an ASCII sequence flow for a
+      full LLM-fusion decision turn.
+- [x] **Sphinx docs scaffold** — added repository-wide documentation under
+      `docs/sphinx/` (`conf.py`, toctree pages, API references, requirements,
+      build output path) and verified HTML generation via
+      `.\.venv\Scripts\python.exe -m sphinx -b html docs\sphinx docs\sphinx\_build\html`.
+
 - [x] **Experiment harnesses** — two new entrypoints honour the
       "always write a log file, never pipe live output" rule:
       * `scripts/run_matchups.py` — every-pair (1v1) or rotating-pod

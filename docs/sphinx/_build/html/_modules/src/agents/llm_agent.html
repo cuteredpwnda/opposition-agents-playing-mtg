@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../../../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>src.agents.llm_agent &#8212; opposition-agents-playing-mtg  documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/basic.css?v=686e5160" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/alabaster.css?v=27fed22d" />
+    <script src="../../../_static/documentation_options.js?v=5929fcd5"></script>
+    <script src="../../../_static/doctools.js?v=9bcbadda"></script>
+    <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+   
+  <link rel="stylesheet" href="../../../_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <h1>Source code for src.agents.llm_agent</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Ollama-powered MTG agent for local LLM reasoning.</span>
+
+<span class="sd">Uses Ollama to run open-source models locally (Llama, Mistral, etc.).</span>
+<span class="sd">Minimizes API costs and latency by running inference locally.</span>
+
+<span class="sd">Fallback to RandomAgent if Ollama is unavailable.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">httpx</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.agents.base_agent</span><span class="w"> </span><span class="kn">import</span> <span class="n">MTGAgent</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.agents.random_agent</span><span class="w"> </span><span class="kn">import</span> <span class="n">RandomAgent</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.engine.game_state</span><span class="w"> </span><span class="kn">import</span> <span class="n">Action</span><span class="p">,</span> <span class="n">GameState</span><span class="p">,</span> <span class="n">ActionType</span>
+
+
+<span class="n">OLLAMA_BASE_URL</span> <span class="o">=</span> <span class="s2">&quot;http://localhost:11434&quot;</span>
+<span class="n">DEFAULT_MODEL</span> <span class="o">=</span> <span class="s2">&quot;gemma4:e2b&quot;</span>  <span class="c1"># Gemma 4 &quot;effective 2B&quot; edge variant — strong reasoning, low VRAM</span>
+
+<span class="n">SYSTEM_PROMPT</span> <span class="o">=</span> <span class="s2">&quot;&quot;&quot;</span><span class="se">\</span>
+<span class="s2">You are an expert Magic: The Gathering player. Analyze the game state and choose the best action.</span>
+
+<span class="s2">Key decision factors:</span>
+<span class="s2">1. **Mana efficiency** — Can you afford to cast spells?</span>
+<span class="s2">2. **Board presence** — What creatures do you have vs opponent?</span>
+<span class="s2">3. **Life totals** — Are you on a clock or have time?</span>
+<span class="s2">4. **Card advantage** — Can you draw/gain resources?</span>
+<span class="s2">5. **Tempo** — What&#39;s your turn order relative to threats?</span>
+
+<span class="s2">You MUST respond with ONLY the option number (0, 1, 2, etc.) of your chosen action.</span>
+<span class="s2">Do not explain. Do not repeat. Just the number.&quot;&quot;&quot;</span>
+
+
+<div class="viewcode-block" id="OllamaAgent">
+<a class="viewcode-back" href="../../../api_agents.html#src.agents.llm_agent.OllamaAgent">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">OllamaAgent</span><span class="p">(</span><span class="n">MTGAgent</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Agent that uses Ollama to run open-source LLMs locally.</span>
+<span class="sd">    </span>
+<span class="sd">    Polls Ollama at http://localhost:11434 for model inference.</span>
+<span class="sd">    Automatically falls back to RandomAgent if Ollama is unavailable.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">player_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;Ollama Agent&quot;</span><span class="p">,</span>
+        <span class="n">model</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">DEFAULT_MODEL</span><span class="p">,</span>
+        <span class="n">base_url</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">OLLAMA_BASE_URL</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">player_id</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">model</span> <span class="o">=</span> <span class="n">model</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">base_url</span> <span class="o">=</span> <span class="n">base_url</span>
+        <span class="c1"># Default 120s — small Gemma models can take 30-60s on first cold call.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">http_client</span> <span class="o">=</span> <span class="n">httpx</span><span class="o">.</span><span class="n">Client</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mf">120.0</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_ollama_available</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_fallback_agent</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="c1"># Diagnostics: track LLM usage vs fallback</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">stats</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">&quot;llm_calls_total&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+            <span class="s2">&quot;llm_calls_success&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+            <span class="s2">&quot;llm_calls_failed&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+            <span class="s2">&quot;fallback_invocations&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+            <span class="s2">&quot;actions_chosen&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;PASS_PRIORITY&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">&quot;CAST_SPELL&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+                               <span class="s2">&quot;PLAY_LAND&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">&quot;DECLARE_ATTACKERS&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+                               <span class="s2">&quot;ACTIVATE_ABILITY&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">&quot;OTHER&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">},</span>
+            <span class="s2">&quot;mulligan_decisions&quot;</span><span class="p">:</span> <span class="p">[],</span>  <span class="c1"># list of (mulligans_taken, kept)</span>
+        <span class="p">}</span>
+
+        <span class="c1"># Check if Ollama is available</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_check_ollama</span><span class="p">()</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_check_ollama</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Check if Ollama is running and the model is available.&quot;&quot;&quot;</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">http_client</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">base_url</span><span class="si">}</span><span class="s2">/api/tags&quot;</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="mf">2.0</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">response</span><span class="o">.</span><span class="n">status_code</span> <span class="o">==</span> <span class="mi">200</span><span class="p">:</span>
+                <span class="n">data</span> <span class="o">=</span> <span class="n">response</span><span class="o">.</span><span class="n">json</span><span class="p">()</span>
+                <span class="n">models</span> <span class="o">=</span> <span class="p">[</span><span class="n">m</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;name&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span> <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;models&quot;</span><span class="p">,</span> <span class="p">[])]</span>
+                <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">model</span> <span class="ow">in</span> <span class="n">m</span> <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">models</span><span class="p">):</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_ollama_available</span> <span class="o">=</span> <span class="kc">True</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">player_id</span><span class="si">}</span><span class="s2">] Ollama connected. Model: </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">player_id</span><span class="si">}</span><span class="s2">] Ollama available but model </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="si">}</span><span class="s2"> not loaded.&quot;</span><span class="p">)</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  Available models: </span><span class="si">{</span><span class="s1">&#39;, &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">models</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">player_id</span><span class="si">}</span><span class="s2">] Ollama unavailable: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ollama_available</span><span class="p">:</span>
+            <span class="c1"># Use RandomAgent as fallback</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_fallback_agent</span> <span class="o">=</span> <span class="n">RandomAgent</span><span class="p">(</span><span class="n">player_id</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">player_id</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">player_id</span><span class="si">}</span><span class="s2">] Using RandomAgent fallback&quot;</span><span class="p">)</span>
+
+<div class="viewcode-block" id="OllamaAgent.decide_action">
+<a class="viewcode-back" href="../../../api_agents.html#src.agents.llm_agent.OllamaAgent.decide_action">[docs]</a>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">decide_action</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">game_state</span><span class="p">:</span> <span class="n">GameState</span><span class="p">,</span> <span class="n">legal_actions</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Action</span><span class="p">]</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Action</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Use Ollama to select the best action.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">legal_actions</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">Action</span><span class="p">(</span><span class="n">action_type</span><span class="o">=</span><span class="n">ActionType</span><span class="o">.</span><span class="n">PASS_PRIORITY</span><span class="p">,</span> <span class="n">player_id</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">player_id</span><span class="p">)</span>
+
+        <span class="c1"># Use fallback if Ollama isn&#39;t available</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ollama_available</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">stats</span><span class="p">[</span><span class="s2">&quot;fallback_invocations&quot;</span><span class="p">]</span> <span class="o">+=</span> <span class="mi">1</span>
+            <span class="n">chosen</span> <span class="o">=</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_fallback_agent</span><span class="o">.</span><span class="n">decide_action</span><span class="p">(</span><span class="n">game_state</span><span class="p">,</span> <span class="n">legal_actions</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_record_action</span><span class="p">(</span><span class="n">chosen</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">chosen</span>
+
+        <span class="c1"># Build context for Ollama</span>
+        <span class="n">context</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_build_context</span><span class="p">(</span><span class="n">game_state</span><span class="p">,</span> <span class="n">legal_actions</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">stats</span><span class="p">[</span><span class="s2">&quot;llm_calls_total&quot;</span><span class="p">]</span> <span class="o">+=</span> <span class="mi">1</span>
+
+        <span class="c1"># Call Ollama</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">http_client</span><span class="o">.</span><span class="n">post</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">base_url</span><span class="si">}</span><span class="s2">/api/generate&quot;</span><span class="p">,</span>
+                <span class="n">json</span><span class="o">=</span><span class="p">{</span>
+                    <span class="s2">&quot;model&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="p">,</span>
+                    <span class="s2">&quot;prompt&quot;</span><span class="p">:</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">SYSTEM_PROMPT</span><span class="si">}</span><span class="se">\n\n</span><span class="si">{</span><span class="n">context</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+                    <span class="s2">&quot;stream&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span>
+                    <span class="s2">&quot;temperature&quot;</span><span class="p">:</span> <span class="mf">0.2</span><span class="p">,</span>  <span class="c1"># Low temperature for consistent answers</span>
+                    <span class="s2">&quot;keep_alive&quot;</span><span class="p">:</span> <span class="s2">&quot;30m&quot;</span><span class="p">,</span>  <span class="c1"># Keep model loaded between calls</span>
+                <span class="p">},</span>
+                <span class="n">timeout</span><span class="o">=</span><span class="mf">120.0</span><span class="p">,</span>
+            <span class="p">)</span>
+
+            <span class="k">if</span> <span class="n">response</span><span class="o">.</span><span class="n">status_code</span> <span class="o">==</span> <span class="mi">200</span><span class="p">:</span>
+                <span class="n">data</span> <span class="o">=</span> <span class="n">response</span><span class="o">.</span><span class="n">json</span><span class="p">()</span>
+                <span class="n">response_text</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;response&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+
+                <span class="c1"># Parse the action index</span>
+                <span class="n">chosen_idx</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parse_action_index</span><span class="p">(</span><span class="n">response_text</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">legal_actions</span><span class="p">))</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">stats</span><span class="p">[</span><span class="s2">&quot;llm_calls_success&quot;</span><span class="p">]</span> <span class="o">+=</span> <span class="mi">1</span>
+                <span class="n">chosen</span> <span class="o">=</span> <span class="n">legal_actions</span><span class="p">[</span><span class="n">chosen_idx</span><span class="p">]</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_record_action</span><span class="p">(</span><span class="n">chosen</span><span class="p">)</span>
+                <span class="k">return</span> <span class="n">chosen</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">player_id</span><span class="si">}</span><span class="s2">] Ollama error: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
+
+        <span class="c1"># Fallback to first playable action on error</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">stats</span><span class="p">[</span><span class="s2">&quot;llm_calls_failed&quot;</span><span class="p">]</span> <span class="o">+=</span> <span class="mi">1</span>
+        <span class="n">chosen</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_fallback_action</span><span class="p">(</span><span class="n">legal_actions</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_record_action</span><span class="p">(</span><span class="n">chosen</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">chosen</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_record_action</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">action</span><span class="p">:</span> <span class="n">Action</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Update action-type histogram in stats.&quot;&quot;&quot;</span>
+        <span class="n">atype</span> <span class="o">=</span> <span class="n">action</span><span class="o">.</span><span class="n">action_type</span><span class="o">.</span><span class="n">name</span>
+        <span class="k">if</span> <span class="n">atype</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">stats</span><span class="p">[</span><span class="s2">&quot;actions_chosen&quot;</span><span class="p">]:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">stats</span><span class="p">[</span><span class="s2">&quot;actions_chosen&quot;</span><span class="p">][</span><span class="n">atype</span><span class="p">]</span> <span class="o">+=</span> <span class="mi">1</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">stats</span><span class="p">[</span><span class="s2">&quot;actions_chosen&quot;</span><span class="p">][</span><span class="s2">&quot;OTHER&quot;</span><span class="p">]</span> <span class="o">+=</span> <span class="mi">1</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_build_context</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">game_state</span><span class="p">:</span> <span class="n">GameState</span><span class="p">,</span> <span class="n">legal_actions</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Action</span><span class="p">]</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Build a concise game state summary for Ollama.&quot;&quot;&quot;</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">src.engine.game_state</span><span class="w"> </span><span class="kn">import</span> <span class="n">Zone</span>
+        
+        <span class="c1"># Find me and opponent</span>
+        <span class="n">me</span> <span class="o">=</span> <span class="nb">next</span><span class="p">((</span><span class="n">p</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">game_state</span><span class="o">.</span><span class="n">players</span> <span class="k">if</span> <span class="n">p</span><span class="o">.</span><span class="n">player_id</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">player_id</span><span class="p">),</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="n">opp</span> <span class="o">=</span> <span class="nb">next</span><span class="p">((</span><span class="n">p</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">game_state</span><span class="o">.</span><span class="n">players</span> <span class="k">if</span> <span class="n">p</span><span class="o">.</span><span class="n">player_id</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">player_id</span><span class="p">),</span> <span class="kc">None</span><span class="p">)</span>
+        
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">me</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">opp</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">&quot;Unable to determine game state&quot;</span>
+        
+        <span class="c1"># My battlefield and hand</span>
+        <span class="n">my_hand</span> <span class="o">=</span> <span class="p">[</span><span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">game_state</span><span class="o">.</span><span class="n">cards</span> <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">owner_id</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">player_id</span> <span class="ow">and</span> <span class="n">c</span><span class="o">.</span><span class="n">zone</span> <span class="o">==</span> <span class="n">Zone</span><span class="o">.</span><span class="n">HAND</span><span class="p">]</span>
+        <span class="n">my_creatures</span> <span class="o">=</span> <span class="p">[</span><span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">game_state</span><span class="o">.</span><span class="n">cards</span> <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">owner_id</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">player_id</span> <span class="ow">and</span> <span class="n">c</span><span class="o">.</span><span class="n">zone</span> <span class="o">==</span> <span class="n">Zone</span><span class="o">.</span><span class="n">BATTLEFIELD</span> <span class="ow">and</span> <span class="n">c</span><span class="o">.</span><span class="n">is_creature</span><span class="p">()]</span>
+        <span class="n">my_lands</span> <span class="o">=</span> <span class="p">[</span><span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">game_state</span><span class="o">.</span><span class="n">cards</span> <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">owner_id</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">player_id</span> <span class="ow">and</span> <span class="n">c</span><span class="o">.</span><span class="n">zone</span> <span class="o">==</span> <span class="n">Zone</span><span class="o">.</span><span class="n">BATTLEFIELD</span> <span class="ow">and</span> <span class="n">c</span><span class="o">.</span><span class="n">is_land</span><span class="p">()]</span>
+        
+        <span class="c1"># Opponent battlefield (hand size hidden)</span>
+        <span class="n">opp_creatures</span> <span class="o">=</span> <span class="p">[</span><span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">game_state</span><span class="o">.</span><span class="n">cards</span> <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">owner_id</span> <span class="o">==</span> <span class="n">opp</span><span class="o">.</span><span class="n">player_id</span> <span class="ow">and</span> <span class="n">c</span><span class="o">.</span><span class="n">zone</span> <span class="o">==</span> <span class="n">Zone</span><span class="o">.</span><span class="n">BATTLEFIELD</span> <span class="ow">and</span> <span class="n">c</span><span class="o">.</span><span class="n">is_creature</span><span class="p">()]</span>
+        <span class="n">opp_lands</span> <span class="o">=</span> <span class="p">[</span><span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">game_state</span><span class="o">.</span><span class="n">cards</span> <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">owner_id</span> <span class="o">==</span> <span class="n">opp</span><span class="o">.</span><span class="n">player_id</span> <span class="ow">and</span> <span class="n">c</span><span class="o">.</span><span class="n">zone</span> <span class="o">==</span> <span class="n">Zone</span><span class="o">.</span><span class="n">BATTLEFIELD</span> <span class="ow">and</span> <span class="n">c</span><span class="o">.</span><span class="n">is_land</span><span class="p">()]</span>
+        
+        <span class="n">lines</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="sa">f</span><span class="s2">&quot;GAME STATE - Turn </span><span class="si">{</span><span class="n">game_state</span><span class="o">.</span><span class="n">turn_number</span><span class="si">}</span><span class="s2">, Phase: </span><span class="si">{</span><span class="n">game_state</span><span class="o">.</span><span class="n">phase</span><span class="o">.</span><span class="n">value</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+            <span class="sa">f</span><span class="s2">&quot;Active Player: </span><span class="si">{</span><span class="n">game_state</span><span class="o">.</span><span class="n">active_player</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;&quot;</span><span class="p">,</span>
+            <span class="sa">f</span><span class="s2">&quot;YOUR STATE (</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">player_id</span><span class="si">}</span><span class="s2">):&quot;</span><span class="p">,</span>
+            <span class="sa">f</span><span class="s2">&quot;  Life: </span><span class="si">{</span><span class="n">me</span><span class="o">.</span><span class="n">life_total</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+            <span class="sa">f</span><span class="s2">&quot;  Mana Pool: </span><span class="si">{</span><span class="n">me</span><span class="o">.</span><span class="n">mana_pool</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+            <span class="sa">f</span><span class="s2">&quot;  Hand (</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">my_hand</span><span class="p">)</span><span class="si">}</span><span class="s2"> cards): </span><span class="si">{</span><span class="s1">&#39;, &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">name</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="n">c</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="n">my_hand</span><span class="p">[:</span><span class="mi">5</span><span class="p">])</span><span class="si">}{</span><span class="s1">&#39;...&#39;</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="nb">len</span><span class="p">(</span><span class="n">my_hand</span><span class="p">)</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">5</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="s1">&#39;&#39;</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+            <span class="sa">f</span><span class="s2">&quot;  Creatures (</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">my_creatures</span><span class="p">)</span><span class="si">}</span><span class="s2">): </span><span class="si">{</span><span class="s1">&#39;, &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">name</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="n">c</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="n">my_creatures</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+            <span class="sa">f</span><span class="s2">&quot;  Lands (</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">my_lands</span><span class="p">)</span><span class="si">}</span><span class="s2">): </span><span class="si">{</span><span class="s1">&#39;, &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">name</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="n">c</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="n">my_lands</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;&quot;</span><span class="p">,</span>
+            <span class="sa">f</span><span class="s2">&quot;OPPONENT STATE (</span><span class="si">{</span><span class="n">opp</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">):&quot;</span><span class="p">,</span>
+            <span class="sa">f</span><span class="s2">&quot;  Life: </span><span class="si">{</span><span class="n">opp</span><span class="o">.</span><span class="n">life_total</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+            <span class="sa">f</span><span class="s2">&quot;  Creatures (</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">opp_creatures</span><span class="p">)</span><span class="si">}</span><span class="s2">): </span><span class="si">{</span><span class="s1">&#39;, &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">name</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="n">c</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="n">opp_creatures</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+            <span class="sa">f</span><span class="s2">&quot;  Lands (</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">opp_lands</span><span class="p">)</span><span class="si">}</span><span class="s2">): </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">opp_lands</span><span class="p">)</span><span class="si">}</span><span class="s2"> permanents&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;YOUR OPTIONS:&quot;</span><span class="p">,</span>
+        <span class="p">]</span>
+        
+        <span class="c1"># Group and summarize actions</span>
+        <span class="n">action_summaries</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">action</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">legal_actions</span><span class="p">):</span>
+            <span class="n">action_type</span> <span class="o">=</span> <span class="n">action</span><span class="o">.</span><span class="n">action_type</span><span class="o">.</span><span class="n">name</span>
+            
+            <span class="k">if</span> <span class="n">action_type</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">action_summaries</span><span class="p">:</span>
+                <span class="n">action_summaries</span><span class="p">[</span><span class="n">action_type</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+            
+            <span class="c1"># Get card name if relevant</span>
+            <span class="n">card</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="k">if</span> <span class="n">action</span><span class="o">.</span><span class="n">card_instance_id</span><span class="p">:</span>
+                <span class="n">card</span> <span class="o">=</span> <span class="nb">next</span><span class="p">((</span><span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">game_state</span><span class="o">.</span><span class="n">cards</span> <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">instance_id</span> <span class="o">==</span> <span class="n">action</span><span class="o">.</span><span class="n">card_instance_id</span><span class="p">),</span> <span class="kc">None</span><span class="p">)</span>
+            
+            <span class="k">if</span> <span class="n">action_type</span> <span class="o">==</span> <span class="s2">&quot;PASS_PRIORITY&quot;</span><span class="p">:</span>
+                <span class="n">action_summaries</span><span class="p">[</span><span class="n">action_type</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">i</span><span class="p">,</span> <span class="s2">&quot;Pass&quot;</span><span class="p">))</span>
+            <span class="k">elif</span> <span class="n">card</span><span class="p">:</span>
+                <span class="n">action_summaries</span><span class="p">[</span><span class="n">action_type</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">i</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">action_type</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">card</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">))</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">action_summaries</span><span class="p">[</span><span class="n">action_type</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">i</span><span class="p">,</span> <span class="n">action_type</span><span class="p">))</span>
+        
+        <span class="c1"># Print actions in priority order</span>
+        <span class="k">for</span> <span class="n">atype</span> <span class="ow">in</span> <span class="p">[</span><span class="s2">&quot;CAST_SPELL&quot;</span><span class="p">,</span> <span class="s2">&quot;DECLARE_ATTACKERS&quot;</span><span class="p">,</span> <span class="s2">&quot;PLAY_LAND&quot;</span><span class="p">,</span> <span class="s2">&quot;ACTIVATE_ABILITY&quot;</span><span class="p">,</span> <span class="s2">&quot;PASS_PRIORITY&quot;</span><span class="p">]:</span>
+            <span class="k">if</span> <span class="n">atype</span> <span class="ow">in</span> <span class="n">action_summaries</span><span class="p">:</span>
+                <span class="k">for</span> <span class="n">idx</span><span class="p">,</span> <span class="n">summary</span> <span class="ow">in</span> <span class="n">action_summaries</span><span class="p">[</span><span class="n">atype</span><span class="p">]:</span>
+                    <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  [</span><span class="si">{</span><span class="n">idx</span><span class="si">}</span><span class="s2">] </span><span class="si">{</span><span class="n">summary</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        
+        <span class="k">return</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">lines</span><span class="p">)</span>
+
+    
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_parse_action_index</span><span class="p">(</span><span class="n">response</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">num_actions</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Extract action index from Claude&#39;s response.&quot;&quot;&quot;</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
+        
+        <span class="c1"># Try to find first number in response</span>
+        <span class="n">matches</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="sa">r</span><span class="s1">&#39;\d+&#39;</span><span class="p">,</span> <span class="n">response</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">match</span> <span class="ow">in</span> <span class="n">matches</span><span class="p">:</span>
+            <span class="n">idx</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">match</span><span class="p">)</span>
+            <span class="k">if</span> <span class="mi">0</span> <span class="o">&lt;=</span> <span class="n">idx</span> <span class="o">&lt;</span> <span class="n">num_actions</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">idx</span>
+        
+        <span class="k">return</span> <span class="mi">0</span>  <span class="c1"># Default to first action</span>
+    
+    <span class="k">def</span><span class="w"> </span><span class="nf">_fallback_action</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">legal_actions</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Action</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Action</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Select action when Ollama is unavailable.&quot;&quot;&quot;</span>
+        <span class="c1"># Priority: CAST_SPELL &gt; DECLARE_ATTACKERS &gt; PLAY_LAND &gt; others</span>
+        <span class="k">for</span> <span class="n">atype</span> <span class="ow">in</span> <span class="p">[</span><span class="n">ActionType</span><span class="o">.</span><span class="n">CAST_SPELL</span><span class="p">,</span> <span class="n">ActionType</span><span class="o">.</span><span class="n">DECLARE_ATTACKERS</span><span class="p">,</span> <span class="n">ActionType</span><span class="o">.</span><span class="n">PLAY_LAND</span><span class="p">]:</span>
+            <span class="k">for</span> <span class="n">action</span> <span class="ow">in</span> <span class="n">legal_actions</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">action</span><span class="o">.</span><span class="n">action_type</span> <span class="o">==</span> <span class="n">atype</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="n">action</span>
+        
+        <span class="c1"># Last resort: first non-PASS action</span>
+        <span class="k">for</span> <span class="n">action</span> <span class="ow">in</span> <span class="n">legal_actions</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">action</span><span class="o">.</span><span class="n">action_type</span> <span class="o">!=</span> <span class="n">ActionType</span><span class="o">.</span><span class="n">PASS_PRIORITY</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">action</span>
+        
+        <span class="k">return</span> <span class="n">legal_actions</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="n">legal_actions</span> <span class="k">else</span> <span class="n">Action</span><span class="p">(</span>
+            <span class="n">action_type</span><span class="o">=</span><span class="n">ActionType</span><span class="o">.</span><span class="n">PASS_PRIORITY</span><span class="p">,</span> <span class="n">player_id</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">player_id</span>
+        <span class="p">)</span>
+
+<div class="viewcode-block" id="OllamaAgent.decide_mulligan">
+<a class="viewcode-back" href="../../../api_agents.html#src.agents.llm_agent.OllamaAgent.decide_mulligan">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">decide_mulligan</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">hand</span><span class="p">,</span> <span class="n">mulligans_taken</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">max_mulligans</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Use Ollama to decide whether to keep or mulligan the opening hand.</span>
+
+<span class="sd">        Returns True to KEEP, False to MULLIGAN.</span>
+<span class="sd">        Falls back to the strategy-aware heuristic if Ollama is unavailable.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ollama_available</span><span class="p">:</span>
+            <span class="k">return</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">decide_mulligan</span><span class="p">(</span><span class="n">hand</span><span class="p">,</span> <span class="n">mulligans_taken</span><span class="p">,</span> <span class="n">max_mulligans</span><span class="p">)</span>
+
+        <span class="c1"># Never mulligan after hitting the cap</span>
+        <span class="k">if</span> <span class="n">mulligans_taken</span> <span class="o">&gt;=</span> <span class="n">max_mulligans</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">True</span>
+
+        <span class="n">hand_desc</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_describe_hand</span><span class="p">(</span><span class="n">hand</span><span class="p">)</span>
+        <span class="n">mulligan_prompt</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span><span class="se">\</span>
+<span class="s2">You are evaluating an opening Magic hand in a game of casual constructed magic.</span>
+
+<span class="s2">HAND: </span><span class="si">{</span><span class="n">hand_desc</span><span class="si">}</span>
+<span class="s2">Mulligans taken: </span><span class="si">{</span><span class="n">mulligans_taken</span><span class="si">}</span>
+<span class="s2">Max mulligans allowed: </span><span class="si">{</span><span class="n">max_mulligans</span><span class="si">}</span>
+
+<span class="s2">Decide: should you KEEP this hand or MULLIGAN for a fresh 7-card draw minus </span><span class="si">{</span><span class="n">mulligans_taken</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="mi">1</span><span class="si">}</span><span class="s2"> cards?</span>
+
+<span class="s2">Respond with ONLY &quot;KEEP&quot; or &quot;MULLIGAN&quot;.&quot;&quot;&quot;</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">http_client</span><span class="o">.</span><span class="n">post</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">base_url</span><span class="si">}</span><span class="s2">/api/generate&quot;</span><span class="p">,</span>
+                <span class="n">json</span><span class="o">=</span><span class="p">{</span>
+                    <span class="s2">&quot;model&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="p">,</span>
+                    <span class="s2">&quot;prompt&quot;</span><span class="p">:</span> <span class="n">mulligan_prompt</span><span class="p">,</span>
+                    <span class="s2">&quot;stream&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span>
+                    <span class="s2">&quot;temperature&quot;</span><span class="p">:</span> <span class="mf">0.3</span><span class="p">,</span>
+                    <span class="s2">&quot;keep_alive&quot;</span><span class="p">:</span> <span class="s2">&quot;30m&quot;</span><span class="p">,</span>
+                <span class="p">},</span>
+                <span class="n">timeout</span><span class="o">=</span><span class="mf">60.0</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="n">response</span><span class="o">.</span><span class="n">status_code</span> <span class="o">==</span> <span class="mi">200</span><span class="p">:</span>
+                <span class="n">data</span> <span class="o">=</span> <span class="n">response</span><span class="o">.</span><span class="n">json</span><span class="p">()</span>
+                <span class="n">text</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;response&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span>
+                <span class="n">kept</span> <span class="o">=</span> <span class="s2">&quot;KEEP&quot;</span> <span class="ow">in</span> <span class="n">text</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">stats</span><span class="p">[</span><span class="s2">&quot;mulligan_decisions&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">mulligans_taken</span><span class="p">,</span> <span class="n">kept</span><span class="p">))</span>
+                <span class="k">return</span> <span class="n">kept</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="k">pass</span>
+
+        <span class="c1"># Fall back to parent class heuristic</span>
+        <span class="n">kept</span> <span class="o">=</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">decide_mulligan</span><span class="p">(</span><span class="n">hand</span><span class="p">,</span> <span class="n">mulligans_taken</span><span class="p">,</span> <span class="n">max_mulligans</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">stats</span><span class="p">[</span><span class="s2">&quot;mulligan_decisions&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">mulligans_taken</span><span class="p">,</span> <span class="n">kept</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">kept</span></div>
+
+
+<div class="viewcode-block" id="OllamaAgent.select_bottom_cards">
+<a class="viewcode-back" href="../../../api_agents.html#src.agents.llm_agent.OllamaAgent.select_bottom_cards">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">select_bottom_cards</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">hand</span><span class="p">,</span> <span class="n">n</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Use Ollama to select which cards to put on the bottom.</span>
+
+<span class="sd">        Returns a list of ``n`` cards from ``hand`` to put on the bottom</span>
+<span class="sd">        of the library after mulligans.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ollama_available</span> <span class="ow">or</span> <span class="n">n</span> <span class="o">&lt;=</span> <span class="mi">0</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">hand</span><span class="p">:</span>
+            <span class="k">return</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">select_bottom_cards</span><span class="p">(</span><span class="n">hand</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span>
+
+        <span class="n">hand_desc</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_describe_hand</span><span class="p">(</span><span class="n">hand</span><span class="p">)</span>
+        <span class="n">bottom_prompt</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span><span class="se">\</span>
+<span class="s2">You are selecting which cards to put on the bottom of your library after taking </span><span class="si">{</span><span class="n">n</span><span class="si">}</span><span class="s2"> mulligan(s).</span>
+
+<span class="s2">HAND: </span><span class="si">{</span><span class="n">hand_desc</span><span class="si">}</span>
+
+<span class="s2">Rank these cards by which ones you most want to KEEP (stay in hand) vs BOTTOM.</span>
+<span class="s2">Put the cards you want to BOTTOM first, most undesirable first.</span>
+
+<span class="s2">List the card names in order, one per line, for the first </span><span class="si">{</span><span class="n">n</span><span class="si">}</span><span class="s2"> cards to BOTTOM:&quot;&quot;&quot;</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">http_client</span><span class="o">.</span><span class="n">post</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">base_url</span><span class="si">}</span><span class="s2">/api/generate&quot;</span><span class="p">,</span>
+                <span class="n">json</span><span class="o">=</span><span class="p">{</span>
+                    <span class="s2">&quot;model&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="p">,</span>
+                    <span class="s2">&quot;prompt&quot;</span><span class="p">:</span> <span class="n">bottom_prompt</span><span class="p">,</span>
+                    <span class="s2">&quot;stream&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span>
+                    <span class="s2">&quot;temperature&quot;</span><span class="p">:</span> <span class="mf">0.3</span><span class="p">,</span>
+                <span class="p">},</span>
+                <span class="n">timeout</span><span class="o">=</span><span class="mf">60.0</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="n">response</span><span class="o">.</span><span class="n">status_code</span> <span class="o">==</span> <span class="mi">200</span><span class="p">:</span>
+                <span class="n">data</span> <span class="o">=</span> <span class="n">response</span><span class="o">.</span><span class="n">json</span><span class="p">()</span>
+                <span class="n">text</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;response&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+                <span class="n">lines</span> <span class="o">=</span> <span class="p">[</span><span class="n">l</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">for</span> <span class="n">l</span> <span class="ow">in</span> <span class="n">text</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span> <span class="k">if</span> <span class="n">l</span><span class="o">.</span><span class="n">strip</span><span class="p">()]</span>
+
+                <span class="c1"># Try to match card names from response to hand cards</span>
+                <span class="n">bottomed</span> <span class="o">=</span> <span class="p">[]</span>
+                <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">lines</span><span class="p">[:</span><span class="n">n</span><span class="p">]:</span>
+                    <span class="c1"># Find a card in hand whose name appears in this line</span>
+                    <span class="k">for</span> <span class="n">card</span> <span class="ow">in</span> <span class="n">hand</span><span class="p">:</span>
+                        <span class="k">if</span> <span class="n">card</span><span class="o">.</span><span class="n">name</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">in</span> <span class="n">line</span><span class="o">.</span><span class="n">lower</span><span class="p">():</span>
+                            <span class="n">bottomed</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">card</span><span class="p">)</span>
+                            <span class="k">break</span>
+
+                <span class="k">if</span> <span class="n">bottomed</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="n">bottomed</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="k">pass</span>
+
+        <span class="c1"># Fall back to parent class heuristic</span>
+        <span class="k">return</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">select_bottom_cards</span><span class="p">(</span><span class="n">hand</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span></div>
+
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_describe_hand</span><span class="p">(</span><span class="n">hand</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Convert a hand of CardInstance objects to a readable string.&quot;&quot;&quot;</span>
+        <span class="n">lines</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">card</span> <span class="ow">in</span> <span class="n">hand</span><span class="p">:</span>
+            <span class="n">cmc</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">card</span><span class="p">,</span> <span class="s2">&quot;cmc&quot;</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">0</span>
+            <span class="n">type_line</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">card</span><span class="o">.</span><span class="n">card_data</span><span class="p">,</span> <span class="s2">&quot;get&quot;</span><span class="p">,</span> <span class="k">lambda</span> <span class="n">k</span><span class="p">,</span> <span class="n">d</span><span class="p">:</span> <span class="n">d</span><span class="p">)(</span><span class="s2">&quot;type_line&quot;</span><span class="p">,</span> <span class="s2">&quot;Unknown&quot;</span><span class="p">)</span>
+            <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;- </span><span class="si">{</span><span class="n">card</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="n">cmc</span><span class="si">}</span><span class="s2">): </span><span class="si">{</span><span class="n">type_line</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">lines</span><span class="p">)</span> <span class="k">if</span> <span class="n">lines</span> <span class="k">else</span> <span class="s2">&quot;(empty hand)&quot;</span></div>
+
+
+
+<span class="c1"># Backward compatibility alias</span>
+<span class="n">LLMAgent</span> <span class="o">=</span> <span class="n">OllamaAgent</span>
+</pre></div>
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="../../../index.html">opposition-agents-playing-mtg</a></h1>
+
+
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="../../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+<p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../repository_map.html">Repository Map</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../components.html">Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api.html">API Reference</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="../../../index.html">Documentation overview</a><ul>
+  <li><a href="../../index.html">Module code</a><ul>
+  <li><a href="../agents.html">src.agents</a><ul>
+  </ul></li>
+  </ul></li>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &#169;2026, Data Science Lab FHSWF.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 8.1.3</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+    </div>
+
+    
+
+    
+  </body>
+</html>

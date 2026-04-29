@@ -1,0 +1,25 @@
+{
+  "total_games": 16,
+  "games_completed": 16,
+  "games_errored": 0,
+  "format": "standard",
+  "pod": false,
+  "agents": [
+    "llm_fusion",
+    "heuristic"
+  ],
+  "decks": [
+    "data\\decks\\modern\\modern_mono_red_burn.txt",
+    "data\\decks\\modern\\modern_azorius_control.txt"
+  ],
+  "wins_by_agent": {
+    "llm_fusion": 5,
+    "heuristic": 11
+  },
+  "win_rate_by_agent": {
+    "llm_fusion": 0.3125,
+    "heuristic": 0.6875
+  },
+  "avg_turns": 7.8125,
+  "avg_elapsed_sec": 114.455625
+}

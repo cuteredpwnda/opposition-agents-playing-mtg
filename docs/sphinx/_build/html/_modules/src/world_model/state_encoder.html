@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../../../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>src.world_model.state_encoder &#8212; opposition-agents-playing-mtg  documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/basic.css?v=686e5160" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/alabaster.css?v=27fed22d" />
+    <script src="../../../_static/documentation_options.js?v=5929fcd5"></script>
+    <script src="../../../_static/doctools.js?v=9bcbadda"></script>
+    <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+   
+  <link rel="stylesheet" href="../../../_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <h1>Source code for src.world_model.state_encoder</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">V Model — State Encoder (VAE).</span>
+
+<span class="sd">Encodes a structured MTG GameState into a compact latent vector z ∈ ℝ^d.</span>
+<span class="sd">Uses a Variational Autoencoder architecture:</span>
+<span class="sd">- Encoder: game features → μ, σ → z (reparameterization trick)</span>
+<span class="sd">- Decoder: z → reconstructed game features</span>
+
+<span class="sd">Unlike the original World Models VAE on pixels, this operates on structured</span>
+<span class="sd">game state features produced by GameTokenizer.</span>
+
+<span class="sd">Reference: Ha &amp; Schmidhuber (2018), Section &quot;VAE (V) Model&quot;</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Optional</span>
+
+<span class="k">try</span><span class="p">:</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
+<span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+    <span class="k">raise</span> <span class="ne">ImportError</span><span class="p">(</span>
+        <span class="s2">&quot;State encoder requires PyTorch. &quot;</span>
+        <span class="s2">&quot;Install with: pip install torch&quot;</span>
+    <span class="p">)</span>
+
+
+<div class="viewcode-block" id="StateEncoderConfig">
+<a class="viewcode-back" href="../../../api_world_model.html#src.world_model.state_encoder.StateEncoderConfig">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">StateEncoderConfig</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Configuration for the state encoder (V model).&quot;&quot;&quot;</span>
+
+    <span class="n">input_dim</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">2048</span>        <span class="c1"># Total flattened input feature dim</span>
+    <span class="n">hidden_dim</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">512</span>        <span class="c1"># Hidden layer size</span>
+    <span class="n">latent_dim</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">256</span>        <span class="c1"># Latent vector z dimension</span>
+    <span class="n">card_embed_dim</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">128</span>    <span class="c1"># Card embedding dimension</span>
+    <span class="n">max_hand_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">10</span>
+    <span class="n">max_battlefield_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">20</span>
+    <span class="n">max_graveyard_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">20</span>
+    <span class="n">dropout</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.1</span>
+    <span class="n">kl_weight</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.001</span>     <span class="c1"># KL divergence weight (β-VAE)</span>
+    <span class="c1"># Dual-input JEPA: set &gt; 0 to fuse KG context before the bottleneck.</span>
+    <span class="c1"># Must match KGContextEncoderConfig.kg_embed_dim.</span>
+    <span class="n">kg_embed_dim</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span></div>
+
+
+
+<div class="viewcode-block" id="SetEncoder">
+<a class="viewcode-back" href="../../../api_world_model.html#src.world_model.state_encoder.SetEncoder">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">SetEncoder</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Encodes a variable-length set of card embeddings into a fixed-size vector.</span>
+
+<span class="sd">    Uses a permutation-invariant pooling approach:</span>
+<span class="sd">    mean(MLP(card_embedding * mask)) for each card in the set.</span>
+
+<span class="sd">    This handles variable numbers of cards in hand/battlefield/graveyard.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">card_dim</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">output_dim</span><span class="p">:</span> <span class="nb">int</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">card_dim</span> <span class="o">=</span> <span class="n">card_dim</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">mlp</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Sequential</span><span class="p">(</span>
+            <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">card_dim</span><span class="p">,</span> <span class="n">output_dim</span><span class="p">),</span>
+            <span class="n">nn</span><span class="o">.</span><span class="n">ReLU</span><span class="p">(),</span>
+            <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">output_dim</span><span class="p">,</span> <span class="n">output_dim</span><span class="p">),</span>
+        <span class="p">)</span>
+
+<div class="viewcode-block" id="SetEncoder.forward">
+<a class="viewcode-back" href="../../../api_world_model.html#src.world_model.state_encoder.SetEncoder.forward">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cards</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Args:</span>
+<span class="sd">            cards: (batch, max_cards, card_dim)</span>
+<span class="sd">            mask: (batch, max_cards) — 1 where card exists, 0 for padding</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            (batch, output_dim) — pooled set representation</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Apply MLP to each card</span>
+        <span class="n">encoded</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">mlp</span><span class="p">(</span><span class="n">cards</span><span class="p">)</span>  <span class="c1"># (B, max_cards, output_dim)</span>
+
+        <span class="c1"># Masked mean pooling</span>
+        <span class="n">mask_expanded</span> <span class="o">=</span> <span class="n">mask</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>  <span class="c1"># (B, max_cards, 1)</span>
+        <span class="n">encoded</span> <span class="o">=</span> <span class="n">encoded</span> <span class="o">*</span> <span class="n">mask_expanded</span>
+        <span class="n">count</span> <span class="o">=</span> <span class="n">mask_expanded</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">clamp</span><span class="p">(</span><span class="nb">min</span><span class="o">=</span><span class="mf">1.0</span><span class="p">)</span>  <span class="c1"># (B, 1)</span>
+        <span class="n">pooled</span> <span class="o">=</span> <span class="n">encoded</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span> <span class="o">/</span> <span class="n">count</span>  <span class="c1"># (B, output_dim)</span>
+
+        <span class="k">return</span> <span class="n">pooled</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="StateEncoder">
+<a class="viewcode-back" href="../../../api_world_model.html#src.world_model.state_encoder.StateEncoder">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">StateEncoder</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;V Model — Variational Autoencoder for MTG game states.</span>
+
+<span class="sd">    Architecture:</span>
+<span class="sd">        1. Set encoders for variable-length card zones (hand, battlefield, etc.)</span>
+<span class="sd">        2. MLP encoders for fixed-size features (player stats, phase, turn)</span>
+<span class="sd">        3. Fusion layer combining all encodings</span>
+<span class="sd">        4. VAE bottleneck: μ, σ → z via reparameterization</span>
+<span class="sd">        5. Decoder: z → reconstructed features (for training)</span>
+
+<span class="sd">    Usage:</span>
+<span class="sd">        encoder = StateEncoder(config)</span>
+<span class="sd">        z, mu, logvar = encoder.encode(tokenized_state)</span>
+<span class="sd">        reconstructed = encoder.decode(z)</span>
+<span class="sd">        loss = encoder.loss(tokenized_state, reconstructed, mu, logvar)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="n">StateEncoderConfig</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">config</span> <span class="o">=</span> <span class="n">config</span> <span class="ow">or</span> <span class="n">StateEncoderConfig</span><span class="p">()</span>
+        <span class="n">c</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span>
+
+        <span class="c1"># Set encoders for variable-length zones</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">hand_encoder</span> <span class="o">=</span> <span class="n">SetEncoder</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">card_embed_dim</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">hidden_dim</span> <span class="o">//</span> <span class="mi">4</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">battlefield_encoder</span> <span class="o">=</span> <span class="n">SetEncoder</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">card_embed_dim</span> <span class="o">+</span> <span class="mi">4</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">hidden_dim</span> <span class="o">//</span> <span class="mi">4</span><span class="p">)</span>  <span class="c1"># +4 for tapped/power/tough/sick</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">opp_battlefield_encoder</span> <span class="o">=</span> <span class="n">SetEncoder</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">card_embed_dim</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">hidden_dim</span> <span class="o">//</span> <span class="mi">4</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">graveyard_encoder</span> <span class="o">=</span> <span class="n">SetEncoder</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">card_embed_dim</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">hidden_dim</span> <span class="o">//</span> <span class="mi">8</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">stack_encoder</span> <span class="o">=</span> <span class="n">SetEncoder</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">card_embed_dim</span> <span class="o">+</span> <span class="mi">2</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">hidden_dim</span> <span class="o">//</span> <span class="mi">8</span><span class="p">)</span>
+
+        <span class="c1"># Fixed-size feature encoders</span>
+        <span class="n">player_feature_dim</span> <span class="o">=</span> <span class="mi">11</span>  <span class="c1"># life, mana(6), hand_count, lib_count, bf_count, land_plays</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">player_encoder</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Sequential</span><span class="p">(</span>
+            <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">player_feature_dim</span> <span class="o">*</span> <span class="mi">2</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">hidden_dim</span> <span class="o">//</span> <span class="mi">4</span><span class="p">),</span>  <span class="c1"># Both players</span>
+            <span class="n">nn</span><span class="o">.</span><span class="n">ReLU</span><span class="p">(),</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">phase_encoder</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Sequential</span><span class="p">(</span>
+            <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">12</span> <span class="o">+</span> <span class="mi">4</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">hidden_dim</span> <span class="o">//</span> <span class="mi">8</span><span class="p">),</span>  <span class="c1"># phase_onehot(12) + turn_features(4)</span>
+            <span class="n">nn</span><span class="o">.</span><span class="n">ReLU</span><span class="p">(),</span>
+        <span class="p">)</span>
+
+        <span class="c1"># Compute fusion input dimension</span>
+        <span class="c1"># hand + bf + opp_bf + gy + stack + player + phase</span>
+        <span class="n">fusion_dim</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">c</span><span class="o">.</span><span class="n">hidden_dim</span> <span class="o">//</span> <span class="mi">4</span>  <span class="c1"># hand</span>
+            <span class="o">+</span> <span class="n">c</span><span class="o">.</span><span class="n">hidden_dim</span> <span class="o">//</span> <span class="mi">4</span>  <span class="c1"># battlefield</span>
+            <span class="o">+</span> <span class="n">c</span><span class="o">.</span><span class="n">hidden_dim</span> <span class="o">//</span> <span class="mi">4</span>  <span class="c1"># opp battlefield</span>
+            <span class="o">+</span> <span class="n">c</span><span class="o">.</span><span class="n">hidden_dim</span> <span class="o">//</span> <span class="mi">8</span>  <span class="c1"># graveyard</span>
+            <span class="o">+</span> <span class="n">c</span><span class="o">.</span><span class="n">hidden_dim</span> <span class="o">//</span> <span class="mi">8</span>  <span class="c1"># stack</span>
+            <span class="o">+</span> <span class="n">c</span><span class="o">.</span><span class="n">hidden_dim</span> <span class="o">//</span> <span class="mi">4</span>  <span class="c1"># players</span>
+            <span class="o">+</span> <span class="n">c</span><span class="o">.</span><span class="n">hidden_dim</span> <span class="o">//</span> <span class="mi">8</span>  <span class="c1"># phase/turn</span>
+        <span class="p">)</span>
+
+        <span class="c1"># Optional KG context projection.</span>
+        <span class="c1"># When kg_embed_dim &gt; 0, a strategic context vector from KGContextEncoder</span>
+        <span class="c1"># is projected and *added* to the fused game-state features before the</span>
+        <span class="c1"># VAE bottleneck.  This is the dual-input path for JEPA.</span>
+        <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">kg_embed_dim</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">kg_proj</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Sequential</span><span class="p">(</span>
+                <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">kg_embed_dim</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">hidden_dim</span><span class="p">),</span>
+                <span class="n">nn</span><span class="o">.</span><span class="n">ReLU</span><span class="p">(),</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">kg_proj</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="c1"># Fusion → latent</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fusion</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Sequential</span><span class="p">(</span>
+            <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">fusion_dim</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">hidden_dim</span><span class="p">),</span>
+            <span class="n">nn</span><span class="o">.</span><span class="n">ReLU</span><span class="p">(),</span>
+            <span class="n">nn</span><span class="o">.</span><span class="n">Dropout</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">dropout</span><span class="p">),</span>
+            <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">hidden_dim</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">hidden_dim</span><span class="p">),</span>
+            <span class="n">nn</span><span class="o">.</span><span class="n">ReLU</span><span class="p">(),</span>
+        <span class="p">)</span>
+
+        <span class="c1"># VAE bottleneck</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fc_mu</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">hidden_dim</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">latent_dim</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fc_logvar</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">hidden_dim</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">latent_dim</span><span class="p">)</span>
+
+        <span class="c1"># Decoder</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">decoder</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Sequential</span><span class="p">(</span>
+            <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">latent_dim</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">hidden_dim</span><span class="p">),</span>
+            <span class="n">nn</span><span class="o">.</span><span class="n">ReLU</span><span class="p">(),</span>
+            <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">hidden_dim</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">hidden_dim</span><span class="p">),</span>
+            <span class="n">nn</span><span class="o">.</span><span class="n">ReLU</span><span class="p">(),</span>
+            <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">hidden_dim</span><span class="p">,</span> <span class="n">fusion_dim</span><span class="p">),</span>  <span class="c1"># Reconstruct fused features</span>
+        <span class="p">)</span>
+
+<div class="viewcode-block" id="StateEncoder.encode">
+<a class="viewcode-back" href="../../../api_world_model.html#src.world_model.state_encoder.StateEncoder.encode">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">encode</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">features</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">],</span>
+        <span class="n">kg_embedding</span><span class="p">:</span> <span class="s2">&quot;Optional[torch.Tensor]&quot;</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Encode tokenized game state features into latent space.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            features: Dict of tensors from GameTokenizer.encode_state(),</span>
+<span class="sd">                      converted to torch tensors and batched.</span>
+<span class="sd">            kg_embedding: Optional (batch, kg_embed_dim) context vector from</span>
+<span class="sd">                          KGContextEncoder.  When supplied the KG signal is</span>
+<span class="sd">                          fused with game-state features before the VAE</span>
+<span class="sd">                          bottleneck (dual-input JEPA path).</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            z: (batch, latent_dim) — sampled latent vector</span>
+<span class="sd">            mu: (batch, latent_dim) — mean of latent distribution</span>
+<span class="sd">            logvar: (batch, latent_dim) — log-variance of latent distribution</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Encode each zone</span>
+        <span class="n">hand_enc</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">hand_encoder</span><span class="p">(</span><span class="n">features</span><span class="p">[</span><span class="s2">&quot;hand_cards&quot;</span><span class="p">],</span> <span class="n">features</span><span class="p">[</span><span class="s2">&quot;hand_mask&quot;</span><span class="p">])</span>
+
+        <span class="c1"># Battlefield: concatenate card embeddings with extra state (tapped, power, etc.)</span>
+        <span class="n">bf_cards</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">([</span><span class="n">features</span><span class="p">[</span><span class="s2">&quot;battlefield_cards&quot;</span><span class="p">],</span> <span class="n">features</span><span class="p">[</span><span class="s2">&quot;battlefield_state&quot;</span><span class="p">]],</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">bf_enc</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">battlefield_encoder</span><span class="p">(</span><span class="n">bf_cards</span><span class="p">,</span> <span class="n">features</span><span class="p">[</span><span class="s2">&quot;battlefield_mask&quot;</span><span class="p">])</span>
+
+        <span class="n">opp_bf_enc</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">opp_battlefield_encoder</span><span class="p">(</span>
+            <span class="n">features</span><span class="p">[</span><span class="s2">&quot;opp_battlefield_cards&quot;</span><span class="p">],</span> <span class="n">features</span><span class="p">[</span><span class="s2">&quot;opp_battlefield_mask&quot;</span><span class="p">]</span>
+        <span class="p">)</span>
+
+        <span class="n">gy_enc</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">graveyard_encoder</span><span class="p">(</span><span class="n">features</span><span class="p">[</span><span class="s2">&quot;graveyard_cards&quot;</span><span class="p">],</span> <span class="n">features</span><span class="p">[</span><span class="s2">&quot;graveyard_mask&quot;</span><span class="p">])</span>
+
+        <span class="c1"># Stack: use first dim as mask (non-zero entries)</span>
+        <span class="n">stack</span> <span class="o">=</span> <span class="n">features</span><span class="p">[</span><span class="s2">&quot;stack_features&quot;</span><span class="p">]</span>
+        <span class="n">stack_mask</span> <span class="o">=</span> <span class="p">(</span><span class="n">stack</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">float</span><span class="p">()</span>
+        <span class="n">stack_enc</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">stack_encoder</span><span class="p">(</span><span class="n">stack</span><span class="p">,</span> <span class="n">stack_mask</span><span class="p">)</span>
+
+        <span class="c1"># Player features</span>
+        <span class="n">player_feats</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">([</span><span class="n">features</span><span class="p">[</span><span class="s2">&quot;player_features&quot;</span><span class="p">],</span> <span class="n">features</span><span class="p">[</span><span class="s2">&quot;opponent_features&quot;</span><span class="p">]],</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">player_enc</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">player_encoder</span><span class="p">(</span><span class="n">player_feats</span><span class="p">)</span>
+
+        <span class="c1"># Phase/turn</span>
+        <span class="n">phase_turn</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">([</span><span class="n">features</span><span class="p">[</span><span class="s2">&quot;phase_encoding&quot;</span><span class="p">],</span> <span class="n">features</span><span class="p">[</span><span class="s2">&quot;turn_features&quot;</span><span class="p">]],</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">phase_enc</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">phase_encoder</span><span class="p">(</span><span class="n">phase_turn</span><span class="p">)</span>
+
+        <span class="c1"># Fuse and return full hidden representation for loss targets</span>
+        <span class="n">hidden</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_fuse_features</span><span class="p">(</span>
+            <span class="n">hand_enc</span><span class="o">=</span><span class="n">hand_enc</span><span class="p">,</span>
+            <span class="n">bf_enc</span><span class="o">=</span><span class="n">bf_enc</span><span class="p">,</span>
+            <span class="n">opp_bf_enc</span><span class="o">=</span><span class="n">opp_bf_enc</span><span class="p">,</span>
+            <span class="n">gy_enc</span><span class="o">=</span><span class="n">gy_enc</span><span class="p">,</span>
+            <span class="n">stack_enc</span><span class="o">=</span><span class="n">stack_enc</span><span class="p">,</span>
+            <span class="n">player_enc</span><span class="o">=</span><span class="n">player_enc</span><span class="p">,</span>
+            <span class="n">phase_enc</span><span class="o">=</span><span class="n">phase_enc</span><span class="p">,</span>
+            <span class="n">kg_embedding</span><span class="o">=</span><span class="n">kg_embedding</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="c1"># VAE</span>
+        <span class="n">mu</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">fc_mu</span><span class="p">(</span><span class="n">hidden</span><span class="p">)</span>
+        <span class="n">logvar</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">fc_logvar</span><span class="p">(</span><span class="n">hidden</span><span class="p">)</span>
+        <span class="n">z</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_reparameterize</span><span class="p">(</span><span class="n">mu</span><span class="p">,</span> <span class="n">logvar</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">z</span><span class="p">,</span> <span class="n">mu</span><span class="p">,</span> <span class="n">logvar</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_fuse_features</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">hand_enc</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">bf_enc</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">opp_bf_enc</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">gy_enc</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">stack_enc</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">player_enc</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">phase_enc</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">kg_embedding</span><span class="p">:</span> <span class="s2">&quot;Optional[torch.Tensor]&quot;</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Fuse encoded components into the shared latent input space.</span>
+
+<span class="sd">        When *kg_embedding* is provided and the encoder was built with</span>
+<span class="sd">        ``kg_embed_dim &gt; 0``, the KG context is projected and element-wise</span>
+<span class="sd">        added to the game-state hidden vector before the VAE bottleneck.</span>
+<span class="sd">        This is a residual-style fusion: the game-state path dominates and</span>
+<span class="sd">        the KG path contributes an additive correction signal.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">fused</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">([</span><span class="n">hand_enc</span><span class="p">,</span> <span class="n">bf_enc</span><span class="p">,</span> <span class="n">opp_bf_enc</span><span class="p">,</span> <span class="n">gy_enc</span><span class="p">,</span> <span class="n">stack_enc</span><span class="p">,</span> <span class="n">player_enc</span><span class="p">,</span> <span class="n">phase_enc</span><span class="p">],</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">hidden</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">fusion</span><span class="p">(</span><span class="n">fused</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">kg_proj</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">kg_embedding</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">hidden</span> <span class="o">=</span> <span class="n">hidden</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">kg_proj</span><span class="p">(</span><span class="n">kg_embedding</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">hidden</span>
+
+<div class="viewcode-block" id="StateEncoder.decode">
+<a class="viewcode-back" href="../../../api_world_model.html#src.world_model.state_encoder.StateEncoder.decode">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">decode</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">z</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Decode latent vector back to fused feature space.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            z: (batch, latent_dim)</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            reconstructed: (batch, fusion_dim)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">decoder</span><span class="p">(</span><span class="n">z</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="StateEncoder.loss">
+<a class="viewcode-back" href="../../../api_world_model.html#src.world_model.state_encoder.StateEncoder.loss">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">loss</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">features</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">],</span>
+        <span class="n">reconstructed</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">mu</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">logvar</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Compute VAE loss = reconstruction + KL divergence.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            features: Original input features</span>
+<span class="sd">            reconstructed: Decoder output</span>
+<span class="sd">            mu, logvar: Encoder outputs</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Dict with &quot;total&quot;, &quot;reconstruction&quot;, &quot;kl&quot; loss tensors.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Reconstruction target: the fused representation prior to final fusion layer</span>
+        <span class="c1"># (i.e., concat of per-zone encodings). The decoder output has size fusion_dim</span>
+        <span class="c1"># and should reconstruct this vector.</span>
+        <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
+            <span class="n">hand_enc</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">hand_encoder</span><span class="p">(</span><span class="n">features</span><span class="p">[</span><span class="s2">&quot;hand_cards&quot;</span><span class="p">],</span> <span class="n">features</span><span class="p">[</span><span class="s2">&quot;hand_mask&quot;</span><span class="p">])</span>
+            <span class="n">bf_cards</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">([</span><span class="n">features</span><span class="p">[</span><span class="s2">&quot;battlefield_cards&quot;</span><span class="p">],</span> <span class="n">features</span><span class="p">[</span><span class="s2">&quot;battlefield_state&quot;</span><span class="p">]],</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+            <span class="n">bf_enc</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">battlefield_encoder</span><span class="p">(</span><span class="n">bf_cards</span><span class="p">,</span> <span class="n">features</span><span class="p">[</span><span class="s2">&quot;battlefield_mask&quot;</span><span class="p">])</span>
+            <span class="n">opp_bf_enc</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">opp_battlefield_encoder</span><span class="p">(</span><span class="n">features</span><span class="p">[</span><span class="s2">&quot;opp_battlefield_cards&quot;</span><span class="p">],</span> <span class="n">features</span><span class="p">[</span><span class="s2">&quot;opp_battlefield_mask&quot;</span><span class="p">])</span>
+            <span class="n">gy_enc</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">graveyard_encoder</span><span class="p">(</span><span class="n">features</span><span class="p">[</span><span class="s2">&quot;graveyard_cards&quot;</span><span class="p">],</span> <span class="n">features</span><span class="p">[</span><span class="s2">&quot;graveyard_mask&quot;</span><span class="p">])</span>
+            <span class="n">stack</span> <span class="o">=</span> <span class="n">features</span><span class="p">[</span><span class="s2">&quot;stack_features&quot;</span><span class="p">]</span>
+            <span class="n">stack_mask</span> <span class="o">=</span> <span class="p">(</span><span class="n">stack</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">float</span><span class="p">()</span>
+            <span class="n">stack_enc</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">stack_encoder</span><span class="p">(</span><span class="n">stack</span><span class="p">,</span> <span class="n">stack_mask</span><span class="p">)</span>
+            <span class="n">player_feats</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">([</span><span class="n">features</span><span class="p">[</span><span class="s2">&quot;player_features&quot;</span><span class="p">],</span> <span class="n">features</span><span class="p">[</span><span class="s2">&quot;opponent_features&quot;</span><span class="p">]],</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+            <span class="n">player_enc</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">player_encoder</span><span class="p">(</span><span class="n">player_feats</span><span class="p">)</span>
+            <span class="n">phase_turn</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">([</span><span class="n">features</span><span class="p">[</span><span class="s2">&quot;phase_encoding&quot;</span><span class="p">],</span> <span class="n">features</span><span class="p">[</span><span class="s2">&quot;turn_features&quot;</span><span class="p">]],</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+            <span class="n">phase_enc</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">phase_encoder</span><span class="p">(</span><span class="n">phase_turn</span><span class="p">)</span>
+
+            <span class="n">target</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">(</span>
+                <span class="p">[</span><span class="n">hand_enc</span><span class="p">,</span> <span class="n">bf_enc</span><span class="p">,</span> <span class="n">opp_bf_enc</span><span class="p">,</span> <span class="n">gy_enc</span><span class="p">,</span> <span class="n">stack_enc</span><span class="p">,</span> <span class="n">player_enc</span><span class="p">,</span> <span class="n">phase_enc</span><span class="p">],</span>
+                <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">,</span>
+            <span class="p">)</span>
+
+        <span class="n">recon_loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">mse_loss</span><span class="p">(</span><span class="n">reconstructed</span><span class="p">,</span> <span class="n">target</span><span class="p">,</span> <span class="n">reduction</span><span class="o">=</span><span class="s2">&quot;mean&quot;</span><span class="p">)</span>
+
+        <span class="c1"># KL divergence: -0.5 * sum(1 + log(σ²) - μ² - σ²)</span>
+        <span class="n">kl_loss</span> <span class="o">=</span> <span class="o">-</span><span class="mf">0.5</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="mi">1</span> <span class="o">+</span> <span class="n">logvar</span> <span class="o">-</span> <span class="n">mu</span><span class="o">.</span><span class="n">pow</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span> <span class="o">-</span> <span class="n">logvar</span><span class="o">.</span><span class="n">exp</span><span class="p">())</span>
+
+        <span class="n">total</span> <span class="o">=</span> <span class="n">recon_loss</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">kl_weight</span> <span class="o">*</span> <span class="n">kl_loss</span>
+
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s2">&quot;total&quot;</span><span class="p">:</span> <span class="n">total</span><span class="p">,</span>
+            <span class="s2">&quot;reconstruction&quot;</span><span class="p">:</span> <span class="n">recon_loss</span><span class="p">,</span>
+            <span class="s2">&quot;kl&quot;</span><span class="p">:</span> <span class="n">kl_loss</span><span class="p">,</span>
+        <span class="p">}</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_reparameterize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">mu</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">logvar</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Reparameterization trick: z = μ + σ * ε, where ε ~ N(0, I).&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">training</span><span class="p">:</span>
+            <span class="n">std</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="mf">0.5</span> <span class="o">*</span> <span class="n">logvar</span><span class="p">)</span>
+            <span class="n">eps</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn_like</span><span class="p">(</span><span class="n">std</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">mu</span> <span class="o">+</span> <span class="n">eps</span> <span class="o">*</span> <span class="n">std</span>
+        <span class="k">return</span> <span class="n">mu</span>  <span class="c1"># During inference, just use the mean</span></div>
+
+</pre></div>
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="../../../index.html">opposition-agents-playing-mtg</a></h1>
+
+
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="../../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+<p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../repository_map.html">Repository Map</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../components.html">Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api.html">API Reference</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="../../../index.html">Documentation overview</a><ul>
+  <li><a href="../../index.html">Module code</a><ul>
+  </ul></li>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &#169;2026, Data Science Lab FHSWF.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 8.1.3</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+    </div>
+
+    
+
+    
+  </body>
+</html>

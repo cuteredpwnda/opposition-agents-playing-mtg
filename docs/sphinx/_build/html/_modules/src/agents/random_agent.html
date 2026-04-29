@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../../../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>src.agents.random_agent &#8212; opposition-agents-playing-mtg  documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/basic.css?v=686e5160" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/alabaster.css?v=27fed22d" />
+    <script src="../../../_static/documentation_options.js?v=5929fcd5"></script>
+    <script src="../../../_static/doctools.js?v=9bcbadda"></script>
+    <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+   
+  <link rel="stylesheet" href="../../../_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <h1>Source code for src.agents.random_agent</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Random agent — picks legal actions with bias toward playing threats. </span>
+<span class="sd">Includes heuristic fallback for when no strategy available.</span>
+
+<span class="sd">Reference: mtg-player (MIT) — https://github.com/theRealMarkCastillo/mtg-player</span>
+<span class="sd">Reference: open-mtg (MIT) — https://github.com/hlynurd/open-mtg (MCTS patterns)</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">random</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.agents.base_agent</span><span class="w"> </span><span class="kn">import</span> <span class="n">MTGAgent</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.engine.game_state</span><span class="w"> </span><span class="kn">import</span> <span class="n">Action</span><span class="p">,</span> <span class="n">GameState</span><span class="p">,</span> <span class="n">ActionType</span>
+
+
+<div class="viewcode-block" id="RandomAgent">
+<a class="viewcode-back" href="../../../api_agents.html#src.agents.RandomAgent">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">RandomAgent</span><span class="p">(</span><span class="n">MTGAgent</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Baseline agent that picks legal actions with strategic bias.&quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="RandomAgent.decide_action">
+<a class="viewcode-back" href="../../../api_agents.html#src.agents.RandomAgent.decide_action">[docs]</a>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">decide_action</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">game_state</span><span class="p">:</span> <span class="n">GameState</span><span class="p">,</span> <span class="n">legal_actions</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Action</span><span class="p">]</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Action</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Choose an action with bias: prefer CAST_SPELL &gt; PLAY_LAND &gt; ACTIVATE_ABILITY &gt; PASS&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">legal_actions</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">Action</span><span class="p">(</span><span class="n">action_type</span><span class="o">=</span><span class="n">ActionType</span><span class="o">.</span><span class="n">PASS_PRIORITY</span><span class="p">,</span> <span class="n">player_id</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">player_id</span><span class="p">)</span>
+        
+        <span class="c1"># Weight actions by type</span>
+        <span class="n">weighted</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">action</span> <span class="ow">in</span> <span class="n">legal_actions</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">action</span><span class="o">.</span><span class="n">action_type</span> <span class="o">==</span> <span class="n">ActionType</span><span class="o">.</span><span class="n">CAST_SPELL</span><span class="p">:</span>
+                <span class="n">weight</span> <span class="o">=</span> <span class="mi">10</span>  <span class="c1"># Strongly prefer casting creatures/spells</span>
+                <span class="c1"># Casting your commander from the command zone is almost</span>
+                <span class="c1"># always your best play — boost it heavily so naive agents</span>
+                <span class="c1"># don&#39;t leave their commander rotting in the command zone.</span>
+                <span class="k">if</span> <span class="n">action</span><span class="o">.</span><span class="n">card_instance_id</span><span class="p">:</span>
+                    <span class="n">src</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span>
+                        <span class="p">(</span><span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">game_state</span><span class="o">.</span><span class="n">cards</span>
+                         <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">instance_id</span> <span class="o">==</span> <span class="n">action</span><span class="o">.</span><span class="n">card_instance_id</span><span class="p">),</span>
+                        <span class="kc">None</span><span class="p">,</span>
+                    <span class="p">)</span>
+                    <span class="k">if</span> <span class="n">src</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                        <span class="kn">from</span><span class="w"> </span><span class="nn">src.engine.game_state</span><span class="w"> </span><span class="kn">import</span> <span class="n">Zone</span>
+                        <span class="k">if</span> <span class="n">src</span><span class="o">.</span><span class="n">zone</span> <span class="o">==</span> <span class="n">Zone</span><span class="o">.</span><span class="n">COMMAND_ZONE</span><span class="p">:</span>
+                            <span class="n">weight</span> <span class="o">=</span> <span class="mi">30</span>
+            <span class="k">elif</span> <span class="n">action</span><span class="o">.</span><span class="n">action_type</span> <span class="o">==</span> <span class="n">ActionType</span><span class="o">.</span><span class="n">DECLARE_ATTACKERS</span><span class="p">:</span>
+                <span class="n">weight</span> <span class="o">=</span> <span class="mi">8</span>   <span class="c1"># High priority for attacking</span>
+
+                <span class="c1"># Promote attacking low-life or high-commander-damage opponents</span>
+                <span class="k">if</span> <span class="n">action</span><span class="o">.</span><span class="n">targets</span><span class="p">:</span>
+                    <span class="n">target_id</span> <span class="o">=</span> <span class="n">action</span><span class="o">.</span><span class="n">targets</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+                    <span class="n">weight</span> <span class="o">+=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_safe_int_score</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_score_attack_target</span><span class="p">(</span><span class="n">game_state</span><span class="p">,</span> <span class="n">target_id</span><span class="p">))</span>
+
+            <span class="k">elif</span> <span class="n">action</span><span class="o">.</span><span class="n">action_type</span> <span class="o">==</span> <span class="n">ActionType</span><span class="o">.</span><span class="n">PLAY_LAND</span><span class="p">:</span>
+                <span class="c1"># Playing a land is almost always correct in MTG. Use a high</span>
+                <span class="c1"># weight so the agent doesn&#39;t pass with lands rotting in hand.</span>
+                <span class="n">weight</span> <span class="o">=</span> <span class="mi">25</span>
+            <span class="k">elif</span> <span class="n">action</span><span class="o">.</span><span class="n">action_type</span> <span class="o">==</span> <span class="n">ActionType</span><span class="o">.</span><span class="n">ACTIVATE_ABILITY</span><span class="p">:</span>
+                <span class="c1"># Non-mana activated abilities only (mana abilities are handled</span>
+                <span class="c1"># implicitly during cost payment).  Don&#39;t outrank PASS — agents</span>
+                <span class="c1"># shouldn&#39;t burn cards&#39; once-per-turn taps with no plan.</span>
+                <span class="n">weight</span> <span class="o">=</span> <span class="mi">1</span>
+            <span class="k">elif</span> <span class="n">action</span><span class="o">.</span><span class="n">action_type</span> <span class="o">==</span> <span class="n">ActionType</span><span class="o">.</span><span class="n">PASS_PRIORITY</span><span class="p">:</span>
+                <span class="n">weight</span> <span class="o">=</span> <span class="mi">1</span>   <span class="c1"># Pass is last resort</span>
+            <span class="k">elif</span> <span class="n">action</span><span class="o">.</span><span class="n">action_type</span> <span class="o">==</span> <span class="n">ActionType</span><span class="o">.</span><span class="n">CONCEDE</span><span class="p">:</span>
+                <span class="n">weight</span> <span class="o">=</span> <span class="mi">0</span>   <span class="c1"># Avoid conceding unless forced</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">weight</span> <span class="o">=</span> <span class="mi">1</span>
+            
+            <span class="n">weighted</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span><span class="n">action</span><span class="p">]</span> <span class="o">*</span> <span class="n">weight</span><span class="p">)</span>
+        
+        <span class="n">chosen</span> <span class="o">=</span> <span class="n">random</span><span class="o">.</span><span class="n">choice</span><span class="p">(</span><span class="n">weighted</span><span class="p">)</span>
+
+        <span class="c1"># Log action score data</span>
+        <span class="k">if</span> <span class="n">chosen</span><span class="o">.</span><span class="n">action_type</span> <span class="o">==</span> <span class="n">ActionType</span><span class="o">.</span><span class="n">DECLARE_ATTACKERS</span> <span class="ow">and</span> <span class="n">chosen</span><span class="o">.</span><span class="n">targets</span><span class="p">:</span>
+            <span class="n">chosen</span><span class="o">.</span><span class="n">metadata</span><span class="p">[</span><span class="s2">&quot;decision_mode&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;random_weighted&quot;</span>
+            <span class="n">chosen</span><span class="o">.</span><span class="n">metadata</span><span class="p">[</span><span class="s2">&quot;target_score&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_score_attack_target</span><span class="p">(</span><span class="n">game_state</span><span class="p">,</span> <span class="n">chosen</span><span class="o">.</span><span class="n">targets</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+
+        <span class="c1"># Reasoning trace.</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">src.agents.reasoning</span><span class="w"> </span><span class="kn">import</span> <span class="n">ReasoningTrace</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">chosen_idx</span> <span class="o">=</span> <span class="n">legal_actions</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="n">chosen</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+            <span class="n">chosen_idx</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">set_reasoning</span><span class="p">(</span><span class="n">ReasoningTrace</span><span class="p">(</span>
+            <span class="n">agent_kind</span><span class="o">=</span><span class="s2">&quot;random&quot;</span><span class="p">,</span>
+            <span class="n">rationale</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;weighted random over </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">legal_actions</span><span class="p">)</span><span class="si">}</span><span class="s2"> legal actions; picked </span><span class="si">{</span><span class="n">chosen</span><span class="o">.</span><span class="n">action_type</span><span class="o">.</span><span class="n">value</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+            <span class="n">legal_action_count</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="n">legal_actions</span><span class="p">),</span>
+            <span class="n">chosen_index</span><span class="o">=</span><span class="n">chosen_idx</span><span class="p">,</span>
+            <span class="n">beliefs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;weighted_pool_size&quot;</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">weighted</span><span class="p">)},</span>
+        <span class="p">))</span>
+        <span class="k">return</span> <span class="n">chosen</span></div>
+
+    
+<div class="viewcode-block" id="RandomAgent.get_heuristic_score">
+<a class="viewcode-back" href="../../../api_agents.html#src.agents.RandomAgent.get_heuristic_score">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_heuristic_score</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">game_state</span><span class="p">:</span> <span class="n">GameState</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Heuristic evaluation: life total + creatures on battlefield.</span>
+<span class="sd">        </span>
+<span class="sd">        Used as fallback when no strategic info available.</span>
+<span class="sd">        Range: -100 (losing) to +100 (winning).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">src.engine.game_state</span><span class="w"> </span><span class="kn">import</span> <span class="n">Zone</span>
+        
+        <span class="n">player</span> <span class="o">=</span> <span class="nb">next</span><span class="p">((</span><span class="n">p</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">game_state</span><span class="o">.</span><span class="n">players</span> <span class="k">if</span> <span class="n">p</span><span class="o">.</span><span class="n">player_id</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">player_id</span><span class="p">),</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">player</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mf">0.0</span>
+        
+        <span class="n">my_creatures</span> <span class="o">=</span> <span class="nb">len</span><span class="p">([</span><span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">game_state</span><span class="o">.</span><span class="n">cards</span> 
+                           <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">owner_id</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">player_id</span> 
+                           <span class="ow">and</span> <span class="n">c</span><span class="o">.</span><span class="n">zone</span> <span class="o">==</span> <span class="n">Zone</span><span class="o">.</span><span class="n">BATTLEFIELD</span> 
+                           <span class="ow">and</span> <span class="n">c</span><span class="o">.</span><span class="n">is_creature</span><span class="p">()])</span>
+        
+        <span class="n">opp_creatures</span> <span class="o">=</span> <span class="nb">len</span><span class="p">([</span><span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">game_state</span><span class="o">.</span><span class="n">cards</span> 
+                            <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">owner_id</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">player_id</span> 
+                            <span class="ow">and</span> <span class="n">c</span><span class="o">.</span><span class="n">zone</span> <span class="o">==</span> <span class="n">Zone</span><span class="o">.</span><span class="n">BATTLEFIELD</span> 
+                            <span class="ow">and</span> <span class="n">c</span><span class="o">.</span><span class="n">is_creature</span><span class="p">()])</span>
+        
+        <span class="c1"># Simple heuristic: (my_life - opp_life) + (my_creatures * 3 - opp_creatures * 3)</span>
+        <span class="n">my_opponent</span> <span class="o">=</span> <span class="nb">next</span><span class="p">((</span><span class="n">p</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">game_state</span><span class="o">.</span><span class="n">players</span> <span class="k">if</span> <span class="n">p</span><span class="o">.</span><span class="n">player_id</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">player_id</span><span class="p">),</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">my_opponent</span><span class="p">:</span>
+            <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">player</span><span class="o">.</span><span class="n">life_total</span><span class="p">)</span>
+        
+        <span class="n">life_diff</span> <span class="o">=</span> <span class="n">player</span><span class="o">.</span><span class="n">life_total</span> <span class="o">-</span> <span class="n">my_opponent</span><span class="o">.</span><span class="n">life_total</span>
+        <span class="n">board_advantage</span> <span class="o">=</span> <span class="p">(</span><span class="n">my_creatures</span> <span class="o">-</span> <span class="n">opp_creatures</span><span class="p">)</span> <span class="o">*</span> <span class="mi">3</span>
+        
+        <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">life_diff</span> <span class="o">+</span> <span class="n">board_advantage</span><span class="p">)</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_score_attack_target</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">game_state</span><span class="p">:</span> <span class="n">GameState</span><span class="p">,</span> <span class="n">target_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+        <span class="n">target</span> <span class="o">=</span> <span class="nb">next</span><span class="p">((</span><span class="n">p</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">game_state</span><span class="o">.</span><span class="n">players</span> <span class="k">if</span> <span class="n">p</span><span class="o">.</span><span class="n">player_id</span> <span class="o">==</span> <span class="n">target_id</span><span class="p">),</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">target</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mf">0.0</span>
+
+        <span class="n">score</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">40</span> <span class="o">-</span> <span class="n">target</span><span class="o">.</span><span class="n">life_total</span><span class="p">)</span>
+        <span class="n">commander_dmg</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">target</span><span class="p">,</span> <span class="s2">&quot;commander_damage_received&quot;</span><span class="p">):</span>
+            <span class="n">commander_dmg</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">target</span><span class="o">.</span><span class="n">commander_damage_received</span><span class="o">.</span><span class="n">values</span><span class="p">())</span>
+
+        <span class="n">score</span> <span class="o">+=</span> <span class="n">commander_dmg</span> <span class="o">*</span> <span class="mi">2</span>
+        <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">score</span><span class="p">)</span>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_safe_int_score</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+        <span class="k">return</span> <span class="nb">max</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">int</span><span class="p">(</span><span class="n">value</span><span class="p">))</span></div>
+
+</pre></div>
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="../../../index.html">opposition-agents-playing-mtg</a></h1>
+
+
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="../../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+<p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../repository_map.html">Repository Map</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../components.html">Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api.html">API Reference</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="../../../index.html">Documentation overview</a><ul>
+  <li><a href="../../index.html">Module code</a><ul>
+  <li><a href="../agents.html">src.agents</a><ul>
+  </ul></li>
+  </ul></li>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &#169;2026, Data Science Lab FHSWF.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 8.1.3</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+    </div>
+
+    
+
+    
+  </body>
+</html>

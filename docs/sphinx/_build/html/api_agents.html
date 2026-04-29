@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="./">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Agents API &#8212; opposition-agents-playing-mtg  documentation</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="_static/basic.css?v=686e5160" />
+    <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=27fed22d" />
+    <script src="_static/documentation_options.js?v=5929fcd5"></script>
+    <script src="_static/doctools.js?v=9bcbadda"></script>
+    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Engine API" href="api_engine.html" />
+    <link rel="prev" title="API Reference" href="api.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <section id="module-src.agents">
+<span id="agents-api"></span><h1>Agents API<a class="headerlink" href="#module-src.agents" title="Link to this heading">¶</a></h1>
+<p>Agent implementations and registry.</p>
+<p>The registry lets callers build agents by short name (e.g. <code class="docutils literal notranslate"><span class="pre">&quot;random&quot;</span></code>,
+<code class="docutils literal notranslate"><span class="pre">&quot;heuristic&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;world_model&quot;</span></code>).  This is what powers the
+<code class="docutils literal notranslate"><span class="pre">--seat0</span> <span class="pre">NAME</span></code> flag promised in <code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code> and the overnight
+training pipeline.</p>
+<p>Heavy imports (torch, transformers, langchain, neo4j) are deferred to the
+factory so importing this module stays cheap for the random/heuristic
+fast path.</p>
+<dl class="py class">
+<dt class="sig sig-object py" id="src.agents.HeuristicAgent">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">src.agents.</span></span><span class="sig-name descname"><span class="pre">HeuristicAgent</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">player_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">''</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seed</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">prefer_aggressive</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/src/agents/heuristic_agent.html#HeuristicAgent"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.agents.HeuristicAgent" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#src.agents.MTGAgent" title="src.agents.base_agent.MTGAgent"><code class="xref py py-class docutils literal notranslate"><span class="pre">MTGAgent</span></code></a></p>
+<p>Picks actions by a fixed priority over <cite>ActionType</cite>.</p>
+<p>Deterministic given the random seed used to construct the agent; useful
+as a benchmark baseline that is <em>both</em> stronger than uniform-random and
+fully reproducible across runs.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="src.agents.HeuristicAgent.decide_action">
+<em class="property"><span class="pre">async</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">decide_action</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">game_state</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="api_engine.html#src.engine.game_state.GameState" title="src.engine.game_state.GameState"><span class="pre">GameState</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">legal_actions</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="api_engine.html#src.engine.game_state.Action" title="src.engine.game_state.Action"><span class="pre">Action</span></a><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="api_engine.html#src.engine.game_state.Action" title="src.engine.game_state.Action"><span class="pre">Action</span></a></span></span><a class="reference internal" href="_modules/src/agents/heuristic_agent.html#HeuristicAgent.decide_action"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.agents.HeuristicAgent.decide_action" title="Link to this definition">¶</a></dt>
+<dd><p>Choose an action from the legal actions given the game state.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="src.agents.MTGAgent">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">src.agents.</span></span><span class="sig-name descname"><span class="pre">MTGAgent</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">player_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">''</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/src/agents/base_agent.html#MTGAgent"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.agents.MTGAgent" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">ABC</span></code></p>
+<p>Base class for all MTG-playing agents.</p>
+<p>Subclasses must implement <cite>decide_action</cite>.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="src.agents.MTGAgent.decide_action">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span><span class="pre">async</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">decide_action</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">game_state</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="api_engine.html#src.engine.game_state.GameState" title="src.engine.game_state.GameState"><span class="pre">GameState</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">legal_actions</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="api_engine.html#src.engine.game_state.Action" title="src.engine.game_state.Action"><span class="pre">Action</span></a><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="api_engine.html#src.engine.game_state.Action" title="src.engine.game_state.Action"><span class="pre">Action</span></a></span></span><a class="reference internal" href="_modules/src/agents/base_agent.html#MTGAgent.decide_action"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.agents.MTGAgent.decide_action" title="Link to this definition">¶</a></dt>
+<dd><p>Choose an action from the legal actions given the game state.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.agents.MTGAgent.decide_mulligan">
+<span class="sig-name descname"><span class="pre">decide_mulligan</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">hand</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mulligans_taken</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_mulligans</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">bool</span></span></span><a class="reference internal" href="_modules/src/agents/base_agent.html#MTGAgent.decide_mulligan"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.agents.MTGAgent.decide_mulligan" title="Link to this definition">¶</a></dt>
+<dd><p>Return True to KEEP the current opening hand, False to mulligan.</p>
+<p>Default: strategy-aware land-and-curve heuristic.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.agents.MTGAgent.observe">
+<em class="property"><span class="pre">async</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">observe</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">game_state</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="api_engine.html#src.engine.game_state.GameState" title="src.engine.game_state.GameState"><span class="pre">GameState</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">action</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="api_engine.html#src.engine.game_state.Action" title="src.engine.game_state.Action"><span class="pre">Action</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="reference internal" href="_modules/src/agents/base_agent.html#MTGAgent.observe"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.agents.MTGAgent.observe" title="Link to this definition">¶</a></dt>
+<dd><p>Observe an action taken (by any player). Override for belief updates.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.agents.MTGAgent.reset">
+<span class="sig-name descname"><span class="pre">reset</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="reference internal" href="_modules/src/agents/base_agent.html#MTGAgent.reset"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.agents.MTGAgent.reset" title="Link to this definition">¶</a></dt>
+<dd><p>Reset agent state for a new game.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.agents.MTGAgent.select_bottom_cards">
+<span class="sig-name descname"><span class="pre">select_bottom_cards</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">hand</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">list</span></span></span><a class="reference internal" href="_modules/src/agents/base_agent.html#MTGAgent.select_bottom_cards"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.agents.MTGAgent.select_bottom_cards" title="Link to this definition">¶</a></dt>
+<dd><p>Return the <code class="docutils literal notranslate"><span class="pre">n</span></code> cards from <code class="docutils literal notranslate"><span class="pre">hand</span></code> to put on the bottom.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.agents.MTGAgent.set_reasoning">
+<span class="sig-name descname"><span class="pre">set_reasoning</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">trace</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="reference internal" href="_modules/src/agents/base_agent.html#MTGAgent.set_reasoning"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.agents.MTGAgent.set_reasoning" title="Link to this definition">¶</a></dt>
+<dd><p>Record the rationale for the most recent action.</p>
+<p><code class="docutils literal notranslate"><span class="pre">trace</span></code> may be a <code class="xref py py-class docutils literal notranslate"><span class="pre">ReasoningTrace</span></code>
+instance, a plain dict, or <code class="docutils literal notranslate"><span class="pre">None</span></code> (clears).</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="src.agents.MTGAgent.strategy">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">strategy</span></span><a class="headerlink" href="#src.agents.MTGAgent.strategy" title="Link to this definition">¶</a></dt>
+<dd><p>Strategy enum value used by the default mulligan heuristics.</p>
+<p>Subclasses that have a real strategy should override this; the
+default of <code class="docutils literal notranslate"><span class="pre">None</span></code> triggers the generic fallback heuristic.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="src.agents.RandomAgent">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">src.agents.</span></span><span class="sig-name descname"><span class="pre">RandomAgent</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">player_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">''</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/src/agents/random_agent.html#RandomAgent"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.agents.RandomAgent" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#src.agents.MTGAgent" title="src.agents.base_agent.MTGAgent"><code class="xref py py-class docutils literal notranslate"><span class="pre">MTGAgent</span></code></a></p>
+<p>Baseline agent that picks legal actions with strategic bias.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="src.agents.RandomAgent.decide_action">
+<em class="property"><span class="pre">async</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">decide_action</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">game_state</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="api_engine.html#src.engine.game_state.GameState" title="src.engine.game_state.GameState"><span class="pre">GameState</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">legal_actions</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="api_engine.html#src.engine.game_state.Action" title="src.engine.game_state.Action"><span class="pre">Action</span></a><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="api_engine.html#src.engine.game_state.Action" title="src.engine.game_state.Action"><span class="pre">Action</span></a></span></span><a class="reference internal" href="_modules/src/agents/random_agent.html#RandomAgent.decide_action"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.agents.RandomAgent.decide_action" title="Link to this definition">¶</a></dt>
+<dd><p>Choose an action with bias: prefer CAST_SPELL &gt; PLAY_LAND &gt; ACTIVATE_ABILITY &gt; PASS</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.agents.RandomAgent.get_heuristic_score">
+<span class="sig-name descname"><span class="pre">get_heuristic_score</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">game_state</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="api_engine.html#src.engine.game_state.GameState" title="src.engine.game_state.GameState"><span class="pre">GameState</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">float</span></span></span><a class="reference internal" href="_modules/src/agents/random_agent.html#RandomAgent.get_heuristic_score"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.agents.RandomAgent.get_heuristic_score" title="Link to this definition">¶</a></dt>
+<dd><p>Heuristic evaluation: life total + creatures on battlefield.</p>
+<p>Used as fallback when no strategic info available.
+Range: -100 (losing) to +100 (winning).</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="src.agents.list_agents">
+<span class="sig-prename descclassname"><span class="pre">src.agents.</span></span><span class="sig-name descname"><span class="pre">list_agents</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="_modules/src/agents.html#list_agents"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.agents.list_agents" title="Link to this definition">¶</a></dt>
+<dd><p>Return all registered agent short names.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="src.agents.make_agent">
+<span class="sig-prename descclassname"><span class="pre">src.agents.</span></span><span class="sig-name descname"><span class="pre">make_agent</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">player_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#src.agents.MTGAgent" title="src.agents.base_agent.MTGAgent"><span class="pre">MTGAgent</span></a></span></span><a class="reference internal" href="_modules/src/agents.html#make_agent"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.agents.make_agent" title="Link to this definition">¶</a></dt>
+<dd><p>Build an agent by short name. Raises <code class="docutils literal notranslate"><span class="pre">KeyError</span></code> on unknown names.</p>
+</dd></dl>
+
+<p id="module-src.agents.random_agent">Random agent — picks legal actions with bias toward playing threats.
+Includes heuristic fallback for when no strategy available.</p>
+<p>Reference: mtg-player (MIT) — <a class="reference external" href="https://github.com/theRealMarkCastillo/mtg-player">https://github.com/theRealMarkCastillo/mtg-player</a>
+Reference: open-mtg (MIT) — <a class="reference external" href="https://github.com/hlynurd/open-mtg">https://github.com/hlynurd/open-mtg</a> (MCTS patterns)</p>
+<dl class="py class">
+<dt class="sig sig-object py" id="src.agents.random_agent.RandomAgent">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">src.agents.random_agent.</span></span><span class="sig-name descname"><span class="pre">RandomAgent</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">player_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">''</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/src/agents/random_agent.html#RandomAgent"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.agents.random_agent.RandomAgent" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#src.agents.MTGAgent" title="src.agents.base_agent.MTGAgent"><code class="xref py py-class docutils literal notranslate"><span class="pre">MTGAgent</span></code></a></p>
+<p>Baseline agent that picks legal actions with strategic bias.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="src.agents.random_agent.RandomAgent.decide_action">
+<em class="property"><span class="pre">async</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">decide_action</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">game_state</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="api_engine.html#src.engine.game_state.GameState" title="src.engine.game_state.GameState"><span class="pre">GameState</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">legal_actions</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="api_engine.html#src.engine.game_state.Action" title="src.engine.game_state.Action"><span class="pre">Action</span></a><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="api_engine.html#src.engine.game_state.Action" title="src.engine.game_state.Action"><span class="pre">Action</span></a></span></span><a class="reference internal" href="_modules/src/agents/random_agent.html#RandomAgent.decide_action"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.agents.random_agent.RandomAgent.decide_action" title="Link to this definition">¶</a></dt>
+<dd><p>Choose an action with bias: prefer CAST_SPELL &gt; PLAY_LAND &gt; ACTIVATE_ABILITY &gt; PASS</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.agents.random_agent.RandomAgent.get_heuristic_score">
+<span class="sig-name descname"><span class="pre">get_heuristic_score</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">game_state</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="api_engine.html#src.engine.game_state.GameState" title="src.engine.game_state.GameState"><span class="pre">GameState</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">float</span></span></span><a class="reference internal" href="_modules/src/agents/random_agent.html#RandomAgent.get_heuristic_score"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.agents.random_agent.RandomAgent.get_heuristic_score" title="Link to this definition">¶</a></dt>
+<dd><p>Heuristic evaluation: life total + creatures on battlefield.</p>
+<p>Used as fallback when no strategic info available.
+Range: -100 (losing) to +100 (winning).</p>
+</dd></dl>
+
+</dd></dl>
+
+<p id="module-src.agents.heuristic_agent">Deterministic heuristic baseline agent.</p>
+<p>Strategically simple but deterministic given a fixed seed: it always picks
+the highest-priority legal action class, breaking ties with a stable RNG.
+Used as a stronger floor than <cite>RandomAgent</cite> for benchmark comparisons.</p>
+<dl class="py class">
+<dt class="sig sig-object py" id="src.agents.heuristic_agent.HeuristicAgent">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">src.agents.heuristic_agent.</span></span><span class="sig-name descname"><span class="pre">HeuristicAgent</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">player_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">''</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seed</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">prefer_aggressive</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/src/agents/heuristic_agent.html#HeuristicAgent"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.agents.heuristic_agent.HeuristicAgent" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#src.agents.MTGAgent" title="src.agents.base_agent.MTGAgent"><code class="xref py py-class docutils literal notranslate"><span class="pre">MTGAgent</span></code></a></p>
+<p>Picks actions by a fixed priority over <cite>ActionType</cite>.</p>
+<p>Deterministic given the random seed used to construct the agent; useful
+as a benchmark baseline that is <em>both</em> stronger than uniform-random and
+fully reproducible across runs.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="src.agents.heuristic_agent.HeuristicAgent.decide_action">
+<em class="property"><span class="pre">async</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">decide_action</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">game_state</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="api_engine.html#src.engine.game_state.GameState" title="src.engine.game_state.GameState"><span class="pre">GameState</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">legal_actions</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="api_engine.html#src.engine.game_state.Action" title="src.engine.game_state.Action"><span class="pre">Action</span></a><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="api_engine.html#src.engine.game_state.Action" title="src.engine.game_state.Action"><span class="pre">Action</span></a></span></span><a class="reference internal" href="_modules/src/agents/heuristic_agent.html#HeuristicAgent.decide_action"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.agents.heuristic_agent.HeuristicAgent.decide_action" title="Link to this definition">¶</a></dt>
+<dd><p>Choose an action from the legal actions given the game state.</p>
+</dd></dl>
+
+</dd></dl>
+
+<p id="module-src.agents.kg_heuristic_agent">KG-aware heuristic agent.</p>
+<p>Same priority skeleton as <code class="xref py py-class docutils literal notranslate"><span class="pre">HeuristicAgent</span></code> but, when more than one
+<code class="docutils literal notranslate"><span class="pre">CAST_SPELL</span></code> action is available, prefers the card that:</p>
+<blockquote>
+<div><ol class="arabic simple">
+<li><p>completes a combo whose other pieces are already in play / in hand
+(uses <code class="docutils literal notranslate"><span class="pre">MTGKnowledgeGraph.detect_near_combos</span></code>), then</p></li>
+<li><p>has the strongest synergy with cards already on our battlefield
+(uses <code class="docutils literal notranslate"><span class="pre">get_synergies_for</span></code>), then</p></li>
+<li><p>falls back to the parent’s deterministic tiebreak.</p></li>
+</ol>
+</div></blockquote>
+<p>Stays deterministic given a seed.  All KG calls are best-effort: if Neo4j
+is unreachable the agent silently degrades to the plain heuristic.</p>
+<p>The KG handle is cached at construction time, but a per-decision LRU
+cache keyed on <code class="docutils literal notranslate"><span class="pre">(card_name,</span> <span class="pre">hand_or_battlefield_set)</span></code> keeps Cypher
+traffic to one query per turn-and-card pair.</p>
+<dl class="py class">
+<dt class="sig sig-object py" id="src.agents.kg_heuristic_agent.KGHeuristicAgent">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">src.agents.kg_heuristic_agent.</span></span><span class="sig-name descname"><span class="pre">KGHeuristicAgent</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">player_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">''</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seed</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">prefer_aggressive</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">kg</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/src/agents/kg_heuristic_agent.html#KGHeuristicAgent"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.agents.kg_heuristic_agent.KGHeuristicAgent" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#src.agents.heuristic_agent.HeuristicAgent" title="src.agents.heuristic_agent.HeuristicAgent"><code class="xref py py-class docutils literal notranslate"><span class="pre">HeuristicAgent</span></code></a></p>
+<p>Heuristic agent that uses the knowledge graph to break CAST ties.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="src.agents.kg_heuristic_agent.KGHeuristicAgent.decide_action">
+<em class="property"><span class="pre">async</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">decide_action</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">game_state</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="api_engine.html#src.engine.game_state.GameState" title="src.engine.game_state.GameState"><span class="pre">GameState</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">legal_actions</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="api_engine.html#src.engine.game_state.Action" title="src.engine.game_state.Action"><span class="pre">Action</span></a><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="api_engine.html#src.engine.game_state.Action" title="src.engine.game_state.Action"><span class="pre">Action</span></a></span></span><a class="reference internal" href="_modules/src/agents/kg_heuristic_agent.html#KGHeuristicAgent.decide_action"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.agents.kg_heuristic_agent.KGHeuristicAgent.decide_action" title="Link to this definition">¶</a></dt>
+<dd><p>Choose an action from the legal actions given the game state.</p>
+</dd></dl>
+
+</dd></dl>
+
+<p id="module-src.agents.world_model_agent">WorldModelAgent — MTGAgent subclass that uses the V+M+C world model.</p>
+<p>Plays MTG by:
+1. Encoding the real game state into latent space (V)
+2. Optionally running dream search to evaluate actions (dream MCTS)
+3. Selecting the best action via the Controller (C) or dream search
+4. Updating beliefs via the Dynamics Model (M) on opponent actions</p>
+<p>Supports two modes:
+- Direct policy: Fast — just run C(z, h) → action. Good for real-time play.
+- Dream search: Slower — simulate multiple futures per action. Stronger play.</p>
+<dl class="py class">
+<dt class="sig sig-object py" id="src.agents.world_model_agent.WorldModelAgent">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">src.agents.world_model_agent.</span></span><span class="sig-name descname"><span class="pre">WorldModelAgent</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">player_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">world_model</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="api_world_model.html#src.world_model.world_model.WorldModel" title="src.world_model.world_model.WorldModel"><span class="pre">WorldModel</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">tokenizer</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">GameTokenizer</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">kg_encoder</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">KGContextEncoder</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'WorldModelAgent'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mode</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'direct'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dream_rollouts</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">8</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dream_depth</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">10</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">deterministic</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">device</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'cpu'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/src/agents/world_model_agent.html#WorldModelAgent"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.agents.world_model_agent.WorldModelAgent" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#src.agents.MTGAgent" title="src.agents.base_agent.MTGAgent"><code class="xref py py-class docutils literal notranslate"><span class="pre">MTGAgent</span></code></a></p>
+<p>An agent that uses a trained world model to play MTG.</p>
+<dl>
+<dt>Usage:</dt><dd><p># Load trained world model
+world_model = WorldModel.load(“checkpoints/world_model_final.pt”)
+tokenizer = GameTokenizer(card_embeddings=card_embed_model)</p>
+<dl class="simple">
+<dt>agent = WorldModelAgent(</dt><dd><p>player_id=”wm_agent”,
+world_model=world_model,
+tokenizer=tokenizer,
+mode=”dream_search”,</p>
+</dd>
+</dl>
+<p>)</p>
+<p># In game loop:
+action = await agent.decide_action(game_state, legal_actions)</p>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="src.agents.world_model_agent.WorldModelAgent.decide_action">
+<em class="property"><span class="pre">async</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">decide_action</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">game_state</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="api_engine.html#src.engine.game_state.GameState" title="src.engine.game_state.GameState"><span class="pre">GameState</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">legal_actions</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="api_engine.html#src.engine.game_state.Action" title="src.engine.game_state.Action"><span class="pre">Action</span></a><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="api_engine.html#src.engine.game_state.Action" title="src.engine.game_state.Action"><span class="pre">Action</span></a></span></span><a class="reference internal" href="_modules/src/agents/world_model_agent.html#WorldModelAgent.decide_action"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.agents.world_model_agent.WorldModelAgent.decide_action" title="Link to this definition">¶</a></dt>
+<dd><p>Choose an action using the world model.</p>
+<ol class="arabic simple">
+<li><p>Encode current game state → z</p></li>
+<li><p>Encode each legal action → action embeddings</p></li>
+<li><p>Score actions via controller (direct) or dream search</p></li>
+<li><p>Return the highest-scoring legal action</p></li>
+</ol>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.agents.world_model_agent.WorldModelAgent.observe">
+<em class="property"><span class="pre">async</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">observe</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">game_state</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="api_engine.html#src.engine.game_state.GameState" title="src.engine.game_state.GameState"><span class="pre">GameState</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">action</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="api_engine.html#src.engine.game_state.Action" title="src.engine.game_state.Action"><span class="pre">Action</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="reference internal" href="_modules/src/agents/world_model_agent.html#WorldModelAgent.observe"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.agents.world_model_agent.WorldModelAgent.observe" title="Link to this definition">¶</a></dt>
+<dd><p>Update the dynamics model hidden state after observing an action.</p>
+<p>This keeps the RNN’s memory current even when the opponent acts.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.agents.world_model_agent.WorldModelAgent.reset">
+<span class="sig-name descname"><span class="pre">reset</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="reference internal" href="_modules/src/agents/world_model_agent.html#WorldModelAgent.reset"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.agents.world_model_agent.WorldModelAgent.reset" title="Link to this definition">¶</a></dt>
+<dd><p>Reset for a new game.</p>
+</dd></dl>
+
+</dd></dl>
+
+<p id="module-src.agents.active_inference_agent">Agent that uses active inference + opponent model for decision making.</p>
+<dl class="py class">
+<dt class="sig sig-object py" id="src.agents.active_inference_agent.ActiveInferenceAgent">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">src.agents.active_inference_agent.</span></span><span class="sig-name descname"><span class="pre">ActiveInferenceAgent</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">player_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">kg</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="api_knowledge.html#src.knowledge.knowledge_graph.MTGKnowledgeGraph" title="src.knowledge.knowledge_graph.MTGKnowledgeGraph"><span class="pre">MTGKnowledgeGraph</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">known_opponent_decklist</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">int</span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'ActiveInferenceAgent'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/src/agents/active_inference_agent.html#ActiveInferenceAgent"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.agents.active_inference_agent.ActiveInferenceAgent" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#src.agents.MTGAgent" title="src.agents.base_agent.MTGAgent"><code class="xref py py-class docutils literal notranslate"><span class="pre">MTGAgent</span></code></a></p>
+<p>MTG Agent that chooses actions by minimizing expected free energy.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="src.agents.active_inference_agent.ActiveInferenceAgent.decide_action">
+<em class="property"><span class="pre">async</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">decide_action</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">game_state</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="api_engine.html#src.engine.game_state.GameState" title="src.engine.game_state.GameState"><span class="pre">GameState</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">legal_actions</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="api_engine.html#src.engine.game_state.Action" title="src.engine.game_state.Action"><span class="pre">Action</span></a><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="api_engine.html#src.engine.game_state.Action" title="src.engine.game_state.Action"><span class="pre">Action</span></a></span></span><a class="reference internal" href="_modules/src/agents/active_inference_agent.html#ActiveInferenceAgent.decide_action"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.agents.active_inference_agent.ActiveInferenceAgent.decide_action" title="Link to this definition">¶</a></dt>
+<dd><p>Choose an action from the legal actions given the game state.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.agents.active_inference_agent.ActiveInferenceAgent.observe">
+<em class="property"><span class="pre">async</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">observe</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">game_state</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="api_engine.html#src.engine.game_state.GameState" title="src.engine.game_state.GameState"><span class="pre">GameState</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">action</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="api_engine.html#src.engine.game_state.Action" title="src.engine.game_state.Action"><span class="pre">Action</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="reference internal" href="_modules/src/agents/active_inference_agent.html#ActiveInferenceAgent.observe"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.agents.active_inference_agent.ActiveInferenceAgent.observe" title="Link to this definition">¶</a></dt>
+<dd><p>Observe an action taken (by any player). Override for belief updates.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.agents.active_inference_agent.ActiveInferenceAgent.reset">
+<span class="sig-name descname"><span class="pre">reset</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="reference internal" href="_modules/src/agents/active_inference_agent.html#ActiveInferenceAgent.reset"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.agents.active_inference_agent.ActiveInferenceAgent.reset" title="Link to this definition">¶</a></dt>
+<dd><p>Reset agent state for a new game.</p>
+</dd></dl>
+
+</dd></dl>
+
+<p id="module-src.agents.llm_fusion_agent">LLM-Fusion Agent — combines LLM strategic reasoning with world model planning.</p>
+<p>The LLM proposes candidate strategies, the world model evaluates them via
+dream rollouts, and the combined score determines the final action.</p>
+<dl class="simple">
+<dt>Architecture:</dt><dd><ol class="arabic simple">
+<li><p>LLM generates strategic intent (“hold removal for their combo piece”)</p></li>
+<li><p>World model scores each legal action via dream search</p></li>
+<li><p>Knowledge Graph provides combo/synergy context</p></li>
+<li><p>Active Inference updates opponent beliefs</p></li>
+<li><p>Fusion layer combines all signals into a final decision</p></li>
+</ol>
+</dd>
+</dl>
+<p>This is the strongest agent mode — slower than pure world model but more
+robust on novel card interactions.</p>
+<dl class="py class">
+<dt class="sig sig-object py" id="src.agents.llm_fusion_agent.FusionConfig">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">src.agents.llm_fusion_agent.</span></span><span class="sig-name descname"><span class="pre">FusionConfig</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">llm_weight</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.3</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">world_model_weight</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.4</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">kg_weight</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.15</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">heuristic_weight</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.15</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dream_rollouts</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">8</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dream_depth</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">10</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dream_temperature</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">1.15</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">llm_provider</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'ollama'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">llm_model</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'gemma4:e2b'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">llm_timeout</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">15.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">skip_llm_if_obvious</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">obvious_threshold</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.8</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/src/agents/llm_fusion_agent.html#FusionConfig"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.agents.llm_fusion_agent.FusionConfig" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Configuration for the LLM-Fusion agent.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="src.agents.llm_fusion_agent.FusionConfig.dream_depth">
+<span class="sig-name descname"><span class="pre">dream_depth</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">int</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">10</span></em><a class="headerlink" href="#src.agents.llm_fusion_agent.FusionConfig.dream_depth" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="src.agents.llm_fusion_agent.FusionConfig.dream_rollouts">
+<span class="sig-name descname"><span class="pre">dream_rollouts</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">int</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">8</span></em><a class="headerlink" href="#src.agents.llm_fusion_agent.FusionConfig.dream_rollouts" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="src.agents.llm_fusion_agent.FusionConfig.dream_temperature">
+<span class="sig-name descname"><span class="pre">dream_temperature</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">1.15</span></em><a class="headerlink" href="#src.agents.llm_fusion_agent.FusionConfig.dream_temperature" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="src.agents.llm_fusion_agent.FusionConfig.heuristic_weight">
+<span class="sig-name descname"><span class="pre">heuristic_weight</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0.15</span></em><a class="headerlink" href="#src.agents.llm_fusion_agent.FusionConfig.heuristic_weight" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="src.agents.llm_fusion_agent.FusionConfig.kg_weight">
+<span class="sig-name descname"><span class="pre">kg_weight</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0.15</span></em><a class="headerlink" href="#src.agents.llm_fusion_agent.FusionConfig.kg_weight" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="src.agents.llm_fusion_agent.FusionConfig.llm_model">
+<span class="sig-name descname"><span class="pre">llm_model</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">str</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'gemma4:e2b'</span></em><a class="headerlink" href="#src.agents.llm_fusion_agent.FusionConfig.llm_model" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="src.agents.llm_fusion_agent.FusionConfig.llm_provider">
+<span class="sig-name descname"><span class="pre">llm_provider</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">str</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'ollama'</span></em><a class="headerlink" href="#src.agents.llm_fusion_agent.FusionConfig.llm_provider" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="src.agents.llm_fusion_agent.FusionConfig.llm_timeout">
+<span class="sig-name descname"><span class="pre">llm_timeout</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">15.0</span></em><a class="headerlink" href="#src.agents.llm_fusion_agent.FusionConfig.llm_timeout" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="src.agents.llm_fusion_agent.FusionConfig.llm_weight">
+<span class="sig-name descname"><span class="pre">llm_weight</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0.3</span></em><a class="headerlink" href="#src.agents.llm_fusion_agent.FusionConfig.llm_weight" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="src.agents.llm_fusion_agent.FusionConfig.obvious_threshold">
+<span class="sig-name descname"><span class="pre">obvious_threshold</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0.8</span></em><a class="headerlink" href="#src.agents.llm_fusion_agent.FusionConfig.obvious_threshold" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="src.agents.llm_fusion_agent.FusionConfig.skip_llm_if_obvious">
+<span class="sig-name descname"><span class="pre">skip_llm_if_obvious</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">bool</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">True</span></em><a class="headerlink" href="#src.agents.llm_fusion_agent.FusionConfig.skip_llm_if_obvious" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="src.agents.llm_fusion_agent.FusionConfig.world_model_weight">
+<span class="sig-name descname"><span class="pre">world_model_weight</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0.4</span></em><a class="headerlink" href="#src.agents.llm_fusion_agent.FusionConfig.world_model_weight" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="src.agents.llm_fusion_agent.LLMFusionAgent">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">src.agents.llm_fusion_agent.</span></span><span class="sig-name descname"><span class="pre">LLMFusionAgent</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">player_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'Fusion</span> <span class="pre">Agent'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">config</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#src.agents.llm_fusion_agent.FusionConfig" title="src.agents.llm_fusion_agent.FusionConfig"><span class="pre">FusionConfig</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">world_model</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tokenizer</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">knowledge_graph</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">opponent_model</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/src/agents/llm_fusion_agent.html#LLMFusionAgent"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.agents.llm_fusion_agent.LLMFusionAgent" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#src.agents.MTGAgent" title="src.agents.base_agent.MTGAgent"><code class="xref py py-class docutils literal notranslate"><span class="pre">MTGAgent</span></code></a></p>
+<p>Agent that fuses LLM reasoning, world model planning, and KG context.</p>
+<p>Decision pipeline:
+1. Fast heuristic pass — score all actions cheaply
+2. KG context lookup — combo/synergy bonuses
+3. World model dream search — evaluate top candidates
+4. LLM strategic reasoning — for non-obvious decisions
+5. Weighted fusion — combine all signals</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="src.agents.llm_fusion_agent.LLMFusionAgent.decide_action">
+<em class="property"><span class="pre">async</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">decide_action</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">game_state</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="api_engine.html#src.engine.game_state.GameState" title="src.engine.game_state.GameState"><span class="pre">GameState</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">legal_actions</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="api_engine.html#src.engine.game_state.Action" title="src.engine.game_state.Action"><span class="pre">Action</span></a><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="api_engine.html#src.engine.game_state.Action" title="src.engine.game_state.Action"><span class="pre">Action</span></a></span></span><a class="reference internal" href="_modules/src/agents/llm_fusion_agent.html#LLMFusionAgent.decide_action"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.agents.llm_fusion_agent.LLMFusionAgent.decide_action" title="Link to this definition">¶</a></dt>
+<dd><p>Fuse all decision signals to choose the best action.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.agents.llm_fusion_agent.LLMFusionAgent.observe">
+<em class="property"><span class="pre">async</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">observe</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">game_state</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="api_engine.html#src.engine.game_state.GameState" title="src.engine.game_state.GameState"><span class="pre">GameState</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">action</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="api_engine.html#src.engine.game_state.Action" title="src.engine.game_state.Action"><span class="pre">Action</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="reference internal" href="_modules/src/agents/llm_fusion_agent.html#LLMFusionAgent.observe"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.agents.llm_fusion_agent.LLMFusionAgent.observe" title="Link to this definition">¶</a></dt>
+<dd><p>Update world model hidden state and opponent model on any observed action.</p>
+</dd></dl>
+
+</dd></dl>
+
+<p id="module-src.agents.llm_agent">Ollama-powered MTG agent for local LLM reasoning.</p>
+<p>Uses Ollama to run open-source models locally (Llama, Mistral, etc.).
+Minimizes API costs and latency by running inference locally.</p>
+<p>Fallback to RandomAgent if Ollama is unavailable.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="src.agents.llm_agent.LLMAgent">
+<span class="sig-prename descclassname"><span class="pre">src.agents.llm_agent.</span></span><span class="sig-name descname"><span class="pre">LLMAgent</span></span><a class="headerlink" href="#src.agents.llm_agent.LLMAgent" title="Link to this definition">¶</a></dt>
+<dd><p>alias of <a class="reference internal" href="#src.agents.llm_agent.OllamaAgent" title="src.agents.llm_agent.OllamaAgent"><code class="xref py py-class docutils literal notranslate"><span class="pre">OllamaAgent</span></code></a></p>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="src.agents.llm_agent.OllamaAgent">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">src.agents.llm_agent.</span></span><span class="sig-name descname"><span class="pre">OllamaAgent</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">player_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'Ollama</span> <span class="pre">Agent'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'gemma4:e2b'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">base_url</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'http://localhost:11434'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/src/agents/llm_agent.html#OllamaAgent"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.agents.llm_agent.OllamaAgent" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#src.agents.MTGAgent" title="src.agents.base_agent.MTGAgent"><code class="xref py py-class docutils literal notranslate"><span class="pre">MTGAgent</span></code></a></p>
+<p>Agent that uses Ollama to run open-source LLMs locally.</p>
+<p>Polls Ollama at <a class="reference external" href="http://localhost:11434">http://localhost:11434</a> for model inference.
+Automatically falls back to RandomAgent if Ollama is unavailable.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="src.agents.llm_agent.OllamaAgent.decide_action">
+<em class="property"><span class="pre">async</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">decide_action</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">game_state</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="api_engine.html#src.engine.game_state.GameState" title="src.engine.game_state.GameState"><span class="pre">GameState</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">legal_actions</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="api_engine.html#src.engine.game_state.Action" title="src.engine.game_state.Action"><span class="pre">Action</span></a><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="api_engine.html#src.engine.game_state.Action" title="src.engine.game_state.Action"><span class="pre">Action</span></a></span></span><a class="reference internal" href="_modules/src/agents/llm_agent.html#OllamaAgent.decide_action"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.agents.llm_agent.OllamaAgent.decide_action" title="Link to this definition">¶</a></dt>
+<dd><p>Use Ollama to select the best action.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.agents.llm_agent.OllamaAgent.decide_mulligan">
+<span class="sig-name descname"><span class="pre">decide_mulligan</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">hand</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mulligans_taken</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_mulligans</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">bool</span></span></span><a class="reference internal" href="_modules/src/agents/llm_agent.html#OllamaAgent.decide_mulligan"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.agents.llm_agent.OllamaAgent.decide_mulligan" title="Link to this definition">¶</a></dt>
+<dd><p>Use Ollama to decide whether to keep or mulligan the opening hand.</p>
+<p>Returns True to KEEP, False to MULLIGAN.
+Falls back to the strategy-aware heuristic if Ollama is unavailable.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.agents.llm_agent.OllamaAgent.select_bottom_cards">
+<span class="sig-name descname"><span class="pre">select_bottom_cards</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">hand</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">list</span></span></span><a class="reference internal" href="_modules/src/agents/llm_agent.html#OllamaAgent.select_bottom_cards"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.agents.llm_agent.OllamaAgent.select_bottom_cards" title="Link to this definition">¶</a></dt>
+<dd><p>Use Ollama to select which cards to put on the bottom.</p>
+<p>Returns a list of <code class="docutils literal notranslate"><span class="pre">n</span></code> cards from <code class="docutils literal notranslate"><span class="pre">hand</span></code> to put on the bottom
+of the library after mulligans.</p>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="index.html">opposition-agents-playing-mtg</a></h1>
+
+
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+<p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="repository_map.html">Repository Map</a></li>
+<li class="toctree-l1"><a class="reference internal" href="components.html">Components</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="api.html">API Reference</a><ul class="current">
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Agents API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api_engine.html">Engine API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api_orchestrator.html">Orchestrator API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api_knowledge.html">Knowledge API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api_world_model.html">World Model API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api_training.html">Training API</a></li>
+</ul>
+</li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="index.html">Documentation overview</a><ul>
+  <li><a href="api.html">API Reference</a><ul>
+      <li>Previous: <a href="api.html" title="previous chapter">API Reference</a></li>
+      <li>Next: <a href="api_engine.html" title="next chapter">Engine API</a></li>
+  </ul></li>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &#169;2026, Data Science Lab FHSWF.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 8.1.3</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+      |
+      <a href="_sources/api_agents.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>

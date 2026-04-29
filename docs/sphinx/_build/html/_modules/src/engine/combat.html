@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../../../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>src.engine.combat &#8212; opposition-agents-playing-mtg  documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/basic.css?v=686e5160" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/alabaster.css?v=27fed22d" />
+    <script src="../../../_static/documentation_options.js?v=5929fcd5"></script>
+    <script src="../../../_static/doctools.js?v=9bcbadda"></script>
+    <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+   
+  <link rel="stylesheet" href="../../../_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <h1>Source code for src.engine.combat</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Combat system — declare attackers, declare blockers, assign damage.</span>
+
+<span class="sd">Supports the following CR 702 evergreen keywords:</span>
+<span class="sd">- Flying / Reach (block legality)</span>
+<span class="sd">- Menace (block legality: requires 2+ blockers)</span>
+<span class="sd">- Vigilance (attacker doesn&#39;t tap)</span>
+<span class="sd">- Haste (ignores summoning sickness)</span>
+<span class="sd">- First strike / Double strike (two-step damage)</span>
+<span class="sd">- Trample (excess damage to defending player)</span>
+<span class="sd">- Lifelink (controller gains life equal to damage dealt)</span>
+<span class="sd">- Deathtouch (any damage from this source is lethal to creatures)</span>
+<span class="sd">- Indestructible (survives lethal damage and &quot;destroy&quot; effects)</span>
+
+<span class="sd">References:</span>
+<span class="sd">- open-mtg (MIT): CR 509/510-compliant damage assignment ordering</span>
+<span class="sd">- mtg-python-engine (MIT): handle_combat_phase() pattern</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">.game_state</span><span class="w"> </span><span class="kn">import</span> <span class="n">CardInstance</span><span class="p">,</span> <span class="n">CombatState</span><span class="p">,</span> <span class="n">GameState</span><span class="p">,</span> <span class="n">Zone</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.keywords</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">has</span> <span class="k">as</span> <span class="n">has_kw</span><span class="p">,</span>
+    <span class="n">can_be_targeted</span><span class="p">,</span>
+    <span class="n">effective_power</span><span class="p">,</span>
+    <span class="n">effective_toughness</span><span class="p">,</span>
+<span class="p">)</span>
+
+
+<span class="n">_KEYWORDS</span> <span class="o">=</span> <span class="p">(</span>
+    <span class="s2">&quot;flying&quot;</span><span class="p">,</span> <span class="s2">&quot;reach&quot;</span><span class="p">,</span> <span class="s2">&quot;menace&quot;</span><span class="p">,</span> <span class="s2">&quot;vigilance&quot;</span><span class="p">,</span> <span class="s2">&quot;haste&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;first strike&quot;</span><span class="p">,</span> <span class="s2">&quot;double strike&quot;</span><span class="p">,</span> <span class="s2">&quot;trample&quot;</span><span class="p">,</span> <span class="s2">&quot;lifelink&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;deathtouch&quot;</span><span class="p">,</span> <span class="s2">&quot;indestructible&quot;</span><span class="p">,</span> <span class="s2">&quot;defender&quot;</span><span class="p">,</span>
+<span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_fire_damage_triggers</span><span class="p">(</span><span class="n">state</span><span class="p">:</span> <span class="n">GameState</span><span class="p">,</span> <span class="n">source</span><span class="p">:</span> <span class="n">CardInstance</span><span class="p">,</span> <span class="n">target_kind</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Push &#39;whenever ~ deals damage to a player/creature&#39; triggers and</span>
+<span class="sd">    resolve them immediately so combat math reflects their effects.&quot;&quot;&quot;</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">.triggers</span><span class="w"> </span><span class="kn">import</span> <span class="n">check_damage_triggers</span><span class="p">,</span> <span class="n">resolve_trigger</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">.game_state</span><span class="w"> </span><span class="kn">import</span> <span class="n">StackItem</span>
+    <span class="n">triggers</span> <span class="o">=</span> <span class="n">check_damage_triggers</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">source</span><span class="p">,</span> <span class="n">target_kind</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">trig</span> <span class="ow">in</span> <span class="n">triggers</span><span class="p">:</span>
+        <span class="n">item</span> <span class="o">=</span> <span class="n">StackItem</span><span class="p">(</span>
+            <span class="n">source_card_id</span><span class="o">=</span><span class="n">trig</span><span class="o">.</span><span class="n">source_card_id</span><span class="p">,</span>
+            <span class="n">controller_id</span><span class="o">=</span><span class="n">trig</span><span class="o">.</span><span class="n">controller_id</span><span class="p">,</span>
+            <span class="n">is_spell</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+            <span class="n">card_data</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="sa">f</span><span class="s2">&quot;[Trigger] </span><span class="si">{</span><span class="n">source</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">trig</span><span class="o">.</span><span class="n">description</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+                       <span class="s2">&quot;type_line&quot;</span><span class="p">:</span> <span class="s2">&quot;Ability&quot;</span><span class="p">},</span>
+        <span class="p">)</span>
+        <span class="n">state</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[TRIGGER (DAMAGE)] </span><span class="si">{</span><span class="n">source</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">trig</span><span class="o">.</span><span class="n">description</span><span class="si">}</span><span class="s2"> added to stack&quot;</span><span class="p">)</span>
+        <span class="c1"># Resolve directly (no priority window in this minimal engine).</span>
+        <span class="n">state</span><span class="o">.</span><span class="n">triggered_abilities</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">trig</span><span class="p">)</span>
+        <span class="n">resolve_trigger</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">trig</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">state</span><span class="o">.</span><span class="n">triggered_abilities</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">trig</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+            <span class="k">pass</span>
+        <span class="n">state</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[Trigger] </span><span class="si">{</span><span class="n">trig</span><span class="o">.</span><span class="n">description</span><span class="si">}</span><span class="s2"> resolves&quot;</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="can_attack">
+<a class="viewcode-back" href="../../../api_engine.html#src.engine.combat.can_attack">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">can_attack</span><span class="p">(</span><span class="n">card</span><span class="p">:</span> <span class="n">CardInstance</span><span class="p">,</span> <span class="n">turn_number</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">card</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">card</span><span class="o">.</span><span class="n">is_creature</span><span class="p">():</span>
+        <span class="k">return</span> <span class="kc">False</span>
+    <span class="k">if</span> <span class="n">card</span><span class="o">.</span><span class="n">zone</span> <span class="o">!=</span> <span class="n">Zone</span><span class="o">.</span><span class="n">BATTLEFIELD</span> <span class="ow">or</span> <span class="n">card</span><span class="o">.</span><span class="n">tapped</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">False</span>
+    <span class="k">if</span> <span class="n">has_kw</span><span class="p">(</span><span class="n">card</span><span class="p">,</span> <span class="s2">&quot;defender&quot;</span><span class="p">):</span>
+        <span class="k">return</span> <span class="kc">False</span>
+    <span class="c1"># Summoning sickness: cleared by haste.</span>
+    <span class="k">if</span> <span class="n">card</span><span class="o">.</span><span class="n">summoning_sick</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">has_kw</span><span class="p">(</span><span class="n">card</span><span class="p">,</span> <span class="s2">&quot;haste&quot;</span><span class="p">):</span>
+        <span class="k">return</span> <span class="kc">False</span>
+    <span class="k">return</span> <span class="kc">True</span></div>
+
+
+
+<div class="viewcode-block" id="can_block">
+<a class="viewcode-back" href="../../../api_engine.html#src.engine.combat.can_block">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">can_block</span><span class="p">(</span><span class="n">attacker</span><span class="p">:</span> <span class="n">CardInstance</span><span class="p">,</span> <span class="n">blocker</span><span class="p">:</span> <span class="n">CardInstance</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;CR 509: legality of a single blocker for ``attacker``.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">blocker</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">blocker</span><span class="o">.</span><span class="n">is_creature</span><span class="p">():</span>
+        <span class="k">return</span> <span class="kc">False</span>
+    <span class="k">if</span> <span class="n">blocker</span><span class="o">.</span><span class="n">zone</span> <span class="o">!=</span> <span class="n">Zone</span><span class="o">.</span><span class="n">BATTLEFIELD</span> <span class="ow">or</span> <span class="n">blocker</span><span class="o">.</span><span class="n">tapped</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">False</span>
+    <span class="k">if</span> <span class="n">has_kw</span><span class="p">(</span><span class="n">attacker</span><span class="p">,</span> <span class="s2">&quot;flying&quot;</span><span class="p">)</span> <span class="ow">and</span> <span class="ow">not</span> <span class="p">(</span><span class="n">has_kw</span><span class="p">(</span><span class="n">blocker</span><span class="p">,</span> <span class="s2">&quot;flying&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="n">has_kw</span><span class="p">(</span><span class="n">blocker</span><span class="p">,</span> <span class="s2">&quot;reach&quot;</span><span class="p">)):</span>
+        <span class="k">return</span> <span class="kc">False</span>
+    <span class="k">return</span> <span class="kc">True</span></div>
+
+
+
+<div class="viewcode-block" id="menace_satisfied">
+<a class="viewcode-back" href="../../../api_engine.html#src.engine.combat.menace_satisfied">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">menace_satisfied</span><span class="p">(</span><span class="n">attacker</span><span class="p">:</span> <span class="n">CardInstance</span><span class="p">,</span> <span class="n">blocker_count</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">has_kw</span><span class="p">(</span><span class="n">attacker</span><span class="p">,</span> <span class="s2">&quot;menace&quot;</span><span class="p">)</span> <span class="ow">and</span> <span class="n">blocker_count</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">False</span>
+    <span class="k">return</span> <span class="kc">True</span></div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Phase entry points</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+
+<div class="viewcode-block" id="begin_combat">
+<a class="viewcode-back" href="../../../api_engine.html#src.engine.combat.begin_combat">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">begin_combat</span><span class="p">(</span><span class="n">state</span><span class="p">:</span> <span class="n">GameState</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">CombatState</span><span class="p">:</span>
+    <span class="n">combat</span> <span class="o">=</span> <span class="n">CombatState</span><span class="p">()</span>
+    <span class="n">state</span><span class="o">.</span><span class="n">combat</span> <span class="o">=</span> <span class="n">combat</span>
+    <span class="n">state</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="s2">&quot;Combat begins&quot;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">combat</span></div>
+
+
+
+<div class="viewcode-block" id="declare_attackers">
+<a class="viewcode-back" href="../../../api_engine.html#src.engine.combat.declare_attackers">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">declare_attackers</span><span class="p">(</span>
+    <span class="n">state</span><span class="p">:</span> <span class="n">GameState</span><span class="p">,</span> <span class="n">attacker_assignments</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Declare attackers. attacker_assignments: {card_instance_id: defending_player_id}&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">state</span><span class="o">.</span><span class="n">combat</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span>
+
+    <span class="k">for</span> <span class="n">attacker_id</span><span class="p">,</span> <span class="n">defender_id</span> <span class="ow">in</span> <span class="n">attacker_assignments</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="n">card</span> <span class="o">=</span> <span class="n">_get_card</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">attacker_id</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">card</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">can_attack</span><span class="p">(</span><span class="n">card</span><span class="p">,</span> <span class="n">state</span><span class="o">.</span><span class="n">turn_number</span><span class="p">):</span>
+            <span class="k">continue</span>
+        <span class="c1"># Vigilance: don&#39;t tap when attacking.</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">has_kw</span><span class="p">(</span><span class="n">card</span><span class="p">,</span> <span class="s2">&quot;vigilance&quot;</span><span class="p">):</span>
+            <span class="n">card</span><span class="o">.</span><span class="n">tapped</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="n">state</span><span class="o">.</span><span class="n">combat</span><span class="o">.</span><span class="n">attackers</span><span class="p">[</span><span class="n">attacker_id</span><span class="p">]</span> <span class="o">=</span> <span class="n">defender_id</span>
+        <span class="n">ep</span> <span class="o">=</span> <span class="n">effective_power</span><span class="p">(</span><span class="n">card</span><span class="p">)</span>
+        <span class="n">et</span> <span class="o">=</span> <span class="n">effective_toughness</span><span class="p">(</span><span class="n">card</span><span class="p">)</span>
+        <span class="n">state</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">card</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="n">ep</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">et</span><span class="si">}</span><span class="s2">) attacks </span><span class="si">{</span><span class="n">defender_id</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="declare_blockers">
+<a class="viewcode-back" href="../../../api_engine.html#src.engine.combat.declare_blockers">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">declare_blockers</span><span class="p">(</span>
+    <span class="n">state</span><span class="p">:</span> <span class="n">GameState</span><span class="p">,</span> <span class="n">blocker_assignments</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Declare blockers. blocker_assignments: {attacker_id: [blocker_card_ids]}&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">state</span><span class="o">.</span><span class="n">combat</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span>
+
+    <span class="k">for</span> <span class="n">attacker_id</span><span class="p">,</span> <span class="n">blocker_ids</span> <span class="ow">in</span> <span class="n">blocker_assignments</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">if</span> <span class="n">attacker_id</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">state</span><span class="o">.</span><span class="n">combat</span><span class="o">.</span><span class="n">attackers</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="n">attacker</span> <span class="o">=</span> <span class="n">_get_card</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">attacker_id</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">attacker</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="n">legal</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">bid</span> <span class="ow">in</span> <span class="n">blocker_ids</span><span class="p">:</span>
+            <span class="n">blocker</span> <span class="o">=</span> <span class="n">_get_card</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">bid</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">blocker</span> <span class="ow">and</span> <span class="n">can_block</span><span class="p">(</span><span class="n">attacker</span><span class="p">,</span> <span class="n">blocker</span><span class="p">):</span>
+                <span class="n">legal</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">bid</span><span class="p">)</span>
+                <span class="n">state</span><span class="o">.</span><span class="n">log</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">blocker</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="n">effective_power</span><span class="p">(</span><span class="n">blocker</span><span class="p">)</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">effective_toughness</span><span class="p">(</span><span class="n">blocker</span><span class="p">)</span><span class="si">}</span><span class="s2">)&quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot; blocks </span><span class="si">{</span><span class="n">attacker</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="n">effective_power</span><span class="p">(</span><span class="n">attacker</span><span class="p">)</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">effective_toughness</span><span class="p">(</span><span class="n">attacker</span><span class="p">)</span><span class="si">}</span><span class="s2">)&quot;</span>
+                <span class="p">)</span>
+        <span class="c1"># Enforce menace.</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">menace_satisfied</span><span class="p">(</span><span class="n">attacker</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">legal</span><span class="p">)):</span>
+            <span class="n">state</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">attacker</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> has menace and is blocked by only </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">legal</span><span class="p">)</span><span class="si">}</span><span class="s2"> — block illegal, ignored&quot;</span><span class="p">)</span>
+            <span class="n">legal</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">state</span><span class="o">.</span><span class="n">combat</span><span class="o">.</span><span class="n">blockers</span><span class="p">[</span><span class="n">attacker_id</span><span class="p">]</span> <span class="o">=</span> <span class="n">legal</span></div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Damage resolution (with first/double strike)</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+
+<div class="viewcode-block" id="resolve_combat_damage">
+<a class="viewcode-back" href="../../../api_engine.html#src.engine.combat.resolve_combat_damage">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">resolve_combat_damage</span><span class="p">(</span><span class="n">state</span><span class="p">:</span> <span class="n">GameState</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;CR 510 damage step. Handles first strike, double strike, trample,</span>
+<span class="sd">    lifelink, deathtouch, and player damage.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">state</span><span class="o">.</span><span class="n">combat</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span>
+
+    <span class="n">attackers</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">state</span><span class="o">.</span><span class="n">combat</span><span class="o">.</span><span class="n">attackers</span><span class="o">.</span><span class="n">items</span><span class="p">())</span>
+
+    <span class="c1"># Determine if a first-strike step is needed.</span>
+    <span class="n">has_first_strike</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="k">for</span> <span class="n">attacker_id</span><span class="p">,</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">attackers</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">_has_first_or_double</span><span class="p">(</span><span class="n">_get_card</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">attacker_id</span><span class="p">)):</span>
+            <span class="n">has_first_strike</span> <span class="o">=</span> <span class="kc">True</span>
+            <span class="k">break</span>
+        <span class="k">for</span> <span class="n">bid</span> <span class="ow">in</span> <span class="n">state</span><span class="o">.</span><span class="n">combat</span><span class="o">.</span><span class="n">blockers</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">attacker_id</span><span class="p">,</span> <span class="p">[]):</span>
+            <span class="k">if</span> <span class="n">_has_first_or_double</span><span class="p">(</span><span class="n">_get_card</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">bid</span><span class="p">)):</span>
+                <span class="n">has_first_strike</span> <span class="o">=</span> <span class="kc">True</span>
+                <span class="k">break</span>
+        <span class="k">if</span> <span class="n">has_first_strike</span><span class="p">:</span>
+            <span class="k">break</span>
+
+    <span class="k">if</span> <span class="n">has_first_strike</span><span class="p">:</span>
+        <span class="n">_deal_step</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">attackers</span><span class="p">,</span> <span class="n">first_strike_step</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="c1"># SBA between steps would normally apply; defer to caller&#39;s SBA loop</span>
+        <span class="c1"># but remove dead creatures for the regular step.</span>
+        <span class="n">_remove_dead</span><span class="p">(</span><span class="n">state</span><span class="p">)</span>
+        <span class="c1"># Re-fetch attackers (some may have died).</span>
+        <span class="n">attackers</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="p">(</span><span class="n">aid</span><span class="p">,</span> <span class="n">did</span><span class="p">)</span> <span class="k">for</span> <span class="n">aid</span><span class="p">,</span> <span class="n">did</span> <span class="ow">in</span> <span class="n">attackers</span>
+            <span class="k">if</span> <span class="n">_get_card</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">aid</span><span class="p">)</span> <span class="ow">and</span> <span class="n">_get_card</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">aid</span><span class="p">)</span><span class="o">.</span><span class="n">zone</span> <span class="o">==</span> <span class="n">Zone</span><span class="o">.</span><span class="n">BATTLEFIELD</span>
+        <span class="p">]</span>
+
+    <span class="n">_deal_step</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">attackers</span><span class="p">,</span> <span class="n">first_strike_step</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+    <span class="n">state</span><span class="o">.</span><span class="n">combat</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_deal_step</span><span class="p">(</span>
+    <span class="n">state</span><span class="p">:</span> <span class="n">GameState</span><span class="p">,</span>
+    <span class="n">attackers</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]],</span>
+    <span class="n">first_strike_step</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="k">for</span> <span class="n">attacker_id</span><span class="p">,</span> <span class="n">defender_id</span> <span class="ow">in</span> <span class="n">attackers</span><span class="p">:</span>
+        <span class="n">attacker</span> <span class="o">=</span> <span class="n">_get_card</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">attacker_id</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">attacker</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">attacker</span><span class="o">.</span><span class="n">zone</span> <span class="o">!=</span> <span class="n">Zone</span><span class="o">.</span><span class="n">BATTLEFIELD</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="c1"># Filter participation in this step.</span>
+        <span class="k">if</span> <span class="n">first_strike_step</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">_has_first_or_double</span><span class="p">(</span><span class="n">attacker</span><span class="p">):</span>
+            <span class="n">atk_deals</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">atk_deals</span> <span class="o">=</span> <span class="kc">True</span>
+            <span class="c1"># In second step, first-strike-only creatures don&#39;t deal again.</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">first_strike_step</span> <span class="ow">and</span> <span class="n">has_kw</span><span class="p">(</span><span class="n">attacker</span><span class="p">,</span> <span class="s2">&quot;first strike&quot;</span><span class="p">)</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">has_kw</span><span class="p">(</span><span class="n">attacker</span><span class="p">,</span> <span class="s2">&quot;double strike&quot;</span><span class="p">):</span>
+                <span class="n">atk_deals</span> <span class="o">=</span> <span class="kc">False</span>
+
+        <span class="n">blockers</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">_get_card</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">bid</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">bid</span> <span class="ow">in</span> <span class="n">state</span><span class="o">.</span><span class="n">combat</span><span class="o">.</span><span class="n">blockers</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">attacker_id</span><span class="p">,</span> <span class="p">[])</span>
+        <span class="p">]</span>
+        <span class="n">blockers</span> <span class="o">=</span> <span class="p">[</span><span class="n">b</span> <span class="k">for</span> <span class="n">b</span> <span class="ow">in</span> <span class="n">blockers</span> <span class="k">if</span> <span class="n">b</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">b</span><span class="o">.</span><span class="n">zone</span> <span class="o">==</span> <span class="n">Zone</span><span class="o">.</span><span class="n">BATTLEFIELD</span><span class="p">]</span>
+
+        <span class="n">atk_power</span> <span class="o">=</span> <span class="n">effective_power</span><span class="p">(</span><span class="n">attacker</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">blockers</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">atk_deals</span> <span class="ow">and</span> <span class="n">atk_power</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="n">defender</span> <span class="o">=</span> <span class="nb">next</span><span class="p">((</span><span class="n">p</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">state</span><span class="o">.</span><span class="n">players</span> <span class="k">if</span> <span class="n">p</span><span class="o">.</span><span class="n">player_id</span> <span class="o">==</span> <span class="n">defender_id</span><span class="p">),</span> <span class="kc">None</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">defender</span><span class="p">:</span>
+                    <span class="n">defender</span><span class="o">.</span><span class="n">life_total</span> <span class="o">-=</span> <span class="n">atk_power</span>
+                    <span class="n">_apply_lifelink</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">attacker</span><span class="p">,</span> <span class="n">atk_power</span><span class="p">)</span>
+                    <span class="n">_track_commander_damage</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">attacker</span><span class="p">,</span> <span class="n">defender</span><span class="p">,</span> <span class="n">atk_power</span><span class="p">)</span>
+                    <span class="n">state</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">attacker</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> deals </span><span class="si">{</span><span class="n">atk_power</span><span class="si">}</span><span class="s2"> damage to </span><span class="si">{</span><span class="n">defender</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                    <span class="n">_fire_damage_triggers</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">attacker</span><span class="p">,</span> <span class="s2">&quot;player&quot;</span><span class="p">)</span>
+            <span class="k">continue</span>
+
+        <span class="c1"># Blocked — assign attacker damage across blockers in declared order.</span>
+        <span class="k">if</span> <span class="n">atk_deals</span><span class="p">:</span>
+            <span class="n">remaining</span> <span class="o">=</span> <span class="n">atk_power</span>
+            <span class="n">damage_dealt_by_attacker</span> <span class="o">=</span> <span class="mi">0</span>
+            <span class="k">for</span> <span class="n">blocker</span> <span class="ow">in</span> <span class="n">blockers</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">remaining</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+                    <span class="k">break</span>
+                <span class="c1"># Deathtouch lets us assign just 1 to satisfy &quot;lethal&quot;.</span>
+                <span class="n">blk_toughness</span> <span class="o">=</span> <span class="n">effective_toughness</span><span class="p">(</span><span class="n">blocker</span><span class="p">)</span> <span class="o">-</span> <span class="n">blocker</span><span class="o">.</span><span class="n">damage_marked</span>
+                <span class="n">lethal</span> <span class="o">=</span> <span class="mi">1</span> <span class="k">if</span> <span class="n">has_kw</span><span class="p">(</span><span class="n">attacker</span><span class="p">,</span> <span class="s2">&quot;deathtouch&quot;</span><span class="p">)</span> <span class="k">else</span> <span class="nb">max</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">blk_toughness</span><span class="p">)</span>
+                <span class="n">assign</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">remaining</span><span class="p">,</span> <span class="n">lethal</span><span class="p">)</span> <span class="k">if</span> <span class="n">has_kw</span><span class="p">(</span><span class="n">attacker</span><span class="p">,</span> <span class="s2">&quot;deathtouch&quot;</span><span class="p">)</span> <span class="k">else</span> <span class="nb">min</span><span class="p">(</span><span class="n">remaining</span><span class="p">,</span> <span class="nb">max</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">blk_toughness</span><span class="p">))</span>
+                <span class="n">blocker</span><span class="o">.</span><span class="n">damage_marked</span> <span class="o">+=</span> <span class="n">assign</span>
+                <span class="n">damage_dealt_by_attacker</span> <span class="o">+=</span> <span class="n">assign</span>
+                <span class="n">remaining</span> <span class="o">-=</span> <span class="n">assign</span>
+            <span class="c1"># Trample: leftover to defending player.</span>
+            <span class="k">if</span> <span class="n">has_kw</span><span class="p">(</span><span class="n">attacker</span><span class="p">,</span> <span class="s2">&quot;trample&quot;</span><span class="p">)</span> <span class="ow">and</span> <span class="n">remaining</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="n">defender</span> <span class="o">=</span> <span class="nb">next</span><span class="p">((</span><span class="n">p</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">state</span><span class="o">.</span><span class="n">players</span> <span class="k">if</span> <span class="n">p</span><span class="o">.</span><span class="n">player_id</span> <span class="o">==</span> <span class="n">defender_id</span><span class="p">),</span> <span class="kc">None</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">defender</span><span class="p">:</span>
+                    <span class="n">defender</span><span class="o">.</span><span class="n">life_total</span> <span class="o">-=</span> <span class="n">remaining</span>
+                    <span class="n">damage_dealt_by_attacker</span> <span class="o">+=</span> <span class="n">remaining</span>
+                    <span class="n">state</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">attacker</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> tramples over for </span><span class="si">{</span><span class="n">remaining</span><span class="si">}</span><span class="s2"> to </span><span class="si">{</span><span class="n">defender</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                    <span class="n">_fire_damage_triggers</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">attacker</span><span class="p">,</span> <span class="s2">&quot;player&quot;</span><span class="p">)</span>
+            <span class="n">_apply_lifelink</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">attacker</span><span class="p">,</span> <span class="n">damage_dealt_by_attacker</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">damage_dealt_by_attacker</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">blockers</span><span class="p">:</span>
+                <span class="n">_fire_damage_triggers</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">attacker</span><span class="p">,</span> <span class="s2">&quot;creature&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Blockers strike back (subject to step filter).</span>
+        <span class="k">for</span> <span class="n">blocker</span> <span class="ow">in</span> <span class="n">blockers</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">first_strike_step</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">_has_first_or_double</span><span class="p">(</span><span class="n">blocker</span><span class="p">):</span>
+                <span class="k">continue</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">first_strike_step</span> <span class="ow">and</span> <span class="n">has_kw</span><span class="p">(</span><span class="n">blocker</span><span class="p">,</span> <span class="s2">&quot;first strike&quot;</span><span class="p">)</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">has_kw</span><span class="p">(</span><span class="n">blocker</span><span class="p">,</span> <span class="s2">&quot;double strike&quot;</span><span class="p">):</span>
+                <span class="k">continue</span>
+            <span class="n">blk_power</span> <span class="o">=</span> <span class="n">effective_power</span><span class="p">(</span><span class="n">blocker</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">blk_power</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">attacker</span><span class="o">.</span><span class="n">damage_marked</span> <span class="o">+=</span> <span class="n">blk_power</span>
+            <span class="n">_apply_lifelink</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">blocker</span><span class="p">,</span> <span class="n">blk_power</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_has_first_or_double</span><span class="p">(</span><span class="n">card</span><span class="p">:</span> <span class="n">CardInstance</span> <span class="o">|</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+    <span class="k">return</span> <span class="n">has_kw</span><span class="p">(</span><span class="n">card</span><span class="p">,</span> <span class="s2">&quot;first strike&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="n">has_kw</span><span class="p">(</span><span class="n">card</span><span class="p">,</span> <span class="s2">&quot;double strike&quot;</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_apply_lifelink</span><span class="p">(</span><span class="n">state</span><span class="p">:</span> <span class="n">GameState</span><span class="p">,</span> <span class="n">source</span><span class="p">:</span> <span class="n">CardInstance</span><span class="p">,</span> <span class="n">damage</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">damage</span> <span class="o">&lt;=</span> <span class="mi">0</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">has_kw</span><span class="p">(</span><span class="n">source</span><span class="p">,</span> <span class="s2">&quot;lifelink&quot;</span><span class="p">):</span>
+        <span class="k">return</span>
+    <span class="n">controller</span> <span class="o">=</span> <span class="nb">next</span><span class="p">((</span><span class="n">p</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">state</span><span class="o">.</span><span class="n">players</span> <span class="k">if</span> <span class="n">p</span><span class="o">.</span><span class="n">player_id</span> <span class="o">==</span> <span class="n">source</span><span class="o">.</span><span class="n">controller_id</span><span class="p">),</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">controller</span><span class="p">:</span>
+        <span class="n">controller</span><span class="o">.</span><span class="n">life_total</span> <span class="o">+=</span> <span class="n">damage</span>
+        <span class="n">state</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">source</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> lifelink: </span><span class="si">{</span><span class="n">controller</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> gains </span><span class="si">{</span><span class="n">damage</span><span class="si">}</span><span class="s2"> life&quot;</span><span class="p">)</span>
+        <span class="n">_fire_lifegain_triggers</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">controller</span><span class="o">.</span><span class="n">player_id</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_fire_lifegain_triggers</span><span class="p">(</span><span class="n">state</span><span class="p">:</span> <span class="n">GameState</span><span class="p">,</span> <span class="n">gaining_player_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">.triggers</span><span class="w"> </span><span class="kn">import</span> <span class="n">check_lifegain_triggers</span><span class="p">,</span> <span class="n">resolve_trigger</span>
+    <span class="k">for</span> <span class="n">trig</span> <span class="ow">in</span> <span class="n">check_lifegain_triggers</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">gaining_player_id</span><span class="p">):</span>
+        <span class="n">state</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[TRIGGER (LIFE_GAIN)] </span><span class="si">{</span><span class="n">trig</span><span class="o">.</span><span class="n">description</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="n">state</span><span class="o">.</span><span class="n">triggered_abilities</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">trig</span><span class="p">)</span>
+        <span class="n">resolve_trigger</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">trig</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">state</span><span class="o">.</span><span class="n">triggered_abilities</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">trig</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+            <span class="k">pass</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_track_commander_damage</span><span class="p">(</span>
+    <span class="n">state</span><span class="p">:</span> <span class="n">GameState</span><span class="p">,</span> <span class="n">attacker</span><span class="p">:</span> <span class="n">CardInstance</span><span class="p">,</span> <span class="n">defender</span><span class="p">,</span> <span class="n">amount</span><span class="p">:</span> <span class="nb">int</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">state</span><span class="o">.</span><span class="n">format</span> <span class="o">!=</span> <span class="s2">&quot;commander&quot;</span><span class="p">:</span>
+        <span class="k">return</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">defender</span><span class="p">,</span> <span class="s2">&quot;commander_damage_received&quot;</span><span class="p">):</span>
+        <span class="n">defender</span><span class="o">.</span><span class="n">commander_damage_received</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="n">is_commander</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">attacker</span><span class="o">.</span><span class="n">instance_id</span> <span class="ow">in</span> <span class="p">(</span>
+            <span class="n">state</span><span class="o">.</span><span class="n">commander_ids</span><span class="p">(</span><span class="n">attacker</span><span class="o">.</span><span class="n">controller_id</span><span class="p">)</span>
+            <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="s2">&quot;commander_ids&quot;</span><span class="p">)</span>
+            <span class="k">else</span> <span class="p">[</span><span class="n">state</span><span class="o">.</span><span class="n">commanders</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">attacker</span><span class="o">.</span><span class="n">controller_id</span><span class="p">)]</span>
+        <span class="p">)</span>
+        <span class="ow">or</span> <span class="n">attacker</span><span class="o">.</span><span class="n">card_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;is_commander&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
+    <span class="p">)</span>
+    <span class="k">if</span> <span class="n">is_commander</span><span class="p">:</span>
+        <span class="n">defender</span><span class="o">.</span><span class="n">commander_damage_received</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">attacker</span><span class="o">.</span><span class="n">controller_id</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+        <span class="n">defender</span><span class="o">.</span><span class="n">commander_damage_received</span><span class="p">[</span><span class="n">attacker</span><span class="o">.</span><span class="n">controller_id</span><span class="p">]</span> <span class="o">+=</span> <span class="n">amount</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_remove_dead</span><span class="p">(</span><span class="n">state</span><span class="p">:</span> <span class="n">GameState</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Inter-step SBA helper: move creatures with lethal damage (and not</span>
+<span class="sd">    indestructible) to the graveyard so they don&#39;t deal damage in the</span>
+<span class="sd">    second damage step.&quot;&quot;&quot;</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">.zones</span><span class="w"> </span><span class="kn">import</span> <span class="n">move_card</span>
+    <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="nb">list</span><span class="p">(</span><span class="n">state</span><span class="o">.</span><span class="n">cards</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">zone</span> <span class="o">!=</span> <span class="n">Zone</span><span class="o">.</span><span class="n">BATTLEFIELD</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">c</span><span class="o">.</span><span class="n">is_creature</span><span class="p">():</span>
+            <span class="k">continue</span>
+        <span class="k">if</span> <span class="n">has_kw</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="s2">&quot;indestructible&quot;</span><span class="p">):</span>
+            <span class="k">continue</span>
+        <span class="n">toughness</span> <span class="o">=</span> <span class="n">effective_toughness</span><span class="p">(</span><span class="n">c</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">toughness</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">c</span><span class="o">.</span><span class="n">damage_marked</span> <span class="o">&gt;=</span> <span class="n">toughness</span><span class="p">:</span>
+            <span class="n">move_card</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">instance_id</span><span class="p">,</span> <span class="n">Zone</span><span class="o">.</span><span class="n">BATTLEFIELD</span><span class="p">,</span> <span class="n">Zone</span><span class="o">.</span><span class="n">GRAVEYARD</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">owner_id</span><span class="p">)</span>
+            <span class="n">state</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">c</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> dies (first-strike damage)&quot;</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="end_combat">
+<a class="viewcode-back" href="../../../api_engine.html#src.engine.combat.end_combat">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">end_combat</span><span class="p">(</span><span class="n">state</span><span class="p">:</span> <span class="n">GameState</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="n">state</span><span class="o">.</span><span class="n">combat</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">state</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="s2">&quot;Combat ends&quot;</span><span class="p">)</span></div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Helpers</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_get_card</span><span class="p">(</span><span class="n">state</span><span class="p">:</span> <span class="n">GameState</span><span class="p">,</span> <span class="n">cid</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">CardInstance</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="k">return</span> <span class="nb">next</span><span class="p">((</span><span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">state</span><span class="o">.</span><span class="n">cards</span> <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">instance_id</span> <span class="o">==</span> <span class="n">cid</span><span class="p">),</span> <span class="kc">None</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_card_name</span><span class="p">(</span><span class="n">state</span><span class="p">:</span> <span class="n">GameState</span><span class="p">,</span> <span class="n">cid</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+    <span class="n">card</span> <span class="o">=</span> <span class="n">_get_card</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">cid</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">card</span><span class="o">.</span><span class="n">name</span> <span class="k">if</span> <span class="n">card</span> <span class="k">else</span> <span class="s2">&quot;Unknown&quot;</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_parse_pt</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Parse power/toughness — returns 0 for * or None.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mi">0</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mi">0</span>
+</pre></div>
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="../../../index.html">opposition-agents-playing-mtg</a></h1>
+
+
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="../../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+<p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../repository_map.html">Repository Map</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../components.html">Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api.html">API Reference</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="../../../index.html">Documentation overview</a><ul>
+  <li><a href="../../index.html">Module code</a><ul>
+  </ul></li>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &#169;2026, Data Science Lab FHSWF.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 8.1.3</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+    </div>
+
+    
+
+    
+  </body>
+</html>

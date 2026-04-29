@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>src.agents &#8212; opposition-agents-playing-mtg  documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="../../_static/basic.css?v=686e5160" />
+    <link rel="stylesheet" type="text/css" href="../../_static/alabaster.css?v=27fed22d" />
+    <script src="../../_static/documentation_options.js?v=5929fcd5"></script>
+    <script src="../../_static/doctools.js?v=9bcbadda"></script>
+    <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+   
+  <link rel="stylesheet" href="../../_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <h1>Source code for src.agents</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Agent implementations and registry.</span>
+
+<span class="sd">The registry lets callers build agents by short name (e.g. ``&quot;random&quot;``,</span>
+<span class="sd">``&quot;heuristic&quot;``, ``&quot;world_model&quot;``).  This is what powers the</span>
+<span class="sd">``--seat0 NAME`` flag promised in ``AGENTS.md`` and the overnight</span>
+<span class="sd">training pipeline.</span>
+
+<span class="sd">Heavy imports (torch, transformers, langchain, neo4j) are deferred to the</span>
+<span class="sd">factory so importing this module stays cheap for the random/heuristic</span>
+<span class="sd">fast path.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Callable</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.agents.base_agent</span><span class="w"> </span><span class="kn">import</span> <span class="n">MTGAgent</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.agents.heuristic_agent</span><span class="w"> </span><span class="kn">import</span> <span class="n">HeuristicAgent</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.agents.random_agent</span><span class="w"> </span><span class="kn">import</span> <span class="n">RandomAgent</span>
+
+<span class="c1"># Factory signature: (player_id: str, **kwargs) -&gt; MTGAgent.</span>
+<span class="n">_AgentFactory</span> <span class="o">=</span> <span class="n">Callable</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">MTGAgent</span><span class="p">]</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_make_random</span><span class="p">(</span><span class="n">player_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="o">**</span><span class="n">kw</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">MTGAgent</span><span class="p">:</span>
+    <span class="k">return</span> <span class="n">RandomAgent</span><span class="p">(</span><span class="n">player_id</span><span class="o">=</span><span class="n">player_id</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="n">kw</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;name&quot;</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Random(</span><span class="si">{</span><span class="n">player_id</span><span class="si">}</span><span class="s2">)&quot;</span><span class="p">))</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_make_heuristic</span><span class="p">(</span><span class="n">player_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="o">**</span><span class="n">kw</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">MTGAgent</span><span class="p">:</span>
+    <span class="k">return</span> <span class="n">HeuristicAgent</span><span class="p">(</span>
+        <span class="n">player_id</span><span class="o">=</span><span class="n">player_id</span><span class="p">,</span>
+        <span class="n">name</span><span class="o">=</span><span class="n">kw</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;name&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">),</span>
+        <span class="n">seed</span><span class="o">=</span><span class="n">kw</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;seed&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span>
+        <span class="n">prefer_aggressive</span><span class="o">=</span><span class="n">kw</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;prefer_aggressive&quot;</span><span class="p">,</span> <span class="kc">True</span><span class="p">),</span>
+    <span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_make_kg_heuristic</span><span class="p">(</span><span class="n">player_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="o">**</span><span class="n">kw</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">MTGAgent</span><span class="p">:</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">src.agents.kg_heuristic_agent</span><span class="w"> </span><span class="kn">import</span> <span class="n">KGHeuristicAgent</span>
+    <span class="k">return</span> <span class="n">KGHeuristicAgent</span><span class="p">(</span>
+        <span class="n">player_id</span><span class="o">=</span><span class="n">player_id</span><span class="p">,</span>
+        <span class="n">name</span><span class="o">=</span><span class="n">kw</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;name&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">),</span>
+        <span class="n">seed</span><span class="o">=</span><span class="n">kw</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;seed&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span>
+        <span class="n">kg</span><span class="o">=</span><span class="n">kw</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;kg&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span>
+    <span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_make_human</span><span class="p">(</span><span class="n">player_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="o">**</span><span class="n">kw</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">MTGAgent</span><span class="p">:</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">src.agents.human_agent</span><span class="w"> </span><span class="kn">import</span> <span class="n">HumanAgent</span>
+    <span class="k">return</span> <span class="n">HumanAgent</span><span class="p">(</span><span class="n">player_id</span><span class="o">=</span><span class="n">player_id</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="n">kw</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;name&quot;</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Human(</span><span class="si">{</span><span class="n">player_id</span><span class="si">}</span><span class="s2">)&quot;</span><span class="p">))</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_make_ollama</span><span class="p">(</span><span class="n">player_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="o">**</span><span class="n">kw</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">MTGAgent</span><span class="p">:</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">src.agents.llm_agent</span><span class="w"> </span><span class="kn">import</span> <span class="n">OllamaAgent</span>
+    <span class="k">return</span> <span class="n">OllamaAgent</span><span class="p">(</span>
+        <span class="n">player_id</span><span class="o">=</span><span class="n">player_id</span><span class="p">,</span>
+        <span class="n">name</span><span class="o">=</span><span class="n">kw</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;name&quot;</span><span class="p">,</span> <span class="s2">&quot;Ollama&quot;</span><span class="p">),</span>
+        <span class="n">model</span><span class="o">=</span><span class="n">kw</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;model&quot;</span><span class="p">,</span> <span class="s2">&quot;llama3&quot;</span><span class="p">),</span>
+        <span class="n">base_url</span><span class="o">=</span><span class="n">kw</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;base_url&quot;</span><span class="p">,</span> <span class="s2">&quot;http://localhost:11434&quot;</span><span class="p">),</span>
+    <span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_make_world_model</span><span class="p">(</span><span class="n">player_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="o">**</span><span class="n">kw</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">MTGAgent</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Build a `WorldModelAgent`.</span>
+
+<span class="sd">    Accepts either ``world_model=...`` + ``tokenizer=...`` directly, or a</span>
+<span class="sd">    ``checkpoint=path/to/jepa_final.pt`` (the factory loads it).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">src.agents.world_model_agent</span><span class="w"> </span><span class="kn">import</span> <span class="n">WorldModelAgent</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">src.world_model.world_model</span><span class="w"> </span><span class="kn">import</span> <span class="n">WorldModel</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">src.world_model.game_tokenizer</span><span class="w"> </span><span class="kn">import</span> <span class="n">GameTokenizer</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">src.world_model.card_embeddings</span><span class="w"> </span><span class="kn">import</span> <span class="n">CardEmbeddingModel</span>
+
+    <span class="n">world_model</span> <span class="o">=</span> <span class="n">kw</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;world_model&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="n">tokenizer</span> <span class="o">=</span> <span class="n">kw</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;tokenizer&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">world_model</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">ckpt</span> <span class="o">=</span> <span class="n">kw</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;checkpoint&quot;</span><span class="p">,</span> <span class="s2">&quot;checkpoints/jepa/jepa_final.pt&quot;</span><span class="p">)</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span> <span class="k">as</span> <span class="n">_P</span>
+        <span class="k">if</span> <span class="n">_P</span><span class="p">(</span><span class="n">ckpt</span><span class="p">)</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+            <span class="n">world_model</span> <span class="o">=</span> <span class="n">WorldModel</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">ckpt</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># No checkpoint available — fall back to a default-initialised</span>
+            <span class="c1"># WorldModel.  The agent will play but with random weights;</span>
+            <span class="c1"># this lets harnesses run smoke tests before any training.</span>
+            <span class="n">world_model</span> <span class="o">=</span> <span class="n">WorldModel</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">tokenizer</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">card_model</span> <span class="o">=</span> <span class="n">CardEmbeddingModel</span><span class="p">()</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="kn">from</span><span class="w"> </span><span class="nn">scripts.train_graph_embeddings</span><span class="w"> </span><span class="kn">import</span> <span class="n">load_embedding_cache</span>
+            <span class="n">embeds</span><span class="p">,</span> <span class="n">name_to_idx</span> <span class="o">=</span> <span class="n">load_embedding_cache</span><span class="p">()</span>
+            <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">idx</span> <span class="ow">in</span> <span class="n">name_to_idx</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="n">card_model</span><span class="o">.</span><span class="n">_embeddings</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">embeds</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="k">pass</span>
+        <span class="n">tokenizer</span> <span class="o">=</span> <span class="n">GameTokenizer</span><span class="p">(</span><span class="n">card_embeddings</span><span class="o">=</span><span class="n">card_model</span><span class="o">.</span><span class="n">get_all_embeddings</span><span class="p">())</span>
+
+    <span class="k">return</span> <span class="n">WorldModelAgent</span><span class="p">(</span>
+        <span class="n">player_id</span><span class="o">=</span><span class="n">player_id</span><span class="p">,</span>
+        <span class="n">world_model</span><span class="o">=</span><span class="n">world_model</span><span class="p">,</span>
+        <span class="n">tokenizer</span><span class="o">=</span><span class="n">tokenizer</span><span class="p">,</span>
+        <span class="n">kg_encoder</span><span class="o">=</span><span class="n">kw</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;kg_encoder&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span>
+        <span class="n">name</span><span class="o">=</span><span class="n">kw</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;name&quot;</span><span class="p">,</span> <span class="s2">&quot;WorldModelAgent&quot;</span><span class="p">),</span>
+        <span class="n">mode</span><span class="o">=</span><span class="n">kw</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;mode&quot;</span><span class="p">,</span> <span class="s2">&quot;direct&quot;</span><span class="p">),</span>
+        <span class="n">device</span><span class="o">=</span><span class="n">kw</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;device&quot;</span><span class="p">,</span> <span class="s2">&quot;cpu&quot;</span><span class="p">),</span>
+    <span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_make_active_inference</span><span class="p">(</span><span class="n">player_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="o">**</span><span class="n">kw</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">MTGAgent</span><span class="p">:</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">src.agents.active_inference_agent</span><span class="w"> </span><span class="kn">import</span> <span class="n">ActiveInferenceAgent</span>
+    <span class="k">return</span> <span class="n">ActiveInferenceAgent</span><span class="p">(</span>
+        <span class="n">player_id</span><span class="o">=</span><span class="n">player_id</span><span class="p">,</span>
+        <span class="n">kg</span><span class="o">=</span><span class="n">kw</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;kg&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span>
+        <span class="n">known_opponent_decklist</span><span class="o">=</span><span class="n">kw</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;known_opponent_decklist&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span>
+        <span class="n">name</span><span class="o">=</span><span class="n">kw</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;name&quot;</span><span class="p">,</span> <span class="s2">&quot;ActiveInferenceAgent&quot;</span><span class="p">),</span>
+    <span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_make_llm_fusion</span><span class="p">(</span><span class="n">player_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="o">**</span><span class="n">kw</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">MTGAgent</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Build a `LLMFusionAgent` (LLM + world model + KG fusion).</span>
+
+<span class="sd">    Optional kwargs: ``world_model`` / ``tokenizer`` / ``checkpoint``,</span>
+<span class="sd">    ``knowledge_graph``, ``opponent_model``, ``llm_model``, plus any</span>
+<span class="sd">    `FusionConfig` field overrides.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">src.agents.llm_fusion_agent</span><span class="w"> </span><span class="kn">import</span> <span class="n">LLMFusionAgent</span><span class="p">,</span> <span class="n">FusionConfig</span>
+
+    <span class="n">cfg_overrides</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">fname</span> <span class="ow">in</span> <span class="p">(</span>
+        <span class="s2">&quot;llm_weight&quot;</span><span class="p">,</span> <span class="s2">&quot;world_model_weight&quot;</span><span class="p">,</span> <span class="s2">&quot;kg_weight&quot;</span><span class="p">,</span> <span class="s2">&quot;heuristic_weight&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;dream_rollouts&quot;</span><span class="p">,</span> <span class="s2">&quot;dream_depth&quot;</span><span class="p">,</span> <span class="s2">&quot;dream_temperature&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;llm_provider&quot;</span><span class="p">,</span> <span class="s2">&quot;llm_model&quot;</span><span class="p">,</span> <span class="s2">&quot;llm_timeout&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;skip_llm_if_obvious&quot;</span><span class="p">,</span> <span class="s2">&quot;obvious_threshold&quot;</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="k">if</span> <span class="n">fname</span> <span class="ow">in</span> <span class="n">kw</span><span class="p">:</span>
+            <span class="n">cfg_overrides</span><span class="p">[</span><span class="n">fname</span><span class="p">]</span> <span class="o">=</span> <span class="n">kw</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">fname</span><span class="p">)</span>
+    <span class="n">config</span> <span class="o">=</span> <span class="n">kw</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;config&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">or</span> <span class="n">FusionConfig</span><span class="p">(</span><span class="o">**</span><span class="n">cfg_overrides</span><span class="p">)</span>
+
+    <span class="n">world_model</span> <span class="o">=</span> <span class="n">kw</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;world_model&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="n">tokenizer</span> <span class="o">=</span> <span class="n">kw</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;tokenizer&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">world_model</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">kw</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;checkpoint&quot;</span><span class="p">):</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">src.world_model.world_model</span><span class="w"> </span><span class="kn">import</span> <span class="n">WorldModel</span>
+        <span class="n">world_model</span> <span class="o">=</span> <span class="n">WorldModel</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">kw</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;checkpoint&quot;</span><span class="p">))</span>
+    <span class="k">if</span> <span class="n">world_model</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">tokenizer</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">src.world_model.game_tokenizer</span><span class="w"> </span><span class="kn">import</span> <span class="n">GameTokenizer</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">src.world_model.card_embeddings</span><span class="w"> </span><span class="kn">import</span> <span class="n">CardEmbeddingModel</span>
+        <span class="n">card_model</span> <span class="o">=</span> <span class="n">CardEmbeddingModel</span><span class="p">()</span>
+        <span class="n">tokenizer</span> <span class="o">=</span> <span class="n">GameTokenizer</span><span class="p">(</span><span class="n">card_embeddings</span><span class="o">=</span><span class="n">card_model</span><span class="o">.</span><span class="n">get_all_embeddings</span><span class="p">())</span>
+
+    <span class="k">return</span> <span class="n">LLMFusionAgent</span><span class="p">(</span>
+        <span class="n">player_id</span><span class="o">=</span><span class="n">player_id</span><span class="p">,</span>
+        <span class="n">name</span><span class="o">=</span><span class="n">kw</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;name&quot;</span><span class="p">,</span> <span class="s2">&quot;Fusion&quot;</span><span class="p">),</span>
+        <span class="n">config</span><span class="o">=</span><span class="n">config</span><span class="p">,</span>
+        <span class="n">world_model</span><span class="o">=</span><span class="n">world_model</span><span class="p">,</span>
+        <span class="n">tokenizer</span><span class="o">=</span><span class="n">tokenizer</span><span class="p">,</span>
+        <span class="n">knowledge_graph</span><span class="o">=</span><span class="n">kw</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;knowledge_graph&quot;</span><span class="p">,</span> <span class="n">kw</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;kg&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)),</span>
+        <span class="n">opponent_model</span><span class="o">=</span><span class="n">kw</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;opponent_model&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span>
+    <span class="p">)</span>
+
+
+<span class="n">AGENT_REGISTRY</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">_AgentFactory</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;random&quot;</span><span class="p">:</span> <span class="n">_make_random</span><span class="p">,</span>
+    <span class="s2">&quot;heuristic&quot;</span><span class="p">:</span> <span class="n">_make_heuristic</span><span class="p">,</span>
+    <span class="s2">&quot;kg_heuristic&quot;</span><span class="p">:</span> <span class="n">_make_kg_heuristic</span><span class="p">,</span>
+    <span class="s2">&quot;human&quot;</span><span class="p">:</span> <span class="n">_make_human</span><span class="p">,</span>
+    <span class="s2">&quot;ollama&quot;</span><span class="p">:</span> <span class="n">_make_ollama</span><span class="p">,</span>
+    <span class="s2">&quot;llm&quot;</span><span class="p">:</span> <span class="n">_make_ollama</span><span class="p">,</span>  <span class="c1"># alias</span>
+    <span class="s2">&quot;world_model&quot;</span><span class="p">:</span> <span class="n">_make_world_model</span><span class="p">,</span>
+    <span class="s2">&quot;active_inference&quot;</span><span class="p">:</span> <span class="n">_make_active_inference</span><span class="p">,</span>
+    <span class="s2">&quot;llm_fusion&quot;</span><span class="p">:</span> <span class="n">_make_llm_fusion</span><span class="p">,</span>
+    <span class="s2">&quot;fusion&quot;</span><span class="p">:</span> <span class="n">_make_llm_fusion</span><span class="p">,</span>  <span class="c1"># alias</span>
+<span class="p">}</span>
+
+
+<div class="viewcode-block" id="make_agent">
+<a class="viewcode-back" href="../../api_agents.html#src.agents.make_agent">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">make_agent</span><span class="p">(</span><span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">player_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">MTGAgent</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Build an agent by short name. Raises ``KeyError`` on unknown names.&quot;&quot;&quot;</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">factory</span> <span class="o">=</span> <span class="n">AGENT_REGISTRY</span><span class="p">[</span><span class="n">name</span><span class="p">]</span>
+    <span class="k">except</span> <span class="ne">KeyError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+        <span class="n">available</span> <span class="o">=</span> <span class="s2">&quot;, &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">sorted</span><span class="p">(</span><span class="n">AGENT_REGISTRY</span><span class="p">))</span>
+        <span class="k">raise</span> <span class="ne">KeyError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;Unknown agent &#39;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39;. Available: </span><span class="si">{</span><span class="n">available</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
+    <span class="k">return</span> <span class="n">factory</span><span class="p">(</span><span class="n">player_id</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="list_agents">
+<a class="viewcode-back" href="../../api_agents.html#src.agents.list_agents">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">list_agents</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return all registered agent short names.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">AGENT_REGISTRY</span><span class="p">)</span></div>
+
+
+
+<span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="s2">&quot;MTGAgent&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;RandomAgent&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;HeuristicAgent&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;AGENT_REGISTRY&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;make_agent&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;list_agents&quot;</span><span class="p">,</span>
+<span class="p">]</span>
+
+</pre></div>
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="../../index.html">opposition-agents-playing-mtg</a></h1>
+
+
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+<p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../repository_map.html">Repository Map</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../components.html">Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../api.html">API Reference</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="../../index.html">Documentation overview</a><ul>
+  <li><a href="../index.html">Module code</a><ul>
+  </ul></li>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &#169;2026, Data Science Lab FHSWF.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 8.1.3</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+    </div>
+
+    
+
+    
+  </body>
+</html>

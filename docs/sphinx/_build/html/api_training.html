@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="./">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Training API &#8212; opposition-agents-playing-mtg  documentation</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="_static/basic.css?v=686e5160" />
+    <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=27fed22d" />
+    <script src="_static/documentation_options.js?v=5929fcd5"></script>
+    <script src="_static/doctools.js?v=9bcbadda"></script>
+    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="prev" title="World Model API" href="api_world_model.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <section id="module-src.training.rl_trainer">
+<span id="training-api"></span><h1>Training API<a class="headerlink" href="#module-src.training.rl_trainer" title="Link to this heading">¶</a></h1>
+<p>Reinforcement Learning training loop — agents play against each other.</p>
+<p>Combines:
+- Self-play game generation via GameRunner
+- Experience collection from real games
+- SelfPlayCollector for world model trajectory data
+- Neural module training (NeuralReasoningModule or WorldModel)
+- ELO-based evaluation and curriculum</p>
+<p>This is the production RL loop that wires everything together.</p>
+<dl class="py class">
+<dt class="sig sig-object py" id="src.training.rl_trainer.AgentPool">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">src.training.rl_trainer.</span></span><span class="sig-name descname"><span class="pre">AgentPool</span></span><a class="reference internal" href="_modules/src/training/rl_trainer.html#AgentPool"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.training.rl_trainer.AgentPool" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Manages a pool of agents with different strategies and ELO ratings.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="src.training.rl_trainer.AgentPool.create_agent">
+<span class="sig-name descname"><span class="pre">create_agent</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">pool_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">player_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/src/training/rl_trainer.html#AgentPool.create_agent"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.training.rl_trainer.AgentPool.create_agent" title="Link to this definition">¶</a></dt>
+<dd><p>Instantiate an agent from the pool.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.training.rl_trainer.AgentPool.get_best_agents">
+<span class="sig-name descname"><span class="pre">get_best_agents</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="_modules/src/training/rl_trainer.html#AgentPool.get_best_agents"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.training.rl_trainer.AgentPool.get_best_agents" title="Link to this definition">¶</a></dt>
+<dd><p>Return the top two agents by ELO rating.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.training.rl_trainer.AgentPool.get_matchup">
+<span class="sig-name descname"><span class="pre">get_matchup</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="_modules/src/training/rl_trainer.html#AgentPool.get_matchup"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.training.rl_trainer.AgentPool.get_matchup" title="Link to this definition">¶</a></dt>
+<dd><p>Select two agents for a match (prefer close ELO).</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.training.rl_trainer.AgentPool.register">
+<span class="sig-name descname"><span class="pre">register</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">agent_type</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">agent_factory</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">elo</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">1200.0</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">str</span></span></span><a class="reference internal" href="_modules/src/training/rl_trainer.html#AgentPool.register"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.training.rl_trainer.AgentPool.register" title="Link to this definition">¶</a></dt>
+<dd><p>Register an agent factory and return its pool ID.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.training.rl_trainer.AgentPool.update_elo">
+<span class="sig-name descname"><span class="pre">update_elo</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">winner_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">loser_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">k</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">32.0</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/src/training/rl_trainer.html#AgentPool.update_elo"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.training.rl_trainer.AgentPool.update_elo" title="Link to this definition">¶</a></dt>
+<dd><p>Update ELO ratings after a match.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="src.training.rl_trainer.RLConfig">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">src.training.rl_trainer.</span></span><span class="sig-name descname"><span class="pre">RLConfig</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">game_format:</span> <span class="pre">str</span> <span class="pre">=</span> <span class="pre">'standard'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">starting_life:</span> <span class="pre">int</span> <span class="pre">=</span> <span class="pre">20</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_turns_per_game:</span> <span class="pre">int</span> <span class="pre">=</span> <span class="pre">50</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">num_players:</span> <span class="pre">int</span> <span class="pre">=</span> <span class="pre">2</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">num_iterations:</span> <span class="pre">int</span> <span class="pre">=</span> <span class="pre">100</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">games_per_iteration:</span> <span class="pre">int</span> <span class="pre">=</span> <span class="pre">20</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">eval_games_per_iteration:</span> <span class="pre">int</span> <span class="pre">=</span> <span class="pre">10</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">warmup_iterations:</span> <span class="pre">int</span> <span class="pre">=</span> <span class="pre">5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">agent_types:</span> <span class="pre">list[str]</span> <span class="pre">=</span> <span class="pre">&lt;factory&gt;</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">elo_ratings:</span> <span class="pre">dict[str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">float]</span> <span class="pre">=</span> <span class="pre">&lt;factory&gt;</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">batch_size:</span> <span class="pre">int</span> <span class="pre">=</span> <span class="pre">64</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">learning_rate:</span> <span class="pre">float</span> <span class="pre">=</span> <span class="pre">0.0003</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">grad_clip:</span> <span class="pre">float</span> <span class="pre">=</span> <span class="pre">1.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">train_steps_per_iter:</span> <span class="pre">int</span> <span class="pre">=</span> <span class="pre">50</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">collect_trajectories:</span> <span class="pre">bool</span> <span class="pre">=</span> <span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dream_training_interval:</span> <span class="pre">int</span> <span class="pre">=</span> <span class="pre">10</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">promotion_threshold:</span> <span class="pre">float</span> <span class="pre">=</span> <span class="pre">0.55</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">parallel_games:</span> <span class="pre">int</span> <span class="pre">=</span> <span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">checkpoint_dir:</span> <span class="pre">str</span> <span class="pre">=</span> <span class="pre">'checkpoints/rl'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">log_dir:</span> <span class="pre">str</span> <span class="pre">=</span> <span class="pre">'logs/rl'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">save_every:</span> <span class="pre">int</span> <span class="pre">=</span> <span class="pre">10</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/src/training/rl_trainer.html#RLConfig"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.training.rl_trainer.RLConfig" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Configuration for the reinforcement learning training loop.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="src.training.rl_trainer.RLConfig.agent_types">
+<span class="sig-name descname"><span class="pre">agent_types</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">list</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#src.training.rl_trainer.RLConfig.agent_types" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="src.training.rl_trainer.RLConfig.batch_size">
+<span class="sig-name descname"><span class="pre">batch_size</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">int</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">64</span></em><a class="headerlink" href="#src.training.rl_trainer.RLConfig.batch_size" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="src.training.rl_trainer.RLConfig.checkpoint_dir">
+<span class="sig-name descname"><span class="pre">checkpoint_dir</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">str</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'checkpoints/rl'</span></em><a class="headerlink" href="#src.training.rl_trainer.RLConfig.checkpoint_dir" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="src.training.rl_trainer.RLConfig.collect_trajectories">
+<span class="sig-name descname"><span class="pre">collect_trajectories</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">bool</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">True</span></em><a class="headerlink" href="#src.training.rl_trainer.RLConfig.collect_trajectories" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="src.training.rl_trainer.RLConfig.dream_training_interval">
+<span class="sig-name descname"><span class="pre">dream_training_interval</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">int</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">10</span></em><a class="headerlink" href="#src.training.rl_trainer.RLConfig.dream_training_interval" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="src.training.rl_trainer.RLConfig.elo_ratings">
+<span class="sig-name descname"><span class="pre">elo_ratings</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">float</span><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#src.training.rl_trainer.RLConfig.elo_ratings" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="src.training.rl_trainer.RLConfig.eval_games_per_iteration">
+<span class="sig-name descname"><span class="pre">eval_games_per_iteration</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">int</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">10</span></em><a class="headerlink" href="#src.training.rl_trainer.RLConfig.eval_games_per_iteration" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="src.training.rl_trainer.RLConfig.game_format">
+<span class="sig-name descname"><span class="pre">game_format</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">str</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'standard'</span></em><a class="headerlink" href="#src.training.rl_trainer.RLConfig.game_format" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="src.training.rl_trainer.RLConfig.games_per_iteration">
+<span class="sig-name descname"><span class="pre">games_per_iteration</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">int</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">20</span></em><a class="headerlink" href="#src.training.rl_trainer.RLConfig.games_per_iteration" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="src.training.rl_trainer.RLConfig.grad_clip">
+<span class="sig-name descname"><span class="pre">grad_clip</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">1.0</span></em><a class="headerlink" href="#src.training.rl_trainer.RLConfig.grad_clip" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="src.training.rl_trainer.RLConfig.learning_rate">
+<span class="sig-name descname"><span class="pre">learning_rate</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0.0003</span></em><a class="headerlink" href="#src.training.rl_trainer.RLConfig.learning_rate" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="src.training.rl_trainer.RLConfig.log_dir">
+<span class="sig-name descname"><span class="pre">log_dir</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">str</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'logs/rl'</span></em><a class="headerlink" href="#src.training.rl_trainer.RLConfig.log_dir" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="src.training.rl_trainer.RLConfig.max_turns_per_game">
+<span class="sig-name descname"><span class="pre">max_turns_per_game</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">int</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">50</span></em><a class="headerlink" href="#src.training.rl_trainer.RLConfig.max_turns_per_game" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="src.training.rl_trainer.RLConfig.num_iterations">
+<span class="sig-name descname"><span class="pre">num_iterations</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">int</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">100</span></em><a class="headerlink" href="#src.training.rl_trainer.RLConfig.num_iterations" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="src.training.rl_trainer.RLConfig.num_players">
+<span class="sig-name descname"><span class="pre">num_players</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">int</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">2</span></em><a class="headerlink" href="#src.training.rl_trainer.RLConfig.num_players" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="src.training.rl_trainer.RLConfig.parallel_games">
+<span class="sig-name descname"><span class="pre">parallel_games</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">int</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">1</span></em><a class="headerlink" href="#src.training.rl_trainer.RLConfig.parallel_games" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="src.training.rl_trainer.RLConfig.promotion_threshold">
+<span class="sig-name descname"><span class="pre">promotion_threshold</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0.55</span></em><a class="headerlink" href="#src.training.rl_trainer.RLConfig.promotion_threshold" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="src.training.rl_trainer.RLConfig.save_every">
+<span class="sig-name descname"><span class="pre">save_every</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">int</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">10</span></em><a class="headerlink" href="#src.training.rl_trainer.RLConfig.save_every" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="src.training.rl_trainer.RLConfig.starting_life">
+<span class="sig-name descname"><span class="pre">starting_life</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">int</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">20</span></em><a class="headerlink" href="#src.training.rl_trainer.RLConfig.starting_life" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="src.training.rl_trainer.RLConfig.train_steps_per_iter">
+<span class="sig-name descname"><span class="pre">train_steps_per_iter</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">int</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">50</span></em><a class="headerlink" href="#src.training.rl_trainer.RLConfig.train_steps_per_iter" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="src.training.rl_trainer.RLConfig.warmup_iterations">
+<span class="sig-name descname"><span class="pre">warmup_iterations</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">int</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">5</span></em><a class="headerlink" href="#src.training.rl_trainer.RLConfig.warmup_iterations" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="src.training.rl_trainer.RLTrainer">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">src.training.rl_trainer.</span></span><span class="sig-name descname"><span class="pre">RLTrainer</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">config</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#src.training.rl_trainer.RLConfig" title="src.training.rl_trainer.RLConfig"><span class="pre">RLConfig</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/src/training/rl_trainer.html#RLTrainer"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.training.rl_trainer.RLTrainer" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Production reinforcement learning trainer.</p>
+<p>Orchestrates:
+1. Agent-vs-agent game generation
+2. Experience buffer population
+3. Neural network training
+4. World model trajectory collection
+5. ELO-based evaluation</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="src.training.rl_trainer.RLTrainer.setup">
+<span class="sig-name descname"><span class="pre">setup</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/src/training/rl_trainer.html#RLTrainer.setup"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.training.rl_trainer.RLTrainer.setup" title="Link to this definition">¶</a></dt>
+<dd><p>Initialize all components.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.training.rl_trainer.RLTrainer.train">
+<em class="property"><span class="pre">async</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">train</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/src/training/rl_trainer.html#RLTrainer.train"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.training.rl_trainer.RLTrainer.train" title="Link to this definition">¶</a></dt>
+<dd><p>Main RL training loop.</p>
+</dd></dl>
+
+</dd></dl>
+
+<p id="module-src.training.self_play">Self-play training loop — AlphaZero-inspired.</p>
+<p>Reference: Section 12.3 of PLAN.md.
+Requires the [ml] optional dependency.</p>
+<dl class="py class">
+<dt class="sig sig-object py" id="src.training.self_play.SelfPlayTrainer">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">src.training.self_play.</span></span><span class="sig-name descname"><span class="pre">SelfPlayTrainer</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">config</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#src.training.self_play.TrainingConfig" title="src.training.self_play.TrainingConfig"><span class="pre">TrainingConfig</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/src/training/self_play.html#SelfPlayTrainer"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.training.self_play.SelfPlayTrainer" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>AlphaZero-inspired self-play training.</p>
+<p>Agents play each other → collect experience → train neural module →
+evaluate → update KG with discovered interactions.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="src.training.self_play.SelfPlayTrainer.evaluate">
+<em class="property"><span class="pre">async</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">evaluate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">num_games</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">float</span></span></span><a class="reference internal" href="_modules/src/training/self_play.html#SelfPlayTrainer.evaluate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.training.self_play.SelfPlayTrainer.evaluate" title="Link to this definition">¶</a></dt>
+<dd><p>Evaluate current agent vs. baseline (random agent).</p>
+<p>Returns win rate of current agent against random opponents.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.training.self_play.SelfPlayTrainer.init_neural_module">
+<span class="sig-name descname"><span class="pre">init_neural_module</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="reference internal" href="_modules/src/training/self_play.html#SelfPlayTrainer.init_neural_module"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.training.self_play.SelfPlayTrainer.init_neural_module" title="Link to this definition">¶</a></dt>
+<dd><p>Lazy init to avoid importing torch at module load time.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.training.self_play.SelfPlayTrainer.run_self_play_games">
+<em class="property"><span class="pre">async</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">run_self_play_games</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">num_games</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><span class="pre">Experience</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="_modules/src/training/self_play.html#SelfPlayTrainer.run_self_play_games"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.training.self_play.SelfPlayTrainer.run_self_play_games" title="Link to this definition">¶</a></dt>
+<dd><p>Run games between copies of the current agent, collect experience.</p>
+<p>Games are scheduled with <code class="xref py py-func docutils literal notranslate"><span class="pre">asyncio.gather()</span></code> and bounded by
+<code class="docutils literal notranslate"><span class="pre">TrainingConfig.num_parallel_games</span></code> so callers can saturate the
+event loop without overwhelming it.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.training.self_play.SelfPlayTrainer.train">
+<em class="property"><span class="pre">async</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">train</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">num_iterations</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">1000</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="reference internal" href="_modules/src/training/self_play.html#SelfPlayTrainer.train"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.training.self_play.SelfPlayTrainer.train" title="Link to this definition">¶</a></dt>
+<dd><p>Main training loop.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="src.training.self_play.TrainingConfig">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">src.training.self_play.</span></span><span class="sig-name descname"><span class="pre">TrainingConfig</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">num_parallel_games</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">64</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">buffer_size</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">100000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">batch_size</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">256</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">num_epochs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">10</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">learning_rate</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.0001</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">eval_games</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">100</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/src/training/self_play.html#TrainingConfig"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.training.self_play.TrainingConfig" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Self-play training configuration.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="src.training.self_play.TrainingConfig.batch_size">
+<span class="sig-name descname"><span class="pre">batch_size</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">int</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">256</span></em><a class="headerlink" href="#src.training.self_play.TrainingConfig.batch_size" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="src.training.self_play.TrainingConfig.buffer_size">
+<span class="sig-name descname"><span class="pre">buffer_size</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">int</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">100000</span></em><a class="headerlink" href="#src.training.self_play.TrainingConfig.buffer_size" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="src.training.self_play.TrainingConfig.eval_games">
+<span class="sig-name descname"><span class="pre">eval_games</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">int</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">100</span></em><a class="headerlink" href="#src.training.self_play.TrainingConfig.eval_games" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="src.training.self_play.TrainingConfig.learning_rate">
+<span class="sig-name descname"><span class="pre">learning_rate</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0.0001</span></em><a class="headerlink" href="#src.training.self_play.TrainingConfig.learning_rate" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="src.training.self_play.TrainingConfig.num_epochs">
+<span class="sig-name descname"><span class="pre">num_epochs</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">int</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">10</span></em><a class="headerlink" href="#src.training.self_play.TrainingConfig.num_epochs" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="src.training.self_play.TrainingConfig.num_parallel_games">
+<span class="sig-name descname"><span class="pre">num_parallel_games</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">int</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">64</span></em><a class="headerlink" href="#src.training.self_play.TrainingConfig.num_parallel_games" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<p id="module-src.training.benchmark">Benchmark comparator for agent strategy evaluation.</p>
+<dl class="py class">
+<dt class="sig sig-object py" id="src.training.benchmark.BenchmarkSuite">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">src.training.benchmark.</span></span><span class="sig-name descname"><span class="pre">BenchmarkSuite</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">agents</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Callable</span><span class="p"><span class="pre">[</span></span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">num_games_per_match</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">10</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_turns</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">50</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/src/training/benchmark.html#BenchmarkSuite"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.training.benchmark.BenchmarkSuite" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Compare multiple agent classes in a round-robin set of matches.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="src.training.benchmark.BenchmarkSuite.run">
+<em class="property"><span class="pre">async</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">run</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="_modules/src/training/benchmark.html#BenchmarkSuite.run"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.training.benchmark.BenchmarkSuite.run" title="Link to this definition">¶</a></dt>
+<dd><p>Run the benchmark and return a results summary.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="src.training.benchmark.run_default_benchmark">
+<em class="property"><span class="k"><span class="pre">async</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">src.training.benchmark.</span></span><span class="sig-name descname"><span class="pre">run_default_benchmark</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="reference internal" href="_modules/src/training/benchmark.html#run_default_benchmark"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.training.benchmark.run_default_benchmark" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</section>
+
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="index.html">opposition-agents-playing-mtg</a></h1>
+
+
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+<p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="repository_map.html">Repository Map</a></li>
+<li class="toctree-l1"><a class="reference internal" href="components.html">Components</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="api.html">API Reference</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="api_agents.html">Agents API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api_engine.html">Engine API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api_orchestrator.html">Orchestrator API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api_knowledge.html">Knowledge API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api_world_model.html">World Model API</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Training API</a></li>
+</ul>
+</li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="index.html">Documentation overview</a><ul>
+  <li><a href="api.html">API Reference</a><ul>
+      <li>Previous: <a href="api_world_model.html" title="previous chapter">World Model API</a></li>
+  </ul></li>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &#169;2026, Data Science Lab FHSWF.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 8.1.3</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+      |
+      <a href="_sources/api_training.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>

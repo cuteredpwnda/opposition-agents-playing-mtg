@@ -1,0 +1,910 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../../../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>src.orchestrator.game_runner &#8212; opposition-agents-playing-mtg  documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/basic.css?v=686e5160" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/alabaster.css?v=27fed22d" />
+    <script src="../../../_static/documentation_options.js?v=5929fcd5"></script>
+    <script src="../../../_static/doctools.js?v=9bcbadda"></script>
+    <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+   
+  <link rel="stylesheet" href="../../../_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <h1>Source code for src.orchestrator.game_runner</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">High-level game runner — sets up and runs a complete MTG game.</span>
+
+<span class="sd">Coordinates agent initialization, game state setup, deck loading,</span>
+<span class="sd">and the main game loop via LangGraph.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span><span class="p">,</span> <span class="n">field</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.agents.base_agent</span><span class="w"> </span><span class="kn">import</span> <span class="n">MTGAgent</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.engine.card_database</span><span class="w"> </span><span class="kn">import</span> <span class="n">CardDatabase</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.engine.game_state</span><span class="w"> </span><span class="kn">import</span> <span class="n">CardInstance</span><span class="p">,</span> <span class="n">GameState</span><span class="p">,</span> <span class="n">Phase</span><span class="p">,</span> <span class="n">PlayerState</span><span class="p">,</span> <span class="n">Zone</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.engine.rules_engine</span><span class="w"> </span><span class="kn">import</span> <span class="n">RulesEngine</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.orchestrator.priority_loop</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">advance_priority</span><span class="p">,</span>
+    <span class="n">get_priority_order</span><span class="p">,</span>
+    <span class="n">priority_action_result</span><span class="p">,</span>
+    <span class="n">run_priority_loop</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="GameConfig">
+<a class="viewcode-back" href="../../../api_orchestrator.html#src.orchestrator.game_runner.GameConfig">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">GameConfig</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Configuration for a game.&quot;&quot;&quot;</span>
+
+    <span class="nb">format</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;commander&quot;</span>  <span class="c1"># &quot;commander&quot; | &quot;standard&quot;</span>
+    <span class="n">starting_life</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">40</span>
+    <span class="n">max_turns</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">100</span>
+    <span class="n">mulligan_enabled</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span>
+    <span class="n">max_mulligans</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">3</span>
+    <span class="c1"># Optional WotC Commander Bracket (1=Exhibition .. 5=cEDH); informational</span>
+    <span class="c1"># only at runtime — used by deck loaders / matchmaking, not the rules.</span>
+    <span class="n">bracket</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+
+
+<div class="viewcode-block" id="GameResult">
+<a class="viewcode-back" href="../../../api_orchestrator.html#src.orchestrator.game_runner.GameResult">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">GameResult</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Result of a completed game.&quot;&quot;&quot;</span>
+
+    <span class="n">winner</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span>
+    <span class="n">turns</span><span class="p">:</span> <span class="nb">int</span>
+    <span class="n">game_over</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="n">log</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">list</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="GameRunner">
+<a class="viewcode-back" href="../../../api_orchestrator.html#src.orchestrator.game_runner.GameRunner">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">GameRunner</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Runs a complete MTG game between agents.&quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">config</span><span class="p">:</span> <span class="n">GameConfig</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">card_db</span><span class="p">:</span> <span class="n">CardDatabase</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">self_play_collector</span><span class="p">:</span> <span class="nb">object</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">config</span> <span class="o">=</span> <span class="n">config</span> <span class="ow">or</span> <span class="n">GameConfig</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">card_db</span> <span class="o">=</span> <span class="n">card_db</span> <span class="ow">or</span> <span class="n">CardDatabase</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">engine</span> <span class="o">=</span> <span class="n">RulesEngine</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">self_play_collector</span> <span class="o">=</span> <span class="n">self_play_collector</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_tools_kg</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># cached MTGKnowledgeGraph for tools.set_kg</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_wire_external_tools</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">agents</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="s2">&quot;MTGAgent&quot;</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Best-effort: hand the live KG / judge to ``src.agents.tools``</span>
+<span class="sd">        so LangChain-style ``query_knowledge_graph`` / ``judge_question``</span>
+<span class="sd">        tools resolve to real data while the game runs.</span>
+
+<span class="sd">        Silent on failure — agents that need the KG already fall back</span>
+<span class="sd">        to non-KG behaviour, and we don&#39;t want a game to crash because</span>
+<span class="sd">        Neo4j is offline.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Reuse a KG handle from any agent that already has one.</span>
+        <span class="n">kg_handle</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">for</span> <span class="n">agent</span> <span class="ow">in</span> <span class="n">agents</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
+            <span class="n">cand</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">agent</span><span class="p">,</span> <span class="s2">&quot;_kg&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">agent</span><span class="p">,</span> <span class="s2">&quot;kg&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">cand</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">kg_handle</span> <span class="o">=</span> <span class="n">cand</span>
+                <span class="k">break</span>
+
+        <span class="k">if</span> <span class="n">kg_handle</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="kn">from</span><span class="w"> </span><span class="nn">src.knowledge.knowledge_graph</span><span class="w"> </span><span class="kn">import</span> <span class="n">MTGKnowledgeGraph</span>
+                <span class="n">kg_handle</span> <span class="o">=</span> <span class="n">MTGKnowledgeGraph</span><span class="p">()</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_tools_kg</span> <span class="o">=</span> <span class="n">kg_handle</span>  <span class="c1"># so we can close it later if needed</span>
+            <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;KG unreachable; tools.set_kg skipped: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">e</span><span class="p">)</span>
+                <span class="k">return</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="kn">from</span><span class="w"> </span><span class="nn">src.agents</span><span class="w"> </span><span class="kn">import</span> <span class="n">tools</span> <span class="k">as</span> <span class="n">agent_tools</span>
+            <span class="n">agent_tools</span><span class="o">.</span><span class="n">set_kg</span><span class="p">(</span><span class="n">kg_handle</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;set_kg failed: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">e</span><span class="p">)</span>
+
+        <span class="c1"># Optional: wire judge if available.</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="kn">from</span><span class="w"> </span><span class="nn">src.agents</span><span class="w"> </span><span class="kn">import</span> <span class="n">tools</span> <span class="k">as</span> <span class="n">agent_tools</span>
+            <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">agent_tools</span><span class="p">,</span> <span class="s2">&quot;set_judge&quot;</span><span class="p">):</span>
+                <span class="kn">from</span><span class="w"> </span><span class="nn">src.judge.judge</span><span class="w"> </span><span class="kn">import</span> <span class="n">Judge</span>  <span class="c1"># type: ignore</span>
+                <span class="n">agent_tools</span><span class="o">.</span><span class="n">set_judge</span><span class="p">(</span><span class="n">Judge</span><span class="p">())</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="k">pass</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_resolve_timeout_winner</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">game_state</span><span class="p">:</span> <span class="n">GameState</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PlayerState</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Pick a winner on max-turn timeout; return None if fully tied.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">game_state</span><span class="o">.</span><span class="n">players</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">2</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">score</span><span class="p">(</span><span class="n">player</span><span class="p">:</span> <span class="n">PlayerState</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]:</span>
+            <span class="n">pid</span> <span class="o">=</span> <span class="n">player</span><span class="o">.</span><span class="n">player_id</span>
+            <span class="n">battlefield</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span>
+                <span class="mi">1</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">game_state</span><span class="o">.</span><span class="n">cards</span>
+                <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">zone</span> <span class="o">==</span> <span class="n">Zone</span><span class="o">.</span><span class="n">BATTLEFIELD</span> <span class="ow">and</span> <span class="n">c</span><span class="o">.</span><span class="n">controller_id</span> <span class="o">==</span> <span class="n">pid</span>
+            <span class="p">)</span>
+            <span class="n">hand</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span>
+                <span class="mi">1</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">game_state</span><span class="o">.</span><span class="n">cards</span>
+                <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">zone</span> <span class="o">==</span> <span class="n">Zone</span><span class="o">.</span><span class="n">HAND</span> <span class="ow">and</span> <span class="n">c</span><span class="o">.</span><span class="n">controller_id</span> <span class="o">==</span> <span class="n">pid</span>
+            <span class="p">)</span>
+            <span class="n">library</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span>
+                <span class="mi">1</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">game_state</span><span class="o">.</span><span class="n">cards</span>
+                <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">zone</span> <span class="o">==</span> <span class="n">Zone</span><span class="o">.</span><span class="n">LIBRARY</span> <span class="ow">and</span> <span class="n">c</span><span class="o">.</span><span class="n">owner_id</span> <span class="o">==</span> <span class="n">pid</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="p">(</span><span class="n">player</span><span class="o">.</span><span class="n">life_total</span><span class="p">,</span> <span class="n">battlefield</span><span class="p">,</span> <span class="n">hand</span><span class="p">,</span> <span class="n">library</span><span class="p">)</span>
+
+        <span class="n">p1</span><span class="p">,</span> <span class="n">p2</span> <span class="o">=</span> <span class="n">game_state</span><span class="o">.</span><span class="n">players</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">game_state</span><span class="o">.</span><span class="n">players</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">s1</span><span class="p">,</span> <span class="n">s2</span> <span class="o">=</span> <span class="n">score</span><span class="p">(</span><span class="n">p1</span><span class="p">),</span> <span class="n">score</span><span class="p">(</span><span class="n">p2</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">s1</span> <span class="o">&gt;</span> <span class="n">s2</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">p1</span>
+        <span class="k">if</span> <span class="n">s2</span> <span class="o">&gt;</span> <span class="n">s1</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">p2</span>
+        <span class="k">return</span> <span class="kc">None</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_opening_hand_is_keepable</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">hand_cards</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">CardInstance</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="n">lands</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="mi">1</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">hand_cards</span> <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">is_land</span><span class="p">())</span>
+        <span class="n">non_lands</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">hand_cards</span><span class="p">)</span> <span class="o">-</span> <span class="n">lands</span>
+        <span class="k">return</span> <span class="mi">2</span> <span class="o">&lt;=</span> <span class="n">lands</span> <span class="o">&lt;=</span> <span class="mi">5</span> <span class="ow">and</span> <span class="n">non_lands</span> <span class="o">&gt;=</span> <span class="mi">1</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_apply_london_mulligan</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">cards</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">CardInstance</span><span class="p">],</span>
+        <span class="n">shuffle</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
+        <span class="n">max_mulligans</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+        <span class="n">keep_fn</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">bottom_fn</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">random</span>
+
+        <span class="k">if</span> <span class="n">keep_fn</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">def</span><span class="w"> </span><span class="nf">keep_fn</span><span class="p">(</span><span class="n">hand</span><span class="p">,</span> <span class="n">mulligans_taken</span><span class="p">,</span> <span class="n">max_mulligans</span><span class="p">):</span>
+                <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_opening_hand_is_keepable</span><span class="p">(</span><span class="n">hand</span><span class="p">)</span>
+
+        <span class="n">mulligans_taken</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">cards</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">zone</span> <span class="o">!=</span> <span class="n">Zone</span><span class="o">.</span><span class="n">COMMAND_ZONE</span><span class="p">:</span>
+                    <span class="n">c</span><span class="o">.</span><span class="n">zone</span> <span class="o">=</span> <span class="n">Zone</span><span class="o">.</span><span class="n">LIBRARY</span>
+
+            <span class="k">if</span> <span class="n">shuffle</span><span class="p">:</span>
+                <span class="n">random</span><span class="o">.</span><span class="n">shuffle</span><span class="p">(</span><span class="n">cards</span><span class="p">)</span>
+
+            <span class="n">drawables</span> <span class="o">=</span> <span class="p">[</span><span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">cards</span> <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">zone</span> <span class="o">==</span> <span class="n">Zone</span><span class="o">.</span><span class="n">LIBRARY</span><span class="p">]</span>
+            <span class="n">hand</span> <span class="o">=</span> <span class="n">drawables</span><span class="p">[:</span><span class="mi">7</span><span class="p">]</span>
+            <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">hand</span><span class="p">:</span>
+                <span class="n">c</span><span class="o">.</span><span class="n">zone</span> <span class="o">=</span> <span class="n">Zone</span><span class="o">.</span><span class="n">HAND</span>
+
+            <span class="k">if</span> <span class="n">mulligans_taken</span> <span class="o">&gt;=</span> <span class="n">max_mulligans</span> <span class="ow">or</span> <span class="n">keep_fn</span><span class="p">(</span>
+                    <span class="n">hand</span><span class="p">,</span> <span class="n">mulligans_taken</span><span class="p">,</span> <span class="n">max_mulligans</span><span class="p">):</span>
+                <span class="k">break</span>
+            <span class="n">mulligans_taken</span> <span class="o">+=</span> <span class="mi">1</span>
+
+        <span class="k">if</span> <span class="n">mulligans_taken</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">hand</span> <span class="o">=</span> <span class="p">[</span><span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">cards</span> <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">zone</span> <span class="o">==</span> <span class="n">Zone</span><span class="o">.</span><span class="n">HAND</span><span class="p">]</span>
+            <span class="k">if</span> <span class="n">bottom_fn</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">to_bottom</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">bottom_fn</span><span class="p">(</span><span class="n">hand</span><span class="p">,</span> <span class="n">mulligans_taken</span><span class="p">))[:</span><span class="n">mulligans_taken</span><span class="p">]</span>
+                <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                    <span class="n">to_bottom</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">to_bottom</span> <span class="o">=</span> <span class="p">[]</span>
+
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">to_bottom</span><span class="p">:</span>
+                <span class="k">def</span><span class="w"> </span><span class="nf">bottom_priority</span><span class="p">(</span><span class="n">card</span><span class="p">:</span> <span class="n">CardInstance</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">]:</span>
+                    <span class="k">return</span> <span class="p">(</span><span class="mi">0</span> <span class="k">if</span> <span class="n">card</span><span class="o">.</span><span class="n">is_land</span><span class="p">()</span> <span class="k">else</span> <span class="mi">1</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="n">card</span><span class="o">.</span><span class="n">cmc</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">))</span>
+
+                <span class="n">to_bottom</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">hand</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">bottom_priority</span><span class="p">,</span> <span class="n">reverse</span><span class="o">=</span><span class="kc">True</span><span class="p">)[:</span><span class="n">mulligans_taken</span><span class="p">]</span>
+
+            <span class="k">for</span> <span class="n">card</span> <span class="ow">in</span> <span class="n">to_bottom</span><span class="p">:</span>
+                <span class="n">card</span><span class="o">.</span><span class="n">zone</span> <span class="o">=</span> <span class="n">Zone</span><span class="o">.</span><span class="n">LIBRARY</span>
+                <span class="k">if</span> <span class="n">card</span> <span class="ow">in</span> <span class="n">cards</span><span class="p">:</span>
+                    <span class="n">cards</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">card</span><span class="p">)</span>
+                <span class="n">cards</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">card</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">mulligans_taken</span>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_agent_mulligan_callbacks</span><span class="p">(</span><span class="n">agent</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Build (keep_fn, bottom_fn) for an ``MTGAgent`` with a safe fallback.&quot;&quot;&quot;</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">keep_fn</span><span class="p">(</span><span class="n">hand</span><span class="p">,</span> <span class="n">mulligans_taken</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">max_mulligans</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">agent</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">agent</span><span class="p">,</span> <span class="s2">&quot;decide_mulligan&quot;</span><span class="p">):</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="nb">bool</span><span class="p">(</span><span class="n">agent</span><span class="o">.</span><span class="n">decide_mulligan</span><span class="p">(</span>
+                        <span class="n">hand</span><span class="p">,</span> <span class="n">mulligans_taken</span><span class="p">,</span> <span class="n">max_mulligans</span><span class="p">))</span>
+                <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                    <span class="k">pass</span>
+            <span class="kn">from</span><span class="w"> </span><span class="nn">src.agents.mulligan</span><span class="w"> </span><span class="kn">import</span> <span class="n">should_keep</span>
+            <span class="k">return</span> <span class="n">should_keep</span><span class="p">(</span><span class="n">hand</span><span class="p">,</span>
+                               <span class="n">strategy</span><span class="o">=</span><span class="nb">getattr</span><span class="p">(</span><span class="n">agent</span><span class="p">,</span> <span class="s2">&quot;strategy&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span>
+                               <span class="n">mulligans_taken</span><span class="o">=</span><span class="n">mulligans_taken</span><span class="p">,</span>
+                               <span class="n">max_mulligans</span><span class="o">=</span><span class="n">max_mulligans</span><span class="p">)</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">bottom_fn</span><span class="p">(</span><span class="n">hand</span><span class="p">,</span> <span class="n">n</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">agent</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">agent</span><span class="p">,</span> <span class="s2">&quot;select_bottom_cards&quot;</span><span class="p">):</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="nb">list</span><span class="p">(</span><span class="n">agent</span><span class="o">.</span><span class="n">select_bottom_cards</span><span class="p">(</span><span class="n">hand</span><span class="p">,</span> <span class="n">n</span><span class="p">))</span>
+                <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                    <span class="k">pass</span>
+            <span class="kn">from</span><span class="w"> </span><span class="nn">src.agents.mulligan</span><span class="w"> </span><span class="kn">import</span> <span class="n">select_bottom_cards</span>
+            <span class="k">return</span> <span class="n">select_bottom_cards</span><span class="p">(</span><span class="n">hand</span><span class="p">,</span> <span class="n">n</span><span class="p">,</span>
+                                       <span class="n">strategy</span><span class="o">=</span><span class="nb">getattr</span><span class="p">(</span><span class="n">agent</span><span class="p">,</span> <span class="s2">&quot;strategy&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">))</span>
+
+        <span class="k">return</span> <span class="n">keep_fn</span><span class="p">,</span> <span class="n">bottom_fn</span>
+
+<div class="viewcode-block" id="GameRunner.run_game">
+<a class="viewcode-back" href="../../../api_orchestrator.html#src.orchestrator.game_runner.GameRunner.run_game">[docs]</a>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">run_game</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">agents</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">MTGAgent</span><span class="p">],</span>
+        <span class="n">decks</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]],</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">GameResult</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Run a full game to completion with zero external API calls.</span>
+
+<span class="sd">        All card data is pre-loaded from decks into the local CardDatabase during setup.</span>
+<span class="sd">        The game executes deterministically with no external API dependencies after initialization.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            agents: mapping of player_id → MTGAgent instance</span>
+<span class="sd">            decks: mapping of player_id → list of card dicts (from Scryfall)</span>
+<span class="sd">                   All cards in both decks must be pre-fetched before calling this method.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            GameResult with winner, final state, and turn log</span>
+
+<span class="sd">        Note:</span>
+<span class="sd">            After _setup_game completes, all game logic uses only locally cached card data.</span>
+<span class="sd">            This ensures reproducible games and prevents API rate limiting during long play sessions.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">game_state</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_setup_game</span><span class="p">(</span><span class="n">agents</span><span class="p">,</span> <span class="n">decks</span><span class="p">)</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Game started: </span><span class="si">{</span><span class="nb">list</span><span class="p">(</span><span class="n">agents</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Make the KG / judge handles available to LangChain-style tools</span>
+        <span class="c1"># (``src.agents.tools``) for the duration of this game.  Best-effort:</span>
+        <span class="c1"># if the KG isn&#39;t reachable we just skip — agents that need it will</span>
+        <span class="c1"># fall back to non-KG behaviour.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_wire_external_tools</span><span class="p">(</span><span class="n">agents</span><span class="p">)</span>
+
+        <span class="k">while</span> <span class="ow">not</span> <span class="n">game_state</span><span class="o">.</span><span class="n">game_over</span> <span class="ow">and</span> <span class="n">game_state</span><span class="o">.</span><span class="n">turn_number</span> <span class="o">&lt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">max_turns</span><span class="p">:</span>
+            <span class="n">game_state</span> <span class="o">=</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_play_turn</span><span class="p">(</span><span class="n">game_state</span><span class="p">,</span> <span class="n">agents</span><span class="p">)</span>
+
+        <span class="c1"># Max-turn guard for non-terminal games</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">game_state</span><span class="o">.</span><span class="n">game_over</span><span class="p">:</span>
+            <span class="n">game_state</span><span class="o">.</span><span class="n">game_over</span> <span class="o">=</span> <span class="kc">True</span>
+            <span class="n">timeout_winner</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_resolve_timeout_winner</span><span class="p">(</span><span class="n">game_state</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">timeout_winner</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">game_state</span><span class="o">.</span><span class="n">winner</span> <span class="o">=</span> <span class="n">timeout_winner</span>
+                <span class="n">game_state</span><span class="o">.</span><span class="n">log</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;Game ended: max turn limit reached, winner by tie-break = </span><span class="si">{</span><span class="n">timeout_winner</span><span class="o">.</span><span class="n">player_id</span><span class="si">}</span><span class="s2">&quot;</span>
+                <span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">game_state</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="s2">&quot;Game drawn: max turn limit reached (fully tied)&quot;</span><span class="p">)</span>
+
+        <span class="n">winner_name</span> <span class="o">=</span> <span class="n">game_state</span><span class="o">.</span><span class="n">winner</span><span class="o">.</span><span class="n">player_id</span> <span class="k">if</span> <span class="n">game_state</span><span class="o">.</span><span class="n">winner</span> <span class="k">else</span> <span class="kc">None</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">self_play_collector</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># Finalize self-play trajectory</span>
+            <span class="n">winner_idx</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="k">if</span> <span class="n">winner_name</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">player_ids</span> <span class="o">=</span> <span class="p">[</span><span class="n">p</span><span class="o">.</span><span class="n">player_id</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">game_state</span><span class="o">.</span><span class="n">players</span><span class="p">]</span>
+                <span class="n">winner_idx</span> <span class="o">=</span> <span class="n">player_ids</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="n">winner_name</span><span class="p">)</span> <span class="k">if</span> <span class="n">winner_name</span> <span class="ow">in</span> <span class="n">player_ids</span> <span class="k">else</span> <span class="kc">None</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">self_play_collector</span><span class="o">.</span><span class="n">finish_game</span><span class="p">(</span><span class="n">winner</span><span class="o">=</span><span class="n">winner_idx</span><span class="p">,</span> <span class="n">num_turns</span><span class="o">=</span><span class="n">game_state</span><span class="o">.</span><span class="n">turn_number</span><span class="p">)</span>
+
+        <span class="n">result</span> <span class="o">=</span> <span class="n">GameResult</span><span class="p">(</span>
+            <span class="n">winner</span><span class="o">=</span><span class="n">winner_name</span><span class="p">,</span>
+            <span class="n">turns</span><span class="o">=</span><span class="n">game_state</span><span class="o">.</span><span class="n">turn_number</span><span class="p">,</span>
+            <span class="n">game_over</span><span class="o">=</span><span class="n">game_state</span><span class="o">.</span><span class="n">game_over</span><span class="p">,</span>
+            <span class="n">log</span><span class="o">=</span><span class="n">game_state</span><span class="o">.</span><span class="n">game_log</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Game ended: winner=</span><span class="si">{</span><span class="n">winner_name</span><span class="si">}</span><span class="s2">, turns=</span><span class="si">{</span><span class="n">result</span><span class="o">.</span><span class="n">turns</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">result</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_setup_game</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">agents</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">MTGAgent</span><span class="p">],</span>
+        <span class="n">decks</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]],</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">GameState</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Initialize game state, shuffle libraries, draw opening hands.&quot;&quot;&quot;</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">random</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">src.engine.game_state</span><span class="w"> </span><span class="kn">import</span> <span class="n">Zone</span>
+
+        <span class="c1"># PHASE 1: Populate card database (zero API calls after this point)</span>
+        <span class="c1"># Pre-load all cards from both decks into local cache</span>
+        <span class="k">for</span> <span class="n">pid</span><span class="p">,</span> <span class="n">deck_data</span> <span class="ow">in</span> <span class="n">decks</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">for</span> <span class="n">card_dict</span> <span class="ow">in</span> <span class="n">deck_data</span><span class="p">:</span>
+                <span class="n">card_name</span> <span class="o">=</span> <span class="n">card_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;name&quot;</span><span class="p">,</span> <span class="s2">&quot;Unknown&quot;</span><span class="p">)</span>
+                <span class="c1"># Store card data by name for quick lookup</span>
+                <span class="c1"># (Multiple instances of same card name reference same data)</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">card_db</span><span class="o">.</span><span class="n">card_exists</span><span class="p">(</span><span class="n">card_name</span><span class="p">):</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">card_db</span><span class="o">.</span><span class="n">add_card</span><span class="p">(</span><span class="n">card_name</span><span class="p">,</span> <span class="n">card_dict</span><span class="p">)</span>
+
+        <span class="c1"># Create players list. Use the agent&#39;s display name (if any) as the</span>
+        <span class="c1"># PlayerState name so the human-readable game log shows deck/seat</span>
+        <span class="c1"># labels like &quot;Krenko · player1 casts Goblin Lackey&quot; rather than</span>
+        <span class="c1"># the raw player_id everywhere.</span>
+        <span class="n">player_ids</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">agents</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span>
+        <span class="n">players</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">PlayerState</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">pid</span> <span class="ow">in</span> <span class="n">player_ids</span><span class="p">:</span>
+            <span class="n">agent_name</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">agents</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">pid</span><span class="p">),</span> <span class="s2">&quot;name&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">&quot;&quot;</span>
+            <span class="n">display</span> <span class="o">=</span> <span class="n">agent_name</span> <span class="k">if</span> <span class="n">agent_name</span> <span class="ow">and</span> <span class="n">agent_name</span> <span class="o">!=</span> <span class="n">pid</span> <span class="k">else</span> <span class="n">pid</span>
+            <span class="n">players</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="n">PlayerState</span><span class="p">(</span>
+                    <span class="n">player_id</span><span class="o">=</span><span class="n">pid</span><span class="p">,</span>
+                    <span class="n">name</span><span class="o">=</span><span class="n">display</span><span class="p">,</span>
+                    <span class="n">life_total</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">starting_life</span><span class="p">,</span>
+                <span class="p">)</span>
+            <span class="p">)</span>
+
+        <span class="c1"># Load cards for each player (all data from pre-loaded database)</span>
+        <span class="n">all_cards</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">CardInstance</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">pid</span><span class="p">,</span> <span class="n">deck_data</span> <span class="ow">in</span> <span class="n">decks</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">player_cards</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">CardInstance</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">card_dict</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">deck_data</span><span class="p">):</span>
+                <span class="n">card</span> <span class="o">=</span> <span class="n">CardInstance</span><span class="p">(</span>
+                    <span class="n">instance_id</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">pid</span><span class="si">}</span><span class="s2">_</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+                    <span class="n">card_data</span><span class="o">=</span><span class="n">card_dict</span><span class="p">,</span>  <span class="c1"># Use pre-loaded card data</span>
+                    <span class="n">zone</span><span class="o">=</span><span class="n">Zone</span><span class="o">.</span><span class="n">LIBRARY</span><span class="p">,</span>
+                    <span class="n">owner_id</span><span class="o">=</span><span class="n">pid</span><span class="p">,</span>
+                    <span class="n">controller_id</span><span class="o">=</span><span class="n">pid</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="n">player_cards</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">card</span><span class="p">)</span>
+
+            <span class="c1"># Commanders: lift every card flagged as a commander (or, by</span>
+            <span class="c1"># legacy convention, just the deck-index-0 card) into the</span>
+            <span class="c1"># command zone BEFORE shuffling — otherwise random.shuffle</span>
+            <span class="c1"># would let pop(0) crown a random card as &quot;the commander&quot;,</span>
+            <span class="c1"># breaking colour-identity checks for the rest of the game.</span>
+            <span class="c1">#</span>
+            <span class="c1"># Decklist loaders may flag a card as a commander by setting</span>
+            <span class="c1"># ``card_dict[&quot;is_commander&quot;] = True`` before passing the deck</span>
+            <span class="c1"># in.  This supports partner / partner-with / friends-forever</span>
+            <span class="c1"># / background pairs (1 or 2 commanders per player).</span>
+            <span class="n">commanders_for_player</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">CardInstance</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">format</span> <span class="o">==</span> <span class="s2">&quot;commander&quot;</span> <span class="ow">and</span> <span class="n">player_cards</span><span class="p">:</span>
+                <span class="n">tagged</span> <span class="o">=</span> <span class="p">[</span><span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">player_cards</span> <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">card_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;is_commander&quot;</span><span class="p">)]</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">tagged</span><span class="p">:</span>
+                    <span class="c1"># Legacy fallback: deck index 0 is the (sole) commander.</span>
+                    <span class="n">tagged</span> <span class="o">=</span> <span class="p">[</span><span class="n">player_cards</span><span class="p">[</span><span class="mi">0</span><span class="p">]]</span>
+                <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">tagged</span><span class="p">:</span>
+                    <span class="n">player_cards</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">c</span><span class="p">)</span>
+                    <span class="n">c</span><span class="o">.</span><span class="n">zone</span> <span class="o">=</span> <span class="n">Zone</span><span class="o">.</span><span class="n">COMMAND_ZONE</span>
+                    <span class="n">c</span><span class="o">.</span><span class="n">card_data</span><span class="p">[</span><span class="s2">&quot;is_commander&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">True</span>
+                    <span class="n">commanders_for_player</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">c</span><span class="p">)</span>
+
+            <span class="c1"># Shuffle library (commanders are held aside, not in player_cards yet)</span>
+            <span class="n">random</span><span class="o">.</span><span class="n">shuffle</span><span class="p">(</span><span class="n">player_cards</span><span class="p">)</span>
+
+            <span class="c1"># Re-insert commanders so all_cards/state.cards still contains them.</span>
+            <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">commanders_for_player</span><span class="p">:</span>
+                <span class="n">player_cards</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">c</span><span class="p">)</span>
+
+            <span class="n">player_state</span> <span class="o">=</span> <span class="nb">next</span><span class="p">((</span><span class="n">p</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">players</span> <span class="k">if</span> <span class="n">p</span><span class="o">.</span><span class="n">player_id</span> <span class="o">==</span> <span class="n">pid</span><span class="p">),</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">mulligan_enabled</span><span class="p">:</span>
+                <span class="n">keep_fn</span><span class="p">,</span> <span class="n">bottom_fn</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_agent_mulligan_callbacks</span><span class="p">(</span><span class="n">agents</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">pid</span><span class="p">))</span>
+                <span class="n">mulligans_taken</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_apply_london_mulligan</span><span class="p">(</span>
+                    <span class="n">player_cards</span><span class="p">,</span>
+                    <span class="n">shuffle</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+                    <span class="n">max_mulligans</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">max_mulligans</span><span class="p">,</span>
+                    <span class="n">keep_fn</span><span class="o">=</span><span class="n">keep_fn</span><span class="p">,</span>
+                    <span class="n">bottom_fn</span><span class="o">=</span><span class="n">bottom_fn</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="k">if</span> <span class="n">player_state</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="n">player_state</span><span class="o">.</span><span class="n">mulligans_taken</span> <span class="o">=</span> <span class="n">mulligans_taken</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">drawables</span> <span class="o">=</span> <span class="p">[</span><span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">player_cards</span> <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">zone</span> <span class="o">==</span> <span class="n">Zone</span><span class="o">.</span><span class="n">LIBRARY</span><span class="p">]</span>
+                <span class="k">for</span> <span class="n">card</span> <span class="ow">in</span> <span class="n">drawables</span><span class="p">[:</span><span class="mi">7</span><span class="p">]:</span>
+                    <span class="n">card</span><span class="o">.</span><span class="n">zone</span> <span class="o">=</span> <span class="n">Zone</span><span class="o">.</span><span class="n">HAND</span>
+
+            <span class="n">all_cards</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">player_cards</span><span class="p">)</span>
+
+        <span class="c1"># Create game state</span>
+        <span class="n">game_state</span> <span class="o">=</span> <span class="n">GameState</span><span class="p">(</span>
+            <span class="nb">format</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">format</span><span class="p">,</span>
+            <span class="n">turn_number</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+            <span class="n">active_player_index</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+            <span class="n">priority_player_index</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+            <span class="n">phase</span><span class="o">=</span><span class="n">Phase</span><span class="o">.</span><span class="n">UNTAP</span><span class="p">,</span>
+            <span class="n">players</span><span class="o">=</span><span class="n">players</span><span class="p">,</span>
+            <span class="n">cards</span><span class="o">=</span><span class="n">all_cards</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="c1"># Commander post-setup: register every commander instance for each player.</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">format</span> <span class="o">==</span> <span class="s2">&quot;commander&quot;</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">players</span><span class="p">:</span>
+                <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">all_cards</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">owner_id</span> <span class="o">==</span> <span class="n">p</span><span class="o">.</span><span class="n">player_id</span> <span class="ow">and</span> <span class="n">c</span><span class="o">.</span><span class="n">zone</span> <span class="o">==</span> <span class="n">Zone</span><span class="o">.</span><span class="n">COMMAND_ZONE</span><span class="p">:</span>
+                        <span class="n">game_state</span><span class="o">.</span><span class="n">add_commander</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">player_id</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">instance_id</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">game_state</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_tick_sagas</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">game_state</span><span class="p">:</span> <span class="n">GameState</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;At the start of the active player&#39;s pre-combat main phase, add a</span>
+<span class="sd">        lore counter to each saga they control and fire the matching chapter</span>
+<span class="sd">        ability (CR 714.2/.3). Sacrifice the saga when its lore counter</span>
+<span class="sd">        exceeds its final chapter (CR 714.4).&quot;&quot;&quot;</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">re</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">_re</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">src.engine.game_state</span><span class="w"> </span><span class="kn">import</span> <span class="n">StackItem</span><span class="p">,</span> <span class="n">Trigger</span><span class="p">,</span> <span class="n">TriggerType</span><span class="p">,</span> <span class="n">Zone</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">src.engine.zones</span><span class="w"> </span><span class="kn">import</span> <span class="n">move_card</span>
+
+        <span class="n">active_id</span> <span class="o">=</span> <span class="n">game_state</span><span class="o">.</span><span class="n">active_player</span><span class="o">.</span><span class="n">player_id</span>
+        <span class="n">roman_to_int</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;i&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span> <span class="s2">&quot;ii&quot;</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span> <span class="s2">&quot;iii&quot;</span><span class="p">:</span> <span class="mi">3</span><span class="p">,</span> <span class="s2">&quot;iv&quot;</span><span class="p">:</span> <span class="mi">4</span><span class="p">,</span> <span class="s2">&quot;v&quot;</span><span class="p">:</span> <span class="mi">5</span><span class="p">,</span> <span class="s2">&quot;vi&quot;</span><span class="p">:</span> <span class="mi">6</span><span class="p">}</span>
+
+        <span class="k">for</span> <span class="n">card</span> <span class="ow">in</span> <span class="nb">list</span><span class="p">(</span><span class="n">game_state</span><span class="o">.</span><span class="n">cards</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">card</span><span class="o">.</span><span class="n">zone</span> <span class="o">!=</span> <span class="n">Zone</span><span class="o">.</span><span class="n">BATTLEFIELD</span> <span class="ow">or</span> <span class="n">card</span><span class="o">.</span><span class="n">controller_id</span> <span class="o">!=</span> <span class="n">active_id</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">type_line</span> <span class="o">=</span> <span class="p">(</span><span class="n">card</span><span class="o">.</span><span class="n">type_line</span> <span class="ow">or</span> <span class="s2">&quot;&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+            <span class="k">if</span> <span class="s2">&quot;saga&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">type_line</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">oracle</span> <span class="o">=</span> <span class="n">card</span><span class="o">.</span><span class="n">oracle_text</span> <span class="ow">or</span> <span class="s2">&quot;&quot;</span>
+            <span class="n">chapters</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+            <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">_re</span><span class="o">.</span><span class="n">finditer</span><span class="p">(</span>
+                <span class="sa">r</span><span class="s2">&quot;^\s*([IVX, ]+?)\s*[\u2014\-]\s*(.+?)$&quot;</span><span class="p">,</span>
+                <span class="n">oracle</span><span class="p">,</span>
+                <span class="n">_re</span><span class="o">.</span><span class="n">MULTILINE</span><span class="p">,</span>
+            <span class="p">):</span>
+                <span class="n">roman_group</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+                <span class="n">effect</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+                <span class="k">for</span> <span class="n">tok</span> <span class="ow">in</span> <span class="p">[</span><span class="n">t</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">roman_group</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;,&quot;</span><span class="p">)]:</span>
+                    <span class="n">n</span> <span class="o">=</span> <span class="n">roman_to_int</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">tok</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">n</span><span class="p">:</span>
+                        <span class="n">chapters</span><span class="p">[</span><span class="n">n</span><span class="p">]</span> <span class="o">=</span> <span class="n">effect</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">chapters</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">card</span><span class="o">.</span><span class="n">counters</span><span class="p">[</span><span class="s2">&quot;lore&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">card</span><span class="o">.</span><span class="n">counters</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;lore&quot;</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span>
+            <span class="n">current</span> <span class="o">=</span> <span class="n">card</span><span class="o">.</span><span class="n">counters</span><span class="p">[</span><span class="s2">&quot;lore&quot;</span><span class="p">]</span>
+            <span class="n">game_state</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  </span><span class="se">\u271a</span><span class="s2"> </span><span class="si">{</span><span class="n">card</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">: lore counter added (chapter </span><span class="si">{</span><span class="n">current</span><span class="si">}</span><span class="s2">)&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">current</span> <span class="ow">in</span> <span class="n">chapters</span><span class="p">:</span>
+                <span class="n">effect</span> <span class="o">=</span> <span class="n">chapters</span><span class="p">[</span><span class="n">current</span><span class="p">]</span>
+                <span class="n">trig</span> <span class="o">=</span> <span class="n">Trigger</span><span class="p">(</span>
+                    <span class="n">source_card_id</span><span class="o">=</span><span class="n">card</span><span class="o">.</span><span class="n">instance_id</span><span class="p">,</span>
+                    <span class="n">controller_id</span><span class="o">=</span><span class="n">card</span><span class="o">.</span><span class="n">controller_id</span><span class="p">,</span>
+                    <span class="n">trigger_type</span><span class="o">=</span><span class="n">TriggerType</span><span class="o">.</span><span class="n">UPKEEP</span><span class="p">,</span>
+                    <span class="n">description</span><span class="o">=</span><span class="n">effect</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="n">game_state</span><span class="o">.</span><span class="n">triggered_abilities</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">trig</span><span class="p">)</span>
+                <span class="n">item</span> <span class="o">=</span> <span class="n">StackItem</span><span class="p">(</span>
+                    <span class="n">source_card_id</span><span class="o">=</span><span class="n">card</span><span class="o">.</span><span class="n">instance_id</span><span class="p">,</span>
+                    <span class="n">controller_id</span><span class="o">=</span><span class="n">card</span><span class="o">.</span><span class="n">controller_id</span><span class="p">,</span>
+                    <span class="n">is_spell</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+                    <span class="n">card_data</span><span class="o">=</span><span class="p">{</span>
+                        <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="sa">f</span><span class="s2">&quot;[Saga] </span><span class="si">{</span><span class="n">card</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> chapter </span><span class="si">{</span><span class="n">current</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">effect</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+                        <span class="s2">&quot;type_line&quot;</span><span class="p">:</span> <span class="s2">&quot;Ability&quot;</span><span class="p">,</span>
+                    <span class="p">},</span>
+                <span class="p">)</span>
+                <span class="n">game_state</span><span class="o">.</span><span class="n">stack</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">item</span><span class="p">)</span>
+                <span class="n">game_state</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[TRIGGER (SAGA)] </span><span class="si">{</span><span class="n">card</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> chapter </span><span class="si">{</span><span class="n">current</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">effect</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="n">final_chapter</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">chapters</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span>
+            <span class="k">if</span> <span class="n">current</span> <span class="o">&gt;</span> <span class="n">final_chapter</span><span class="p">:</span>
+                <span class="n">move_card</span><span class="p">(</span><span class="n">game_state</span><span class="p">,</span> <span class="n">card</span><span class="o">.</span><span class="n">instance_id</span><span class="p">,</span> <span class="n">Zone</span><span class="o">.</span><span class="n">BATTLEFIELD</span><span class="p">,</span>
+                          <span class="n">Zone</span><span class="o">.</span><span class="n">GRAVEYARD</span><span class="p">,</span> <span class="n">card</span><span class="o">.</span><span class="n">owner_id</span><span class="p">)</span>
+                <span class="n">game_state</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  </span><span class="se">\u232b</span><span class="s2"> </span><span class="si">{</span><span class="n">card</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> is sacrificed (final chapter)&quot;</span><span class="p">)</span>
+
+        <span class="k">while</span> <span class="n">game_state</span><span class="o">.</span><span class="n">stack</span><span class="p">:</span>
+            <span class="n">game_state</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">engine</span><span class="o">.</span><span class="n">resolve_stack_item</span><span class="p">(</span><span class="n">game_state</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">engine</span><span class="o">.</span><span class="n">check_state_based_actions</span><span class="p">(</span><span class="n">game_state</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">game_state</span><span class="o">.</span><span class="n">game_over</span><span class="p">:</span>
+                <span class="k">return</span>
+
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">_play_turn</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">game_state</span><span class="p">:</span> <span class="n">GameState</span><span class="p">,</span> <span class="n">agents</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">MTGAgent</span><span class="p">]</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">GameState</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Play a single turn (all phases).&quot;&quot;&quot;</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">src.engine.phases</span><span class="w"> </span><span class="kn">import</span> <span class="n">PHASE_ORDER</span><span class="p">,</span> <span class="n">advance_phase</span><span class="p">,</span> <span class="n">is_main_phase</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">src.engine.game_state</span><span class="w"> </span><span class="kn">import</span> <span class="n">ActionType</span>
+
+        <span class="c1"># Actually play through each phase of the turn</span>
+        <span class="c1"># Banner at the top of every turn so the log reads like a real game.</span>
+        <span class="n">active</span> <span class="o">=</span> <span class="n">game_state</span><span class="o">.</span><span class="n">active_player</span>
+        <span class="n">active_label</span> <span class="o">=</span> <span class="n">active</span><span class="o">.</span><span class="n">name</span> <span class="ow">or</span> <span class="n">active</span><span class="o">.</span><span class="n">player_id</span>
+        <span class="n">bar</span> <span class="o">=</span> <span class="s2">&quot;═&quot;</span> <span class="o">*</span> <span class="mi">70</span>
+        <span class="n">game_state</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">╔</span><span class="si">{</span><span class="n">bar</span><span class="si">}</span><span class="s2">╗&quot;</span><span class="p">)</span>
+        <span class="n">game_state</span><span class="o">.</span><span class="n">log</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;║  Turn </span><span class="si">{</span><span class="n">game_state</span><span class="o">.</span><span class="n">turn_number</span><span class="si">:</span><span class="s2">&gt;3</span><span class="si">}</span><span class="s2">  —  </span><span class="si">{</span><span class="n">active_label</span><span class="si">}</span><span class="s2">  &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;(life </span><span class="si">{</span><span class="n">active</span><span class="o">.</span><span class="n">life_total</span><span class="si">}</span><span class="s2">)&quot;</span>
+        <span class="p">)</span>
+        <span class="n">game_state</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;╚</span><span class="si">{</span><span class="n">bar</span><span class="si">}</span><span class="s2">╝&quot;</span><span class="p">)</span>
+        <span class="c1"># Board snapshot for every player, so it&#39;s clear what&#39;s in play.</span>
+        <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">game_state</span><span class="o">.</span><span class="n">players</span><span class="p">:</span>
+            <span class="n">hand_n</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="mi">1</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">game_state</span><span class="o">.</span><span class="n">cards</span>
+                         <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">zone</span> <span class="o">==</span> <span class="n">Zone</span><span class="o">.</span><span class="n">HAND</span> <span class="ow">and</span> <span class="n">c</span><span class="o">.</span><span class="n">controller_id</span> <span class="o">==</span> <span class="n">p</span><span class="o">.</span><span class="n">player_id</span><span class="p">)</span>
+            <span class="n">lib_n</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="mi">1</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">game_state</span><span class="o">.</span><span class="n">cards</span>
+                        <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">zone</span> <span class="o">==</span> <span class="n">Zone</span><span class="o">.</span><span class="n">LIBRARY</span> <span class="ow">and</span> <span class="n">c</span><span class="o">.</span><span class="n">controller_id</span> <span class="o">==</span> <span class="n">p</span><span class="o">.</span><span class="n">player_id</span><span class="p">)</span>
+            <span class="n">gy_n</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="mi">1</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">game_state</span><span class="o">.</span><span class="n">cards</span>
+                       <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">zone</span> <span class="o">==</span> <span class="n">Zone</span><span class="o">.</span><span class="n">GRAVEYARD</span> <span class="ow">and</span> <span class="n">c</span><span class="o">.</span><span class="n">controller_id</span> <span class="o">==</span> <span class="n">p</span><span class="o">.</span><span class="n">player_id</span><span class="p">)</span>
+            <span class="n">bf</span> <span class="o">=</span> <span class="p">[</span><span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">game_state</span><span class="o">.</span><span class="n">cards</span>
+                  <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">zone</span> <span class="o">==</span> <span class="n">Zone</span><span class="o">.</span><span class="n">BATTLEFIELD</span> <span class="ow">and</span> <span class="n">c</span><span class="o">.</span><span class="n">controller_id</span> <span class="o">==</span> <span class="n">p</span><span class="o">.</span><span class="n">player_id</span><span class="p">]</span>
+            <span class="n">lands</span> <span class="o">=</span> <span class="p">[</span><span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">bf</span> <span class="k">if</span> <span class="s2">&quot;Land&quot;</span> <span class="ow">in</span> <span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">card_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;type_line&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">&quot;&quot;</span><span class="p">)]</span>
+            <span class="n">others</span> <span class="o">=</span> <span class="p">[</span><span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">bf</span> <span class="k">if</span> <span class="n">c</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">lands</span><span class="p">]</span>
+
+            <span class="k">def</span><span class="w"> </span><span class="nf">_fmt_perm</span><span class="p">(</span><span class="n">c</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+                <span class="n">tag</span> <span class="o">=</span> <span class="s2">&quot;T&quot;</span> <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">tapped</span> <span class="k">else</span> <span class="s2">&quot;U&quot;</span>
+                <span class="n">pt</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+                <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">is_creature</span><span class="p">():</span>
+                    <span class="k">try</span><span class="p">:</span>
+                        <span class="kn">from</span><span class="w"> </span><span class="nn">src.engine.static_abilities</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_effective_power_toughness</span>
+                        <span class="n">eff_p</span><span class="p">,</span> <span class="n">eff_t</span> <span class="o">=</span> <span class="n">get_effective_power_toughness</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="n">game_state</span><span class="p">)</span>
+                        <span class="n">base_p</span> <span class="o">=</span> <span class="n">c</span><span class="o">.</span><span class="n">card_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;power&quot;</span><span class="p">,</span> <span class="s2">&quot;?&quot;</span><span class="p">)</span>
+                        <span class="n">base_t</span> <span class="o">=</span> <span class="n">c</span><span class="o">.</span><span class="n">card_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;toughness&quot;</span><span class="p">,</span> <span class="s2">&quot;?&quot;</span><span class="p">)</span>
+                        <span class="k">try</span><span class="p">:</span>
+                            <span class="n">base_p_int</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">base_p</span><span class="p">)</span>
+                            <span class="n">base_t_int</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">base_t</span><span class="p">)</span>
+                            <span class="k">if</span> <span class="p">(</span><span class="n">eff_p</span><span class="p">,</span> <span class="n">eff_t</span><span class="p">)</span> <span class="o">!=</span> <span class="p">(</span><span class="n">base_p_int</span><span class="p">,</span> <span class="n">base_t_int</span><span class="p">):</span>
+                                <span class="n">pt</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot; </span><span class="si">{</span><span class="n">eff_p</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">eff_t</span><span class="si">}</span><span class="s2"> (base </span><span class="si">{</span><span class="n">base_p</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">base_t</span><span class="si">}</span><span class="s2">)&quot;</span>
+                            <span class="k">else</span><span class="p">:</span>
+                                <span class="n">pt</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot; </span><span class="si">{</span><span class="n">eff_p</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">eff_t</span><span class="si">}</span><span class="s2">&quot;</span>
+                        <span class="k">except</span> <span class="p">(</span><span class="ne">TypeError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">):</span>
+                            <span class="n">pt</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot; </span><span class="si">{</span><span class="n">base_p</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">base_t</span><span class="si">}</span><span class="s2">&quot;</span>
+                    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                        <span class="n">pwr</span> <span class="o">=</span> <span class="n">c</span><span class="o">.</span><span class="n">card_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;power&quot;</span><span class="p">,</span> <span class="s2">&quot;?&quot;</span><span class="p">)</span>
+                        <span class="n">tgh</span> <span class="o">=</span> <span class="n">c</span><span class="o">.</span><span class="n">card_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;toughness&quot;</span><span class="p">,</span> <span class="s2">&quot;?&quot;</span><span class="p">)</span>
+                        <span class="n">pt</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot; </span><span class="si">{</span><span class="n">pwr</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">tgh</span><span class="si">}</span><span class="s2">&quot;</span>
+                <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">c</span><span class="o">.</span><span class="n">name</span><span class="si">}{</span><span class="n">pt</span><span class="si">}</span><span class="s2">[</span><span class="si">{</span><span class="n">tag</span><span class="si">}</span><span class="s2">]&quot;</span>
+
+            <span class="n">land_part</span> <span class="o">=</span> <span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">lands</span><span class="p">)</span><span class="si">}</span><span class="s2"> lands &quot;</span>
+                         <span class="sa">f</span><span class="s2">&quot;(</span><span class="si">{</span><span class="nb">sum</span><span class="p">(</span><span class="mi">1</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="n">l</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="n">lands</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="ow">not</span><span class="w"> </span><span class="n">l</span><span class="o">.</span><span class="n">tapped</span><span class="p">)</span><span class="si">}</span><span class="s2"> untapped)&quot;</span><span class="p">)</span>
+            <span class="n">you_label</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">name</span> <span class="ow">or</span> <span class="n">p</span><span class="o">.</span><span class="n">player_id</span>
+            <span class="n">game_state</span><span class="o">.</span><span class="n">log</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;  • </span><span class="si">{</span><span class="n">you_label</span><span class="si">}</span><span class="s2">: life </span><span class="si">{</span><span class="n">p</span><span class="o">.</span><span class="n">life_total</span><span class="si">}</span><span class="s2">, &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;hand </span><span class="si">{</span><span class="n">hand_n</span><span class="si">}</span><span class="s2">, lib </span><span class="si">{</span><span class="n">lib_n</span><span class="si">}</span><span class="s2">, gy </span><span class="si">{</span><span class="n">gy_n</span><span class="si">}</span><span class="s2"> | </span><span class="si">{</span><span class="n">land_part</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="n">others</span><span class="p">:</span>
+                <span class="c1"># Group identical permanents for compactness.</span>
+                <span class="kn">from</span><span class="w"> </span><span class="nn">collections</span><span class="w"> </span><span class="kn">import</span> <span class="n">Counter</span> <span class="k">as</span> <span class="n">_Counter</span>
+                <span class="n">grouped</span> <span class="o">=</span> <span class="n">_Counter</span><span class="p">(</span><span class="n">_fmt_perm</span><span class="p">(</span><span class="n">c</span><span class="p">)</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">others</span><span class="p">)</span>
+                <span class="n">line</span> <span class="o">=</span> <span class="s2">&quot;, &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span>
+                    <span class="p">(</span><span class="n">n</span> <span class="k">if</span> <span class="n">k</span> <span class="o">==</span> <span class="mi">1</span> <span class="k">else</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">k</span><span class="si">}</span><span class="s2">× </span><span class="si">{</span><span class="n">n</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span> <span class="k">for</span> <span class="n">n</span><span class="p">,</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">grouped</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+                <span class="p">)</span>
+                <span class="n">game_state</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;      board: </span><span class="si">{</span><span class="n">line</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="c1"># Hand contents — useful for debugging logs by hand. Sorted for</span>
+            <span class="c1"># determinism; truncated to 12 entries to keep the snapshot tidy.</span>
+            <span class="n">hand_cards</span> <span class="o">=</span> <span class="p">[</span><span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">game_state</span><span class="o">.</span><span class="n">cards</span>
+                          <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">zone</span> <span class="o">==</span> <span class="n">Zone</span><span class="o">.</span><span class="n">HAND</span> <span class="ow">and</span> <span class="n">c</span><span class="o">.</span><span class="n">controller_id</span> <span class="o">==</span> <span class="n">p</span><span class="o">.</span><span class="n">player_id</span><span class="p">]</span>
+            <span class="k">if</span> <span class="n">hand_cards</span><span class="p">:</span>
+                <span class="kn">from</span><span class="w"> </span><span class="nn">collections</span><span class="w"> </span><span class="kn">import</span> <span class="n">Counter</span> <span class="k">as</span> <span class="n">_Counter</span>
+                <span class="n">names</span> <span class="o">=</span> <span class="n">_Counter</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">name</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">hand_cards</span><span class="p">)</span>
+                <span class="n">items</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">names</span><span class="o">.</span><span class="n">items</span><span class="p">())</span>
+                <span class="n">hand_line</span> <span class="o">=</span> <span class="s2">&quot;, &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span>
+                    <span class="p">(</span><span class="n">n</span> <span class="k">if</span> <span class="n">k</span> <span class="o">==</span> <span class="mi">1</span> <span class="k">else</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">k</span><span class="si">}</span><span class="s2">× </span><span class="si">{</span><span class="n">n</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span> <span class="k">for</span> <span class="n">n</span><span class="p">,</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">items</span><span class="p">[:</span><span class="mi">12</span><span class="p">]</span>
+                <span class="p">)</span>
+                <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">items</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">12</span><span class="p">:</span>
+                    <span class="n">hand_line</span> <span class="o">+=</span> <span class="sa">f</span><span class="s2">&quot;, … (+</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">items</span><span class="p">)</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="mi">12</span><span class="si">}</span><span class="s2"> more)&quot;</span>
+                <span class="n">game_state</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;      hand: </span><span class="si">{</span><span class="n">hand_line</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="n">phase_idx</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">while</span> <span class="n">phase_idx</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">PHASE_ORDER</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">game_state</span><span class="o">.</span><span class="n">game_over</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">game_state</span>
+            
+            <span class="n">phase</span> <span class="o">=</span> <span class="n">PHASE_ORDER</span><span class="p">[</span><span class="n">phase_idx</span><span class="p">]</span>
+            <span class="n">game_state</span><span class="o">.</span><span class="n">phase</span> <span class="o">=</span> <span class="n">phase</span>
+            <span class="c1"># Skip the visual noise of empty steps; only log phases that</span>
+            <span class="c1"># players regularly interact with.</span>
+            <span class="n">VERBOSE_PHASES</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="n">Phase</span><span class="o">.</span><span class="n">MAIN_1</span><span class="p">,</span> <span class="n">Phase</span><span class="o">.</span><span class="n">MAIN_2</span><span class="p">,</span> <span class="n">Phase</span><span class="o">.</span><span class="n">COMBAT_BEGIN</span><span class="p">,</span>
+                <span class="n">Phase</span><span class="o">.</span><span class="n">COMBAT_ATTACKERS</span><span class="p">,</span> <span class="n">Phase</span><span class="o">.</span><span class="n">COMBAT_BLOCKERS</span><span class="p">,</span>
+                <span class="n">Phase</span><span class="o">.</span><span class="n">COMBAT_DAMAGE</span><span class="p">,</span> <span class="n">Phase</span><span class="o">.</span><span class="n">DRAW</span><span class="p">,</span> <span class="n">Phase</span><span class="o">.</span><span class="n">END_STEP</span><span class="p">,</span>
+            <span class="p">}</span>
+            <span class="k">if</span> <span class="n">phase</span> <span class="ow">in</span> <span class="n">VERBOSE_PHASES</span><span class="p">:</span>
+                <span class="n">game_state</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  ┌─ </span><span class="si">{</span><span class="n">phase</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span><span class="si">}</span><span class="s2"> ─&quot;</span><span class="p">)</span>
+
+            <span class="c1"># In untap step, creatures remove summoning sickness (gained pre-eot)</span>
+            <span class="k">if</span> <span class="n">phase</span> <span class="o">==</span> <span class="n">Phase</span><span class="o">.</span><span class="n">UNTAP</span><span class="p">:</span>
+                <span class="kn">from</span><span class="w"> </span><span class="nn">src.engine.counters</span><span class="w"> </span><span class="kn">import</span> <span class="n">apply_stun_on_untap</span>
+                <span class="k">for</span> <span class="n">card</span> <span class="ow">in</span> <span class="n">game_state</span><span class="o">.</span><span class="n">cards</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="n">card</span><span class="o">.</span><span class="n">zone</span> <span class="o">!=</span> <span class="n">Zone</span><span class="o">.</span><span class="n">BATTLEFIELD</span><span class="p">:</span>
+                        <span class="k">continue</span>
+                    <span class="k">if</span> <span class="n">card</span><span class="o">.</span><span class="n">is_creature</span><span class="p">():</span>
+                        <span class="c1"># Creatures that entered in a previous turn lose summoning sickness</span>
+                        <span class="k">if</span> <span class="n">card</span><span class="o">.</span><span class="n">summoning_sick</span> <span class="ow">and</span> <span class="n">card</span><span class="o">.</span><span class="n">turn_entered</span> <span class="o">&lt;</span> <span class="n">game_state</span><span class="o">.</span><span class="n">turn_number</span><span class="p">:</span>
+                            <span class="n">card</span><span class="o">.</span><span class="n">summoning_sick</span> <span class="o">=</span> <span class="kc">False</span>
+                    <span class="c1"># Only untap active player&#39;s permanents (CR 502.1).</span>
+                    <span class="k">if</span> <span class="n">card</span><span class="o">.</span><span class="n">controller_id</span> <span class="o">!=</span> <span class="n">game_state</span><span class="o">.</span><span class="n">active_player</span><span class="o">.</span><span class="n">player_id</span><span class="p">:</span>
+                        <span class="k">continue</span>
+                    <span class="c1"># Stun counter: remove one instead of untapping (CR 701.49).</span>
+                    <span class="k">if</span> <span class="n">apply_stun_on_untap</span><span class="p">(</span><span class="n">card</span><span class="p">):</span>
+                        <span class="n">game_state</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">card</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">: stun counter removed (skips untap)&quot;</span><span class="p">)</span>
+                        <span class="k">continue</span>
+                    <span class="n">card</span><span class="o">.</span><span class="n">tapped</span> <span class="o">=</span> <span class="kc">False</span>
+                
+                <span class="c1"># Reset land play allocation for all players</span>
+                <span class="k">for</span> <span class="n">player</span> <span class="ow">in</span> <span class="n">game_state</span><span class="o">.</span><span class="n">players</span><span class="p">:</span>
+                    <span class="n">player</span><span class="o">.</span><span class="n">land_plays_remaining</span> <span class="o">=</span> <span class="mi">1</span>
+
+            <span class="c1"># Upkeep + end step: fire phase-based triggers.</span>
+            <span class="k">if</span> <span class="n">phase</span> <span class="o">==</span> <span class="n">Phase</span><span class="o">.</span><span class="n">UPKEEP</span> <span class="ow">or</span> <span class="n">phase</span> <span class="o">==</span> <span class="n">Phase</span><span class="o">.</span><span class="n">END_STEP</span><span class="p">:</span>
+                <span class="kn">from</span><span class="w"> </span><span class="nn">src.engine.triggers</span><span class="w"> </span><span class="kn">import</span> <span class="n">check_phase_triggers</span>
+                <span class="kn">from</span><span class="w"> </span><span class="nn">src.engine.game_state</span><span class="w"> </span><span class="kn">import</span> <span class="n">TriggerType</span><span class="p">,</span> <span class="n">StackItem</span>
+                <span class="n">ttype</span> <span class="o">=</span> <span class="n">TriggerType</span><span class="o">.</span><span class="n">UPKEEP</span> <span class="k">if</span> <span class="n">phase</span> <span class="o">==</span> <span class="n">Phase</span><span class="o">.</span><span class="n">UPKEEP</span> <span class="k">else</span> <span class="n">TriggerType</span><span class="o">.</span><span class="n">END_STEP</span>
+                <span class="n">phase_triggers</span> <span class="o">=</span> <span class="n">check_phase_triggers</span><span class="p">(</span>
+                    <span class="n">game_state</span><span class="p">,</span> <span class="n">ttype</span><span class="p">,</span> <span class="n">game_state</span><span class="o">.</span><span class="n">active_player</span><span class="o">.</span><span class="n">player_id</span>
+                <span class="p">)</span>
+                <span class="k">for</span> <span class="n">trig</span> <span class="ow">in</span> <span class="n">phase_triggers</span><span class="p">:</span>
+                    <span class="n">src_card</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span>
+                        <span class="p">(</span><span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">game_state</span><span class="o">.</span><span class="n">cards</span> <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">instance_id</span> <span class="o">==</span> <span class="n">trig</span><span class="o">.</span><span class="n">source_card_id</span><span class="p">),</span>
+                        <span class="kc">None</span><span class="p">,</span>
+                    <span class="p">)</span>
+                    <span class="n">src_name</span> <span class="o">=</span> <span class="n">src_card</span><span class="o">.</span><span class="n">name</span> <span class="k">if</span> <span class="n">src_card</span> <span class="k">else</span> <span class="s2">&quot;Ability&quot;</span>
+                    <span class="n">item</span> <span class="o">=</span> <span class="n">StackItem</span><span class="p">(</span>
+                        <span class="n">source_card_id</span><span class="o">=</span><span class="n">trig</span><span class="o">.</span><span class="n">source_card_id</span><span class="p">,</span>
+                        <span class="n">controller_id</span><span class="o">=</span><span class="n">trig</span><span class="o">.</span><span class="n">controller_id</span><span class="p">,</span>
+                        <span class="n">is_spell</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+                        <span class="n">card_data</span><span class="o">=</span><span class="p">{</span>
+                            <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="sa">f</span><span class="s2">&quot;[Trigger] </span><span class="si">{</span><span class="n">src_name</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">trig</span><span class="o">.</span><span class="n">description</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+                            <span class="s2">&quot;type_line&quot;</span><span class="p">:</span> <span class="s2">&quot;Ability&quot;</span><span class="p">,</span>
+                        <span class="p">},</span>
+                    <span class="p">)</span>
+                    <span class="n">game_state</span><span class="o">.</span><span class="n">stack</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">item</span><span class="p">)</span>
+                    <span class="n">game_state</span><span class="o">.</span><span class="n">triggered_abilities</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">trig</span><span class="p">)</span>
+                    <span class="n">game_state</span><span class="o">.</span><span class="n">log</span><span class="p">(</span>
+                        <span class="sa">f</span><span class="s2">&quot;[TRIGGER (</span><span class="si">{</span><span class="n">ttype</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span><span class="si">}</span><span class="s2">)] </span><span class="si">{</span><span class="n">src_name</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">trig</span><span class="o">.</span><span class="n">description</span><span class="si">}</span><span class="s2"> added to stack&quot;</span>
+                    <span class="p">)</span>
+                <span class="c1"># Resolve any phase-based triggers immediately (LIFO).</span>
+                <span class="k">while</span> <span class="n">game_state</span><span class="o">.</span><span class="n">stack</span><span class="p">:</span>
+                    <span class="n">game_state</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">engine</span><span class="o">.</span><span class="n">resolve_stack_item</span><span class="p">(</span><span class="n">game_state</span><span class="p">)</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">engine</span><span class="o">.</span><span class="n">check_state_based_actions</span><span class="p">(</span><span class="n">game_state</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">game_state</span><span class="o">.</span><span class="n">game_over</span><span class="p">:</span>
+                        <span class="k">return</span> <span class="n">game_state</span>
+
+            <span class="c1"># In draw step, active player draws</span>
+            <span class="k">if</span> <span class="n">phase</span> <span class="o">==</span> <span class="n">Phase</span><span class="o">.</span><span class="n">DRAW</span><span class="p">:</span>
+                <span class="n">player</span> <span class="o">=</span> <span class="n">game_state</span><span class="o">.</span><span class="n">active_player</span>
+                <span class="n">library</span> <span class="o">=</span> <span class="p">[</span><span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">game_state</span><span class="o">.</span><span class="n">cards</span> <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">zone</span> <span class="o">==</span> <span class="n">Zone</span><span class="o">.</span><span class="n">LIBRARY</span> <span class="ow">and</span> <span class="n">c</span><span class="o">.</span><span class="n">owner_id</span> <span class="o">==</span> <span class="n">player</span><span class="o">.</span><span class="n">player_id</span><span class="p">]</span>
+                <span class="k">if</span> <span class="n">library</span><span class="p">:</span>
+                    <span class="n">card_to_draw</span> <span class="o">=</span> <span class="n">library</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+                    <span class="kn">from</span><span class="w"> </span><span class="nn">src.engine.zones</span><span class="w"> </span><span class="kn">import</span> <span class="n">move_card</span>
+                    <span class="n">game_state</span> <span class="o">=</span> <span class="n">move_card</span><span class="p">(</span><span class="n">game_state</span><span class="p">,</span> <span class="n">card_to_draw</span><span class="o">.</span><span class="n">instance_id</span><span class="p">,</span> <span class="n">Zone</span><span class="o">.</span><span class="n">LIBRARY</span><span class="p">,</span> <span class="n">Zone</span><span class="o">.</span><span class="n">HAND</span><span class="p">,</span> <span class="n">player</span><span class="o">.</span><span class="n">player_id</span><span class="p">)</span>
+                    <span class="n">player</span><span class="o">.</span><span class="n">has_drawn_for_turn</span> <span class="o">=</span> <span class="kc">True</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="c1"># CR 104.3c / 704.5b: drawing from empty library loses.</span>
+                    <span class="n">loser_idx</span> <span class="o">=</span> <span class="n">game_state</span><span class="o">.</span><span class="n">active_player_index</span>
+                    <span class="n">winner_idx</span> <span class="o">=</span> <span class="p">(</span><span class="n">loser_idx</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">%</span> <span class="nb">len</span><span class="p">(</span><span class="n">game_state</span><span class="o">.</span><span class="n">players</span><span class="p">)</span>
+                    <span class="n">game_state</span><span class="o">.</span><span class="n">winner</span> <span class="o">=</span> <span class="n">game_state</span><span class="o">.</span><span class="n">players</span><span class="p">[</span><span class="n">winner_idx</span><span class="p">]</span>
+                    <span class="n">game_state</span><span class="o">.</span><span class="n">game_over</span> <span class="o">=</span> <span class="kc">True</span>
+                    <span class="n">game_state</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">player</span><span class="o">.</span><span class="n">player_id</span><span class="si">}</span><span class="s2"> attempted to draw from empty library and lost&quot;</span><span class="p">)</span>
+                    <span class="k">return</span> <span class="n">game_state</span>
+
+            <span class="c1"># Combat phases</span>
+            <span class="k">if</span> <span class="n">phase</span> <span class="o">==</span> <span class="n">Phase</span><span class="o">.</span><span class="n">COMBAT_BEGIN</span><span class="p">:</span>
+                <span class="c1"># Initialize combat state at the start of combat</span>
+                <span class="kn">from</span><span class="w"> </span><span class="nn">src.engine.game_state</span><span class="w"> </span><span class="kn">import</span> <span class="n">CombatState</span>
+                <span class="n">game_state</span><span class="o">.</span><span class="n">combat</span> <span class="o">=</span> <span class="n">CombatState</span><span class="p">()</span>
+            
+            <span class="k">if</span> <span class="n">phase</span> <span class="o">==</span> <span class="n">Phase</span><span class="o">.</span><span class="n">COMBAT_ATTACKERS</span><span class="p">:</span>
+                <span class="c1"># Active player declares attackers with stack/priority support</span>
+                <span class="n">game_state</span><span class="o">.</span><span class="n">priority_player_index</span> <span class="o">=</span> <span class="n">game_state</span><span class="o">.</span><span class="n">active_player_index</span>
+                <span class="n">game_state</span> <span class="o">=</span> <span class="k">await</span> <span class="n">run_priority_loop</span><span class="p">(</span>
+                    <span class="n">game_state</span><span class="p">,</span>
+                    <span class="n">agents</span><span class="p">,</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">engine</span><span class="p">,</span>
+                    <span class="n">collector</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">self_play_collector</span><span class="p">,</span>
+                <span class="p">)</span>
+                
+                <span class="k">if</span> <span class="n">game_state</span><span class="o">.</span><span class="n">game_over</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="n">game_state</span>
+            
+            <span class="k">if</span> <span class="n">phase</span> <span class="o">==</span> <span class="n">Phase</span><span class="o">.</span><span class="n">COMBAT_BLOCKERS</span><span class="p">:</span>
+                <span class="c1"># Defending player declares blockers with stack/priority support</span>
+                <span class="n">defending_player_idx</span> <span class="o">=</span> <span class="p">(</span><span class="n">game_state</span><span class="o">.</span><span class="n">active_player_index</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">%</span> <span class="nb">len</span><span class="p">(</span><span class="n">game_state</span><span class="o">.</span><span class="n">players</span><span class="p">)</span>
+                <span class="n">game_state</span><span class="o">.</span><span class="n">priority_player_index</span> <span class="o">=</span> <span class="n">defending_player_idx</span>
+                <span class="n">game_state</span> <span class="o">=</span> <span class="k">await</span> <span class="n">run_priority_loop</span><span class="p">(</span>
+                    <span class="n">game_state</span><span class="p">,</span>
+                    <span class="n">agents</span><span class="p">,</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">engine</span><span class="p">,</span>
+                    <span class="n">collector</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">self_play_collector</span><span class="p">,</span>
+                <span class="p">)</span>
+                
+                <span class="k">if</span> <span class="n">game_state</span><span class="o">.</span><span class="n">game_over</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="n">game_state</span>
+            
+            <span class="k">if</span> <span class="n">phase</span> <span class="o">==</span> <span class="n">Phase</span><span class="o">.</span><span class="n">COMBAT_DAMAGE</span><span class="p">:</span>
+                <span class="kn">from</span><span class="w"> </span><span class="nn">src.engine.combat</span><span class="w"> </span><span class="kn">import</span> <span class="n">resolve_combat_damage</span>
+                <span class="c1"># Resolve combat damage</span>
+                <span class="n">resolve_combat_damage</span><span class="p">(</span><span class="n">game_state</span><span class="p">)</span>
+            
+            <span class="k">if</span> <span class="n">phase</span> <span class="o">==</span> <span class="n">Phase</span><span class="o">.</span><span class="n">CLEANUP</span><span class="p">:</span>
+                <span class="c1"># Empty all players&#39; mana pools and discard down to max hand size</span>
+                <span class="kn">from</span><span class="w"> </span><span class="nn">src.engine.mana</span><span class="w"> </span><span class="kn">import</span> <span class="n">empty_mana_pool</span>
+                <span class="kn">from</span><span class="w"> </span><span class="nn">src.engine.zones</span><span class="w"> </span><span class="kn">import</span> <span class="n">move_card</span>
+                <span class="c1"># End-of-turn cleanup: damage wears off, &quot;until end of turn&quot;</span>
+                <span class="c1"># P/T bonuses expire (CR 514.2). Vehicles revert via</span>
+                <span class="c1"># equip.clear_crew_eot.</span>
+                <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">game_state</span><span class="o">.</span><span class="n">cards</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">zone</span> <span class="o">!=</span> <span class="n">Zone</span><span class="o">.</span><span class="n">BATTLEFIELD</span><span class="p">:</span>
+                        <span class="k">continue</span>
+                    <span class="n">c</span><span class="o">.</span><span class="n">damage_marked</span> <span class="o">=</span> <span class="mi">0</span>
+                    <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="s2">&quot;eot_power_bonus&quot;</span><span class="p">):</span>
+                        <span class="n">c</span><span class="o">.</span><span class="n">eot_power_bonus</span> <span class="o">=</span> <span class="mi">0</span>
+                    <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="s2">&quot;eot_toughness_bonus&quot;</span><span class="p">):</span>
+                        <span class="n">c</span><span class="o">.</span><span class="n">eot_toughness_bonus</span> <span class="o">=</span> <span class="mi">0</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="kn">from</span><span class="w"> </span><span class="nn">src.engine.equip</span><span class="w"> </span><span class="kn">import</span> <span class="n">clear_crew_eot</span>
+                    <span class="n">clear_crew_eot</span><span class="p">(</span><span class="n">game_state</span><span class="p">)</span>
+                <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                    <span class="k">pass</span>
+                <span class="k">for</span> <span class="n">player</span> <span class="ow">in</span> <span class="n">game_state</span><span class="o">.</span><span class="n">players</span><span class="p">:</span>
+                    <span class="n">empty_mana_pool</span><span class="p">(</span><span class="n">player</span><span class="p">)</span>
+                    <span class="n">hand_cards</span> <span class="o">=</span> <span class="p">[</span>
+                        <span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">game_state</span><span class="o">.</span><span class="n">cards</span>
+                        <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">zone</span> <span class="o">==</span> <span class="n">Zone</span><span class="o">.</span><span class="n">HAND</span> <span class="ow">and</span> <span class="n">c</span><span class="o">.</span><span class="n">controller_id</span> <span class="o">==</span> <span class="n">player</span><span class="o">.</span><span class="n">player_id</span>
+                    <span class="p">]</span>
+                    <span class="n">excess</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">hand_cards</span><span class="p">)</span> <span class="o">-</span> <span class="n">player</span><span class="o">.</span><span class="n">max_hand_size</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">excess</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                        <span class="n">hand_cards</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">c</span><span class="p">:</span> <span class="n">c</span><span class="o">.</span><span class="n">card_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;cmc&quot;</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="n">reverse</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+                        <span class="k">for</span> <span class="n">card</span> <span class="ow">in</span> <span class="n">hand_cards</span><span class="p">[:</span><span class="n">excess</span><span class="p">]:</span>
+                            <span class="n">game_state</span> <span class="o">=</span> <span class="n">move_card</span><span class="p">(</span>
+                                <span class="n">game_state</span><span class="p">,</span>
+                                <span class="n">card</span><span class="o">.</span><span class="n">instance_id</span><span class="p">,</span>
+                                <span class="n">Zone</span><span class="o">.</span><span class="n">HAND</span><span class="p">,</span>
+                                <span class="n">Zone</span><span class="o">.</span><span class="n">GRAVEYARD</span><span class="p">,</span>
+                                <span class="n">player</span><span class="o">.</span><span class="n">player_id</span><span class="p">,</span>
+                            <span class="p">)</span>
+                            <span class="n">game_state</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">player</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> discards </span><span class="si">{</span><span class="n">card</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> (cleanup)&quot;</span><span class="p">)</span>
+
+            <span class="c1"># In main phases, use full priority loop (enables stack + instant-speed)</span>
+            <span class="k">if</span> <span class="n">is_main_phase</span><span class="p">(</span><span class="n">phase</span><span class="p">):</span>
+                <span class="c1"># Saga: at the beginning of active player&#39;s pre-combat main,</span>
+                <span class="c1"># add a lore counter and fire the matching chapter ability</span>
+                <span class="c1"># (CR 714.2). We trigger this on MAIN_1 only.</span>
+                <span class="k">if</span> <span class="n">phase</span> <span class="o">==</span> <span class="n">Phase</span><span class="o">.</span><span class="n">MAIN_1</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_tick_sagas</span><span class="p">(</span><span class="n">game_state</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">game_state</span><span class="o">.</span><span class="n">game_over</span><span class="p">:</span>
+                        <span class="k">return</span> <span class="n">game_state</span>
+
+                <span class="c1"># Initialize priority to active player</span>
+                <span class="n">game_state</span><span class="o">.</span><span class="n">priority_player_index</span> <span class="o">=</span> <span class="n">game_state</span><span class="o">.</span><span class="n">active_player_index</span>
+                
+                <span class="c1"># Run full priority loop until stack empties and all pass</span>
+                <span class="n">game_state</span> <span class="o">=</span> <span class="k">await</span> <span class="n">run_priority_loop</span><span class="p">(</span>
+                    <span class="n">game_state</span><span class="p">,</span>
+                    <span class="n">agents</span><span class="p">,</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">engine</span><span class="p">,</span>
+                    <span class="n">collector</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">self_play_collector</span><span class="p">,</span>
+                <span class="p">)</span>
+                
+                <span class="k">if</span> <span class="n">game_state</span><span class="o">.</span><span class="n">game_over</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="n">game_state</span>
+            
+            <span class="c1"># Check SBAs after each phase</span>
+            <span class="n">sba_events</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">engine</span><span class="o">.</span><span class="n">check_state_based_actions</span><span class="p">(</span><span class="n">game_state</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">sba_events</span> <span class="ow">or</span> <span class="n">game_state</span><span class="o">.</span><span class="n">game_over</span><span class="p">:</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;SBA after </span><span class="si">{</span><span class="n">phase</span><span class="o">.</span><span class="n">value</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">sba_events</span><span class="si">}</span><span class="s2">, game_over=</span><span class="si">{</span><span class="n">game_state</span><span class="o">.</span><span class="n">game_over</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">game_state</span><span class="o">.</span><span class="n">game_over</span><span class="p">:</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Game over triggered after phase </span><span class="si">{</span><span class="n">phase</span><span class="o">.</span><span class="n">value</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                <span class="k">return</span> <span class="n">game_state</span>
+
+            <span class="c1"># CR 106.4: at the end of every step and phase, all mana in</span>
+            <span class="c1"># players&#39; mana pools empties. We already drain at cleanup; this</span>
+            <span class="c1"># makes the rule visible everywhere else too. We log the loss so</span>
+            <span class="c1"># players can see when they let mana float and lose it.</span>
+            <span class="kn">from</span><span class="w"> </span><span class="nn">src.engine.mana</span><span class="w"> </span><span class="kn">import</span> <span class="n">empty_mana_pool</span>
+            <span class="kn">from</span><span class="w"> </span><span class="nn">src.orchestrator.priority_loop</span><span class="w"> </span><span class="kn">import</span> <span class="n">_format_mana</span>
+            <span class="k">for</span> <span class="n">pl</span> <span class="ow">in</span> <span class="n">game_state</span><span class="o">.</span><span class="n">players</span><span class="p">:</span>
+                <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">v</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">pl</span><span class="o">.</span><span class="n">mana_pool</span><span class="o">.</span><span class="n">values</span><span class="p">()):</span>
+                    <span class="n">lost</span> <span class="o">=</span> <span class="n">_format_mana</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">mana_pool</span><span class="p">)</span>
+                    <span class="n">pname</span> <span class="o">=</span> <span class="n">pl</span><span class="o">.</span><span class="n">name</span> <span class="ow">or</span> <span class="n">pl</span><span class="o">.</span><span class="n">player_id</span>
+                    <span class="n">game_state</span><span class="o">.</span><span class="n">log</span><span class="p">(</span>
+                        <span class="sa">f</span><span class="s2">&quot;      ✗ </span><span class="si">{</span><span class="n">pname</span><span class="si">}</span><span class="s2"> loses </span><span class="si">{</span><span class="n">lost</span><span class="si">}</span><span class="s2"> from mana pool &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;(end of </span><span class="si">{</span><span class="n">phase</span><span class="o">.</span><span class="n">value</span><span class="si">}</span><span class="s2">)&quot;</span>
+                    <span class="p">)</span>
+                    <span class="n">empty_mana_pool</span><span class="p">(</span><span class="n">pl</span><span class="p">)</span>
+
+            <span class="c1"># Move to next phase</span>
+            <span class="n">phase_idx</span> <span class="o">+=</span> <span class="mi">1</span>
+        
+        <span class="c1"># After all phases complete, advance the active player. The turn</span>
+        <span class="c1"># number only increases when we wrap back to the first seat — i.e.</span>
+        <span class="c1"># one full trip around the table is one &quot;turn&quot; in multiplayer</span>
+        <span class="c1"># parlance. (In a 2-player game this still increments every player&#39;s</span>
+        <span class="c1"># play, matching standard usage.)</span>
+        <span class="n">next_idx</span> <span class="o">=</span> <span class="p">(</span><span class="n">game_state</span><span class="o">.</span><span class="n">active_player_index</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">%</span> <span class="nb">len</span><span class="p">(</span><span class="n">game_state</span><span class="o">.</span><span class="n">players</span><span class="p">)</span>
+        <span class="n">game_state</span><span class="o">.</span><span class="n">active_player_index</span> <span class="o">=</span> <span class="n">next_idx</span>
+        <span class="k">if</span> <span class="n">next_idx</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">game_state</span><span class="o">.</span><span class="n">turn_number</span> <span class="o">+=</span> <span class="mi">1</span>
+
+        <span class="k">return</span> <span class="n">game_state</span></div>
+
+</pre></div>
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="../../../index.html">opposition-agents-playing-mtg</a></h1>
+
+
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="../../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+<p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../repository_map.html">Repository Map</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../components.html">Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api.html">API Reference</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="../../../index.html">Documentation overview</a><ul>
+  <li><a href="../../index.html">Module code</a><ul>
+  </ul></li>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &#169;2026, Data Science Lab FHSWF.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 8.1.3</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+    </div>
+
+    
+
+    
+  </body>
+</html>
