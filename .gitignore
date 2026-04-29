@@ -57,6 +57,8 @@ logs/
 data/trajectories/
 data/imports/
 data/cache/
+environment*.json
+requirements_frozen*.txt
 
 # IDE
 .vscode/

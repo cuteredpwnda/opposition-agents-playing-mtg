@@ -14,6 +14,7 @@
 6. [Component Reusability Matrix](#6-component-reusability-matrix)
 7. [GraphRAG Integration Architecture for MTG](#7-graphrag-integration-architecture-for-mtg)
 8. [Recommendations](#8-recommendations)
+9. [Collective Intelligence Pattern (Cross-Source)](#9-collective-intelligence-pattern-cross-source)
 
 ---
 
@@ -630,6 +631,22 @@ Microsoft's GraphRAG is the most mature and well-documented. Start there and opt
 ---
 
 ## 8. Recommendations
+
+## 9. Collective Intelligence Pattern (Cross-Source)
+
+Across the surveyed systems, the strongest transferable pattern for this
+repository is a shared-memory architecture rather than a single best agent.
+
+- Use a common symbolic substrate (KG/ontology) that all agents can query.
+- Keep base facts immutable and append learned evidence as provenance-tagged
+    extension objects.
+- Train heterogeneous agents (heuristic, LLM, world-model, active-inference)
+    against the same environment and aggregate their trajectory evidence.
+- Re-inject aggregated evidence into subsequent training/inference cycles.
+
+This pattern yields a collective-intelligence effect: each generation benefits
+from strategic evidence discovered by prior generations, without sacrificing
+auditability or reproducibility.
 
 ### 8.1 What to Build vs. What to Reuse
 

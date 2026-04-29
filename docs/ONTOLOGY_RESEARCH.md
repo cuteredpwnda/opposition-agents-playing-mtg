@@ -19,6 +19,18 @@
 
 ## 1. Best Practices for Extending OWL Ontologies
 
+### 1.0 Immutable Base + Append-Only Learned Extension
+
+For this project, ontology evolution should separate:
+
+- Immutable base semantics (card/source facts, core TBox relations)
+- Learned extension evidence (trajectory-derived synergies/outcomes)
+
+The practical rule is: do not rewrite oracle-grounded base facts when
+self-play discovers a new strategic pattern. Instead, append provenance-tagged
+extension entities and link them to base classes/properties. This preserves
+traceability while enabling cumulative cross-agent learning.
+
 ### 1.1 Ontology Versioning & Modularity
 
 **Strategy:** Use **semantic versioning** + **modular design** for scalable ontology evolution.

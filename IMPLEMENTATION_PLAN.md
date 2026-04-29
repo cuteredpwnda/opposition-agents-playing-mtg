@@ -43,6 +43,20 @@ items stay for traceability.
 
 ### Done
 
+- [x] **Collective-intelligence framing propagated across docs** — added a
+      shared-graph-memory narrative to `README.md`, `ARCHITECTURE.md`,
+      `DEVELOPMENT.md`, `AGENTS.md`, `docs/HOW_IT_ALL_WORKS.md`,
+      `docs/AGENTS_TECH_REPORT.md`, `docs/WORLD_MODEL_DESIGN.md`,
+      `docs/RESEARCH.md`, `docs/ONTOLOGY_RESEARCH.md`,
+      `paper/opposition_agents_mtg.tex`, and `paper/agents_tech_report.tex`;
+      documented that multiple agents/runs append provenance-tagged learned
+      evidence into the KG extension layer.
+
+- [x] **Environment/requirements snapshot cleanup policy** — added ignore
+      rules for generated `environment*.json` and `requirements_frozen*.txt`
+      artifacts in `.gitignore` and documented these as disposable local
+      runtime snapshots in `DEVELOPMENT.md`.
+
 - [x] **Packaging metadata repaired for the stable stack** — fixed
       `pyproject.toml` so core dependencies live under `[project]`, aligned
       `requires-python` with the repo's Python 3.10+ convention, and removed

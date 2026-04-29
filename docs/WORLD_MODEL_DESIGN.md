@@ -11,6 +11,19 @@ The key insight: MTG has ~28,000 unique cards, complex rules interactions, and h
 3. **Simulate** entire games in latent space (1000x faster than the rules engine)
 4. **Train** a compact controller policy entirely inside "dreams"
 
+### Collective Intelligence Through Shared Graph Memory
+
+The world model in this repository is intended to operate in a multi-agent
+population loop, not as an isolated policy learner.
+
+1. Multiple agent families generate trajectories through self-play.
+2. A KG enrichment pass extracts repeatable card-pair and outcome patterns.
+3. Learned evidence is appended (with provenance) to the KG extension layer.
+4. Later world-model/controller runs consume that shared graph memory as prior context.
+
+This creates cumulative strategic learning across runs while keeping immutable
+card-source facts and ontology-grounded base edges unchanged.
+
 ---
 
 ## Architecture: V-M-C Adapted for MTG

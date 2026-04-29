@@ -74,7 +74,7 @@ For detailed architecture and design decisions, see:
 
 ### Prerequisites
 
-- Python 3.11+
+- Python 3.10+
 - Neo4j Community Edition 5.x (optional, for knowledge graph features)
 - Docker (optional, for containerized deployment)
 

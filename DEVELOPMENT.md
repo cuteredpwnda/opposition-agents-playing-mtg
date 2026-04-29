@@ -11,7 +11,7 @@
 
 ### Prerequisites
 
-- Python 3.11+
+- Python 3.10+
 - Neo4j Community Edition 5.x (for knowledge graph)
 - Docker & Docker Compose (recommended)
 

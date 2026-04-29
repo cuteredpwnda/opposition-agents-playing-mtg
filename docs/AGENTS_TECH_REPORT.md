@@ -40,6 +40,11 @@ Registered names: `random`, `heuristic`, `kg_heuristic`, `human`,
 `ollama`, `llm` (alias), `world_model`, `active_inference`,
 `llm_fusion`, `fusion` (alias).
 
+Across the zoo, the intended learning loop is collective: self-play traces
+from many agent types are post-processed into append-only graph evidence,
+and later agents query that shared graph memory as an additional strategic
+prior.
+
 ---
 
 ## 1. RandomAgent
