@@ -73,6 +73,7 @@ data/cache/
 *.fdb_latexmk
 *.fls
 *.synctex.gz
+presentations/repo_for_girlfriend.pdf
 
 # OS
 Thumbs.db
@@ -87,3 +88,5 @@ data/card_graph_embeddings.pt
 *.err
 
 *.pt
+
+presentations/repo_for_girlfriend.*

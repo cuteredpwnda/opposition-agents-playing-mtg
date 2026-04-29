@@ -206,3 +206,102 @@ asyncio.run(main())
 docker exec -it mtg-neo4j cypher-shell -u neo4j -p $env:NEO4J_PASSWORD `
   "MATCH (c:Card) RETURN count(c) AS n;"
 ```
+
+---
+
+## 11. Property schema (verified 2026-04-29)
+
+The actual property names differ from some older query examples.
+Always use these names:
+
+### Card node (`c:Card`)
+| Property | Type | Notes |
+|---|---|---|
+| `cardName` | string | ⚠️ **not** `name` |
+| `scryfallId` | string | UUID |
+| `oracleText` | string | |
+| `typeLine` | string | e.g. `"Legendary Creature — Goblin Warrior"` |
+| `manaCostText` | string | e.g. `"{3}{R}{R}"` |
+| `manaValue` | int | converted mana cost |
+| `power` / `toughness` | string | `null` for non-creatures |
+| `colorIdentity` | list[string] | e.g. `["R"]` |
+| `colors` | list[string] | |
+| `rarity` | string | `common` / `uncommon` / `rare` / `mythic` |
+| `setCode` | string | |
+| `edhrecRank` | int | lower = more popular |
+| `embedding` | list[float] | 128-d GraphSAGE embedding (all 36,909 cards populated) |
+| `gamesPlayed` | int | written by KGEnrichment stage (0 until enrichment runs) |
+| `gamesWon` | int | written by KGEnrichment stage |
+| `winRate` | float | written by KGEnrichment stage |
+
+### Combo node (`n:Combo`)
+| Property | Type |
+|---|---|
+| `comboId` | string |
+| `comboName` | string |
+| `comboDescription` | string |
+| `result` | string |
+| `cardCount` | int |
+| `outcomeCategories` | list[string] |
+| `outcomeMagnitudes` | list[string] |
+
+### Relationship summary (as of 2026-04-29)
+| Relationship | Count | Notes |
+|---|---|---|
+| `LEGAL_IN` | 338,727 | Card → Format |
+| `PART_OF_COMBO` | 29,557 | Card → Combo |
+| `PRODUCES` | 24,776 | Combo → Outcome |
+| `HAS_KEYWORD` | 23,067 | Card → Keyword |
+| `SYNERGIZES_WITH` | 0* | written by `scripts/run_kg_enrichment.py` |
+| `SUPPORTED_BY` | 0* | links Card ↔ LearnedSynergyEvidence node |
+
+*\* Not yet written — run `scripts/run_kg_enrichment.py` after self-play.*
+
+### ⚠️ Common mistake — `c.name` returns null
+```cypher
+-- WRONG (returns null for all rows):
+MATCH (c:Card)-[:PART_OF_COMBO]->(combo:Combo)
+RETURN c.name, count(combo)
+
+-- CORRECT:
+MATCH (c:Card)-[:PART_OF_COMBO]->(combo:Combo)
+WITH c, count(combo) AS n ORDER BY n DESC LIMIT 10
+RETURN c.cardName, n
+```
+
+## 12. KG Extension Layer (self-play synergies)
+
+Run enrichment once you have trajectories in `data/trajectories/`:
+
+```powershell
+# Dry run — see what would be written without touching Neo4j
+.\.venv\Scripts\python.exe scripts\run_kg_enrichment.py --dry-run
+
+# Write synergies with relaxed thresholds (good for small trajectory sets)
+.\.venv\Scripts\python.exe scripts\run_kg_enrichment.py --min-co 3 --min-lift 1.2
+```
+
+Query learned synergies after enrichment:
+
+```cypher
+// All learned synergy pairs, sorted by lift
+MATCH (a:Card)-[s:SYNERGIZES_WITH]->(b:Card)
+RETURN a.cardName, b.cardName, s.lift, s.pairWinRate, s.coOccurrences
+ORDER BY s.lift DESC LIMIT 25;
+
+// LearnedSynergyEvidence nodes (provenance trail)
+MATCH (ev:LearnedSynergyEvidence)
+RETURN ev.runId, ev.source, ev.lift, ev.pairWinRate,
+       ev.cardA, ev.cardB
+ORDER BY ev.lift DESC LIMIT 20;
+
+// Cards whose stats were updated
+MATCH (c:Card)
+WHERE c.gamesPlayed >= 3
+RETURN c.cardName, c.gamesPlayed, c.gamesWon, c.winRate
+ORDER BY c.winRate DESC LIMIT 25;
+
+// Count all dynamic edges (should be > 0 after enrichment)
+MATCH ()-[r:SYNERGIZES_WITH]->()
+RETURN count(r) AS synergy_edges;
+```

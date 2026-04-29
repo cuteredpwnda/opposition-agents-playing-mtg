@@ -256,6 +256,7 @@ async def run_priority_loop(
                     action,
                     reward=0.0,
                     done=game_state.game_over,
+                    game_state=game_state,
                     reasoning=reasoning,
                     agent_name=agent_name,
                 )

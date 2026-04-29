@@ -72,7 +72,14 @@ class SelfPlayCollector:
         # Store features temporarily; will be paired with the next action
         self._pending_features = features
 
-    def on_action(self, action: Action, reward: float = 0.0, done: bool = False) -> None:
+    def on_action(
+        self,
+        action: Action,
+        reward: float = 0.0,
+        done: bool = False,
+        game_state: "GameState | None" = None,
+        **kwargs,
+    ) -> None:
         """Record an action taken.
 
         Call this after an agent selects an action.
@@ -86,16 +93,31 @@ class SelfPlayCollector:
         if self.tokenizer is not None:
             action_encoding = self.tokenizer.encode_action(action)
 
+        # Resolve card name from game state when possible; fall back to the
+        # raw card_instance_id only if no state is available.
         card_name = None
         if hasattr(action, "card_instance_id") and action.card_instance_id:
-            card_name = action.card_instance_id
+            if game_state is not None:
+                card = next(
+                    (c for c in game_state.cards if c.instance_id == action.card_instance_id),
+                    None,
+                )
+                card_name = card.name if card is not None else None
+            # If no game_state, skip — instance IDs are useless for enrichment
+
+        # Use the enum value string (e.g. "CAST_SPELL") rather than the repr.
+        if hasattr(action, "action_type"):
+            at = action.action_type
+            action_type_str = at.value if hasattr(at, "value") else (at.name if hasattr(at, "name") else str(at))
+        else:
+            action_type_str = "unknown"
 
         transition = Transition(
             state_features=self._pending_features,
             action_encoding=action_encoding,
             reward=reward,
             done=done,
-            action_type=action.action_type.name if hasattr(action.action_type, "name") else str(action.action_type),
+            action_type=action_type_str,
             card_name=card_name,
         )
         self._current_transitions.append(transition)

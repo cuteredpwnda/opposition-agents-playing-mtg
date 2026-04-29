@@ -43,6 +43,19 @@ items stay for traceability.
 
 ### Done
 
+- [x] **JEPA stage 4+5 training run (40 games, 20 epochs, cuda)** — completed
+      `runs/bg_training_20260429_080748/` in 32 min. Built 201,653 transition
+      pairs from 80 trajectories. Prediction loss dropped from 1.36 → ~0.62
+      (epoch 0 fast phase) then stabilised ~1.00 by epoch 19. KL collapsed to
+      0 (posterior collapse — see KL annealing queue item). Checkpoint saved
+      at `checkpoints/jepa/jepa_final.pt` and `jepa_epoch_20.pt`.
+
+- [x] **Plain-language slide deck for non-technical audience** — added
+      `presentations/repo_for_girlfriend.tex` (simple Beamer overview with
+      diagrams plus embedded architecture image) and generated
+      `presentations/repo_for_girlfriend.pdf` locally. Added a targeted
+      `.gitignore` entry for that PDF artifact.
+
 - [x] **Append-only KG extension layer for self-play learning** — switched
       enrichment writes to evidence/event objects so deterministic graph facts
       remain untouched: `src/knowledge/knowledge_graph.py::add_synergy` now
@@ -380,6 +393,25 @@ _(none — pick from queue below)_
 _(empty — promote from medium)_
 
 ### Queue — Medium Priority
+
+- **JEPA KL annealing / free-bits constraint** — the stage-4/5 training run
+      (`runs/bg_training_20260429_080748/`) showed KL collapsing to 0 by epoch 19,
+      meaning the encoder bypasses the latent prior (posterior collapse).
+      Fix: add a free-bits lower bound (e.g. λ_free = 0.5 nats per dim) or a
+      KL-annealing schedule (warm-up over first N epochs) to
+      `src/world_model/training/train_jepa.py`. Verify with a short re-run
+      that `avg_kl` stays > 0.05 by epoch 10.
+
+- **Self-play collector: record card names in transitions** — all 80 existing
+      trajectories in `data/trajectories/` have `card_name=None` on every
+      `Transition`, and `action_type="unknown"` for all steps. Root cause:
+      `src/world_model/data_sources/self_play_collector.py` sets
+      `card_name = action.card_instance_id` (an instance UUID, not a card name)
+      and the action_type serialisation falls through to `str(...)`.
+      Fix: resolve `card_instance_id` → `GameState.get_card_instance(id).name`
+      and use `action.action_type.value` (or `.name`) consistently.
+      **Blocker for KG enrichment**: `scripts/run_kg_enrichment.py` finds
+      0 synergies until card names are populated; re-run self-play after fix.
 
 - **Expanded archived-checkpoint evaluation** — rerun
       `scripts/benchmark_trained_agents.py` on multiple JEPA checkpoints
