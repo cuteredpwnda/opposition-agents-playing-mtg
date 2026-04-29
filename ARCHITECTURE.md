@@ -11,6 +11,14 @@
 
 Build an adversarial MTG game engine where **LLM agents** play Magic against each other using a **tool-calling pattern**, informed by the best open-source MTG engines.
 
+## Collective Intelligence Goal
+
+The long-term architecture target is not only stronger individual agents, but
+shared intelligence across agents and runs. The knowledge graph acts as a
+shared memory substrate: each agent contributes evidence from games, and later
+agents consume that evidence to improve planning. This creates cumulative
+learning without mutating immutable card-source facts.
+
 ## Design Choices from RESEARCH.md
 
 This document tracks which architectural patterns we adopt from reference implementations and why.
@@ -173,6 +181,13 @@ Game Engine (rules_engine.py)
 1. **Combo Detection**: Query [Commander Spellbook](https://commanderspellbook.com/api/) for known combos
 2. **Threat Evaluation**: Score opponent's board for combo potential
 3. **Coordination**: Agents discuss via tool calls vs. pure tree search
+
+### Shared Graph Memory Loop
+
+1. Agents generate actions and outcomes in self-play.
+2. The enrichment layer extracts synergies/outcome statistics.
+3. Evidence is stored as append-only extension nodes with run-level provenance.
+4. Agents in later runs query these learned edges as additional priors.
 
 ---
 

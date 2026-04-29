@@ -105,6 +105,13 @@ state (opponent hands and library order).  Concretely:
 A self-contained derivation is in \S\ref{sec:tech-foundations}.  See
 also the corresponding section in the companion paper.
 
+The same formal stack also supports a collective-intelligence workflow:
+different agent families generate trajectories, those trajectories are
+mined into append-only KG evidence with provenance, and later agents use
+that shared graph memory as an additional prior. This separates immutable
+card facts from learned strategic evidence while allowing cumulative
+cross-agent learning across runs.
+
 % =========================================================================
 \section{The contract every agent satisfies}
 \label{sec:contract}

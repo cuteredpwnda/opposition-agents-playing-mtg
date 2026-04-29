@@ -25,6 +25,7 @@
 13. [The Knowledge Graph as Long-Term Semantic Memory](#13-kg-as-long-term-memory)
 14. [Transfer Learning: Standard → Commander](#14-transfer-learning)
 15. [Remote Deployment](#15-remote-deployment)
+16. [Collective Intelligence Through Shared Graph Memory](#16-collective-intelligence-through-shared-graph-memory)
 
 ---
 
@@ -1016,3 +1017,17 @@ The base `docker-compose.yml` provides Neo4j. The `docker-compose.remote.yml` ov
 - Shared volume mounts for checkpoints and data
 
 For GPU-accelerated training, uncomment the `deploy.resources` sections in `docker-compose.remote.yml`.
+
+---
+
+## 16. Collective Intelligence Through Shared Graph Memory
+
+One useful way to read this system is as a collective-intelligence pipeline:
+
+1. Many different agents (heuristic, world-model, active-inference, LLM-fusion) play under the same rules engine.
+2. Their decisions and outcomes are logged as structured trajectories.
+3. The KG enrichment pass mines repeated card-pair patterns and outcome links.
+4. Learned evidence is appended to the graph with provenance (run ID, source, timestamps), instead of overwriting base card facts.
+5. New agents query this enriched graph and inherit strategic priors discovered by previous agents.
+
+In other words: the graph becomes a shared strategic memory for the whole agent population, not just a static ontology.

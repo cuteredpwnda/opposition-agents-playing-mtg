@@ -44,6 +44,13 @@ cp .env.example .env
 # Edit .env with your settings
 ```
 
+### Generated Environment Snapshots
+
+Training utilities can emit root-level environment snapshots such as
+`environment*.json` and `requirements_frozen*.txt`. These are local runtime
+artifacts and should not be committed. Keep them deleted between runs unless
+you are actively debugging reproducibility for a specific experiment.
+
 ## Server Deployment
 
 For production LLM agent execution, deploy as a containerized service:

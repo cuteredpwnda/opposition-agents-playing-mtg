@@ -38,6 +38,19 @@ the game state — only the rules engine mutates it.
 | `ActiveInferenceAgent` | `src/agents/active_inference_agent.py` | Maintains a Bayesian belief over hidden information (opponent hand, library top) and minimises expected free energy. |
 | `HierarchicalAgent` | `src/agents/hierarchical_agent.py` | High-level "plan" (e.g. *race*, *stabilise*, *combo*) selected by an outer policy; low-level move chosen by an inner policy. |
 
+## Collective Intelligence Layer
+
+The agent zoo is designed to write into and read from one shared strategic
+memory: the knowledge graph extension layer.
+
+- Individual agents stay side-effect free on `GameState`.
+- Self-play traces are post-processed into graph evidence.
+- Learned evidence is append-only and provenance-tagged.
+- Later agents query these learned relations as priors.
+
+This yields cumulative cross-agent learning while preserving rules-engine
+determinism and immutable source card data.
+
 ## Running games — the easy way
 
 The fastest way to watch agents play is the EDH pod sim:
