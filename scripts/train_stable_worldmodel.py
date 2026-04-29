@@ -70,7 +70,7 @@ def _stable_jepa_forward(self, batch: dict, stage: str) -> dict[str, torch.Tenso
         kg_embedding_t=kg_t,
         kg_embedding_next=kg_next,
     )
-    prefix = "train" if stage.startswith("train") else stage
+    prefix = "train" if stage in {"fit", "train"} or stage.startswith("train") else stage
     return {
         "loss": losses["total"],
         f"{prefix}/total": losses["total"],
@@ -106,18 +106,56 @@ class MetricsCSVCallback(pl.Callback):
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.csv_path = self.output_dir / "metrics.csv"
+        self.metric_keys = ("train/total", "train/prediction", "train/kl")
+        self._epoch_sums: dict[str, float] = {}
+        self._epoch_counts: dict[str, int] = {}
         # Write header
         with open(self.csv_path, "w", newline="") as f:
             writer = csv.writer(f)
             writer.writerow(["epoch", "train/total", "train/prediction", "train/kl"])
 
+    def _reset_epoch_accumulators(self) -> None:
+        self._epoch_sums = {key: 0.0 for key in self.metric_keys}
+        self._epoch_counts = {key: 0 for key in self.metric_keys}
+
+    def _to_float(self, value: object) -> float:
+        if isinstance(value, torch.Tensor):
+            return float(value.detach().float().mean().item())
+        return float(value)
+
+    def on_train_epoch_start(self, trainer: pl.Trainer, pl_module) -> None:
+        self._reset_epoch_accumulators()
+
+    def on_train_batch_end(
+        self,
+        trainer: pl.Trainer,
+        pl_module,
+        outputs,
+        batch,
+        batch_idx: int,
+    ) -> None:
+        if not isinstance(outputs, dict):
+            return
+
+        for key in self.metric_keys:
+            if key not in outputs:
+                continue
+            value = self._to_float(outputs[key])
+            self._epoch_sums[key] += value
+            self._epoch_counts[key] += 1
+
     def on_train_epoch_end(self, trainer: pl.Trainer, pl_module) -> None:
-        metrics = trainer.callback_metrics
         epoch = int(trainer.current_epoch)
 
-        train_total = float(metrics.get("train/total", float("nan")))
-        train_pred = float(metrics.get("train/prediction", float("nan")))
-        train_kl = float(metrics.get("train/kl", float("nan")))
+        def _avg(metric_key: str) -> float:
+            count = self._epoch_counts[metric_key]
+            if count == 0:
+                return float("nan")
+            return self._epoch_sums[metric_key] / count
+
+        train_total = _avg("train/total")
+        train_pred = _avg("train/prediction")
+        train_kl = _avg("train/kl")
 
         with open(self.csv_path, "a", newline="") as f:
             writer = csv.writer(f)
