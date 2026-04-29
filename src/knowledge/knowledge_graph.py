@@ -215,20 +215,13 @@ class MTGKnowledgeGraph:
     # Synergy & counter-play queries
     # -----------------------------------------------------------------------
 
-        @staticmethod
-        def _default_run_id(prefix: str = "kg_extension") -> str:
-                """Generate a stable-ish run identifier for extension evidence writes."""
-                ts = datetime.now(tz=timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-                return f"{prefix}_{ts}"
-
-    async def get_synergies_for(self, card_name: str) -> list[dict[str, Any]]:
+        async def get_synergies_for(self, card_name: str) -> list[dict[str, Any]]:
                 """Find cards that synergize with a given card.
 
-                Returns a union of:
-                - deterministic base graph edges (:SYNERGIZES_WITH)
-                - learned extension evidence (:LearnedSynergyEvidence events)
+                Returns a union of deterministic base edges and learned extension
+                evidence events.
                 """
-        query = """
+                query = """
                 CALL {
                     MATCH (c:Card {cardName: $card_name})-[s:SYNERGIZES_WITH]-(other:Card)
                     RETURN other.cardName AS card,
@@ -263,8 +256,8 @@ class MTGKnowledgeGraph:
                                  ELSE head(descs)
                              END AS description
                 ORDER BY strength DESC, evidence DESC
-        """
-        return await self._run_query(query, card_name=card_name)
+                """
+                return await self._run_query(query, card_name=card_name)
 
     async def get_answers_to(self, card_name: str) -> list[dict[str, Any]]:
         """Find cards that counter/answer a given card."""
@@ -387,7 +380,8 @@ class MTGKnowledgeGraph:
         base :SYNERGIZES_WITH edges.
         """
         if run_id is None:
-            run_id = self._default_run_id(prefix="synergy")
+            ts = datetime.now(tz=timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+            run_id = f"synergy_{ts}"
         metadata = metadata or {}
         query = """
         MATCH (a:Card {cardName: $card_a})
@@ -427,7 +421,8 @@ class MTGKnowledgeGraph:
         properties are left untouched.
         """
         if run_id is None:
-            run_id = self._default_run_id(prefix="card_stats")
+            ts = datetime.now(tz=timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+            run_id = f"card_stats_{ts}"
         metadata = metadata or {}
         query = """
         MATCH (c:Card {cardName: $card_name})
