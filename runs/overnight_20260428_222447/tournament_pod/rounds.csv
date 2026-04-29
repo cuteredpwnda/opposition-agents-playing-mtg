@@ -6,3 +6,4 @@ round,game,seating,winner_agent,turns,elapsed_sec,log_path,error
 5,5,"[""kg_heuristic"", ""random"", ""heuristic"", ""llm_fusion""]",llm_fusion,27,551.85,runs\overnight_20260428_222447\tournament_pod\logs\game_0005.log,
 6,6,"[""kg_heuristic"", ""llm_fusion"", ""random"", ""heuristic""]",random,13,414.64,runs\overnight_20260428_222447\tournament_pod\logs\game_0006.log,
 7,7,"[""heuristic"", ""llm_fusion"", ""kg_heuristic"", ""random""]",kg_heuristic,39,5636.15,runs\overnight_20260428_222447\tournament_pod\logs\game_0007.log,
+8,8,"[""llm_fusion"", ""random"", ""kg_heuristic"", ""heuristic""]",kg_heuristic,25,1098.15,runs\overnight_20260428_222447\tournament_pod\logs\game_0008.log,

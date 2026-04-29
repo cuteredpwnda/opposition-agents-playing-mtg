@@ -1,0 +1,5 @@
+rank,agent,points,wins,losses,games
+1,kg_heuristic,11.0,3,3,8
+2,random,8.0,2,4,8
+3,llm_fusion,5.0,1,5,8
+4,heuristic,2.0,0,6,8

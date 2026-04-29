@@ -14,7 +14,7 @@
     sym/.style ={box, fill=blue!10,    minimum width=3.6cm},
     learn/.style={box, fill=orange!18, minimum width=3.6cm, font=\scriptsize},
     agent/.style={box, fill=green!12,  minimum width=2.6cm, font=\scriptsize},
-    grp/.style ={draw=black!50, dashed, rounded corners=4pt, inner sep=10pt},
+      grp/.style ={draw=black!35, dashed, rounded corners=4pt, inner sep=10pt},
     flow/.style={->, semithick, blue!55!black},
     twoway/.style={<->, semithick, gray!70!black},
     backflow/.style={->, semithick, dashed, red!65!black},
@@ -64,22 +64,22 @@
   % x=2.3, then up/down to the row of their target anchor, then east
   % into the symbolic substrate. Two right angles per path.
   \draw[flow] (scry.east)  -- (2.3,  3.6) -- (2.3,  3.0) -- ([yshift= 0.6cm]kg.west)
-              node[elabel, pos=0.85]{cards};
+              node[elabel, pos=0.83, above=1pt]{cards};
   \draw[flow] (sb.east)    -- (2.3,  1.2) -- (2.3,  1.8) -- ([yshift=-0.6cm]kg.west)
-              node[elabel, pos=0.85]{combos};
+              node[elabel, pos=0.83, above=1pt]{combos};
   \draw[flow] (rules.east) -- (2.3, -1.2) -- (2.3,  0.6) -- ([yshift= 0.6cm]eng.west)
-              node[elabel, pos=0.85]{rules};
+              node[elabel, pos=0.82, above=1pt]{rules};
   \draw[flow] (decks.east) -- (2.3, -3.6) -- (2.3, -0.6) -- ([yshift=-0.6cm]eng.west)
-              node[elabel, pos=0.85]{game cfg};
+              node[elabel, pos=0.80, above=1pt]{game cfg};
 
   % ---- engine <-> KG (lookup) -----------------------------------------
-  \draw[twoway] (kg.south) -- node[elabel]{card lookup} (eng.north);
+      \draw[twoway] (kg.south) -- node[elabel, xshift=-2pt]{card lookup} (eng.north);
 
   % ---- engine -> replay buffer ----------------------------------------
   \draw[flow] (eng.south) -- node[elabel]{$(s_t,a_t,r_t)$} (rb.north);
 
   % ---- training: replay -> M; KG -> V ---------------------------------
-  \draw[flow] (rb.east) -- ++(0.4,0) |- node[elabel,pos=0.78]{train} (M.west);
+      \draw[flow] (rb.east) -- ++(0.4,0) |- node[elabel,pos=0.74, above=1pt]{train} (M.west);
   \draw[flow] (kg.east) -- (V.west);
 
   % ---- agent decide_action loop -- routed in the COLUMN GAP between the
@@ -98,7 +98,7 @@
   \draw[flow]
       (eng.north east) -- (engNEgap)
       -- (7.2, 4.6) -- (14.0, 4.6)
-      node[elabel, pos=0.55, above=1pt]{state, legal\_actions}
+        node[elabel, pos=0.55, above=2pt]{state, legal\_actions}
       -- (a1.north);
 
   % agent -> engine (action):
@@ -107,7 +107,7 @@
   \draw[backflow]
       (a6.south) -- (14.0,-4.6)
       -- (7.2,-4.6)
-      node[elabel, pos=0.55, below=1pt]{action}
+        node[elabel, pos=0.55, below=2pt]{action}
       -- (engSEgap)
       -- (eng.south east);
 

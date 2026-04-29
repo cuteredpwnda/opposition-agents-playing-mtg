@@ -1,0 +1,51 @@
+{
+  "mode": "pod",
+  "format": "commander",
+  "rounds": 8,
+  "agents": [
+    "random",
+    "heuristic",
+    "kg_heuristic",
+    "llm_fusion"
+  ],
+  "decks": [
+    "data\\decks\\edh\\krenko-mob-boss_core.txt",
+    "data\\decks\\edh\\atraxa-praetors-voice_core.txt",
+    "data\\decks\\edh\\urza-lord-high-artificer_core.txt",
+    "data\\decks\\edh\\meren-of-clan-nel-toth_core.txt"
+  ],
+  "standings": [
+    {
+      "rank": 1,
+      "agent": "kg_heuristic",
+      "points": 11.0,
+      "wins": 3,
+      "losses": 3,
+      "games": 8
+    },
+    {
+      "rank": 2,
+      "agent": "random",
+      "points": 8.0,
+      "wins": 2,
+      "losses": 4,
+      "games": 8
+    },
+    {
+      "rank": 3,
+      "agent": "llm_fusion",
+      "points": 5.0,
+      "wins": 1,
+      "losses": 5,
+      "games": 8
+    },
+    {
+      "rank": 4,
+      "agent": "heuristic",
+      "points": 2.0,
+      "wins": 0,
+      "losses": 6,
+      "games": 8
+    }
+  ]
+}
