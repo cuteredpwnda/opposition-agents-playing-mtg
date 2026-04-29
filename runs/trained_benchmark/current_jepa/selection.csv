@@ -1,0 +1,2 @@
+checkpoint,expected_free_energy,pragmatic_value,epistemic_value,latency_cost,horizon_cost,loss_cost
+checkpoints\jepa\jepa_final.pt,-0.1555,0.5,0.5,1.505,8.375,0.0

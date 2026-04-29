@@ -1,0 +1,5 @@
+checkpoint,baseline,win_rate,avg_turns,avg_elapsed_sec,games
+checkpoints\jepa\jepa_final.pt,heuristic,0.5,7.25,1.11,4
+checkpoints\jepa\jepa_final.pt,random,0.5,8.25,1.12,4
+checkpoints\jepa\jepa_final.pt,llm,0.5,10.75,2.828,4
+checkpoints\jepa\jepa_final.pt,active_inference,0.5,7.25,0.963,4

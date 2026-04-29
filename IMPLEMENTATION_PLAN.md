@@ -1,7 +1,7 @@
 # Implementation Plan — Single Source of Truth
 
 > **opposition-agents-playing-mtg**
-> Last updated: 2026-04-28
+> Last updated: 2026-04-29
 
 This document is the **single source of truth** for what has been implemented,
 what is in progress, and what remains. It supersedes the phase descriptions in
@@ -43,6 +43,30 @@ items stay for traceability.
 
 ### Done
 
+- [x] **Archived JEPA checkpoint verified + smoke benchmark run** — confirmed
+      on-disk JEPA weights under `checkpoints/jepa/` (`jepa_epoch_10.pt` …
+      `jepa_epoch_60.pt`, `jepa_final.pt`) and ran
+      `scripts/benchmark_trained_agents.py` against
+      `checkpoints/jepa/jepa_final.pt`. Smoke result at
+      `runs/trained_benchmark/current_jepa/`: 50% win rate over 4 games each
+      versus `heuristic`, `random`, `llm`, and `active_inference`, so the
+      archived checkpoint is usable but not yet clearly stronger than the
+      fixed baselines.
+
+- [x] **Checkpoint benchmark + active-inference selector scaffold** — added
+      `scripts/benchmark_trained_agents.py` to compare checkpointed
+      `world_model` agents against fixed baselines (`heuristic`, `random`,
+      `llm`, `active_inference`) and
+      `src/training/world_model_selection.py` to rank checkpoints by an
+      active-inference-inspired score over pragmatic value (win rate),
+      epistemic value (robustness across baselines), and compute cost.
+      Focused tests in `tests/test_world_model_selection.py` pass.
+- [x] **Paper reframed toward scientific claims** — rewrote the paper's
+      contribution list and implementation discussion in
+      `paper/opposition_agents_mtg.tex` to reduce code-inventory detail,
+      explicitly state that a clean trained-checkpoint-vs-baseline benchmark
+      has not yet been run from archived checkpoints, and promote
+      active-inference-based checkpoint selection to a named future-work item.
 - [x] **Fix LLM/WM agents auto-conceding on turn 1** — both
       `src/agents/llm_agent.py::OllamaAgent.decide_action` and
       `src/agents/world_model_agent.py::WorldModelAgent.decide_action` now
@@ -343,6 +367,12 @@ _(none — pick from queue below)_
 _(empty — promote from medium)_
 
 ### Queue — Medium Priority
+
+- **Expanded archived-checkpoint evaluation** — rerun
+      `scripts/benchmark_trained_agents.py` on multiple JEPA checkpoints
+      (`jepa_epoch_10.pt` … `jepa_final.pt`) with a larger game budget and update
+      `paper/opposition_agents_mtg.tex` once the result is statistically more
+      informative than the current 4-game smoke run.
 
 - **Deck-Builder Agent (Phase G)** — self-improving brewer that builds,
   playtests, and adapts decks via world-model + KG scoring. See
