@@ -53,6 +53,14 @@ class JEPAPredictorConfig:
         jepa_beta:       Weight of the Gaussian KL regularizer.
                          This is the *one* hyperparameter in LeWM.
                          Typical range: 0.1 – 2.0. Start with 1.0.
+        free_bits:       Per-dimension lower bound (in nats) on the KL
+                         contribution. Each latent dimension is clamped to
+                         contribute at least ``free_bits`` to the KL loss
+                         before β is applied. Prevents posterior collapse
+                         (KL → 0 with vanishing per-dim variance) by giving
+                         the prior a "free" budget the encoder doesn't have
+                         to fight. ``0.0`` disables (vanilla VAE behaviour).
+                         Typical range: 0.1 – 1.0 nats/dim. Start with 0.5.
     """
 
     latent_dim: int = 256
@@ -63,6 +71,7 @@ class JEPAPredictorConfig:
     use_transformer: bool = True
     dropout: float = 0.1
     jepa_beta: float = 1.0
+    free_bits: float = 0.0
 
 
 class JEPAPredictor(nn.Module):
@@ -184,10 +193,20 @@ class JEPAPredictor(nn.Module):
 
         prediction_loss = F.mse_loss(z_hat_next, target)
 
-        # Gaussian KL divergence: KL( N(mu, exp(logvar)) || N(0, I) )
-        kl_loss = -0.5 * torch.mean(
-            1.0 + logvar - mu.pow(2) - logvar.exp()
-        )
+        # Per-dimension Gaussian KL: KL( N(mu, exp(logvar)) || N(0, I) )
+        # Shape: (B, latent_dim)
+        kl_per_dim = -0.5 * (1.0 + logvar - mu.pow(2) - logvar.exp())
+
+        if self.config.free_bits > 0.0:
+            # Free-bits: each latent dim gets a "free" KL budget. Below the
+            # floor, the dim contributes the floor (no gradient incentive to
+            # shrink further); above, it contributes its actual KL. Average
+            # over batch first, then clamp per-dim, then sum.
+            kl_per_dim_avg = kl_per_dim.mean(dim=0)              # (latent_dim,)
+            kl_clamped = torch.clamp(kl_per_dim_avg, min=self.config.free_bits)
+            kl_loss = kl_clamped.sum() / kl_per_dim_avg.numel()  # mean nats/dim
+        else:
+            kl_loss = kl_per_dim.mean()
 
         total = prediction_loss + self.config.jepa_beta * kl_loss
 

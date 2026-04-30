@@ -78,13 +78,25 @@ class TransitionPairDataset(Dataset):
             for i in range(len(transitions) - 1):
                 t_now = transitions[i]
                 t_next = transitions[i + 1]
+                # Visible cards: prefer metadata.visible_cards (collector-
+                # captured board snapshot); fall back to the per-transition
+                # card_name so legacy/lean trajectories still feed the KG
+                # encoder a single anchor instead of an empty list.
+                meta_now = t_now.metadata or {}
+                meta_next = t_next.metadata or {}
+                cards_now = list(meta_now.get("visible_cards") or [])
+                cards_next = list(meta_next.get("visible_cards") or [])
+                if not cards_now and t_now.card_name:
+                    cards_now = [t_now.card_name]
+                if not cards_next and t_next.card_name:
+                    cards_next = [t_next.card_name]
                 self.pairs.append({
                     "features_t": t_now.state_features,       # dict[str, np.ndarray]
                     "action_t": t_now.action_encoding,        # np.ndarray (136,)
                     "features_next": t_next.state_features,
                     "card_name_t": t_now.card_name,           # str | None
-                    "metadata_t": t_now.metadata or {},
-                    "metadata_next": t_next.metadata or {},
+                    "visible_cards": cards_now,
+                    "visible_cards_next": cards_next,
                 })
 
         logger.info("Built %d transition pairs from %d trajectories",
@@ -101,8 +113,8 @@ class TransitionPairDataset(Dataset):
             "action_t": torch.from_numpy(pair["action_t"]).float(),
             "features_next": {k: torch.from_numpy(v).float()
                               for k, v in pair["features_next"].items()},
-            "card_names": pair["metadata_t"].get("visible_cards", []),
-            "card_names_next": pair["metadata_next"].get("visible_cards", []),
+            "card_names": pair["visible_cards"],
+            "card_names_next": pair["visible_cards_next"],
         }
 
 

@@ -56,6 +56,7 @@ class SelfPlayCollector:
         self._current_transitions = []
         self._current_game_id = str(uuid.uuid4())[:8]
         self._pending_features = None
+        self._pending_metadata: dict = {}
 
     def on_state(self, game_state: GameState, player_id: int) -> None:
         """Record a game state observation.
@@ -71,6 +72,42 @@ class SelfPlayCollector:
         features = self.tokenizer.encode_state(game_state, player_id)
         # Store features temporarily; will be paired with the next action
         self._pending_features = features
+
+        # Snapshot the visible board (controller's hand + every battlefield)
+        # so KG-context encoders can build per-step embeddings during JEPA
+        # training. We keep it bounded to avoid huge metadata blobs.
+        try:
+            from ...engine.game_state import Zone
+
+            visible: list[str] = []
+            seen: set[str] = set()
+            # Public zones first
+            for c in game_state.cards:
+                if c.zone in (Zone.BATTLEFIELD, Zone.STACK,
+                              Zone.GRAVEYARD, Zone.EXILE,
+                              Zone.COMMAND_ZONE):
+                    name = getattr(c, "name", None)
+                    if name and name not in seen:
+                        seen.add(name)
+                        visible.append(name)
+            # Plus the controller's hand (hidden info, but legal at training)
+            controller = None
+            if 0 <= player_id < len(game_state.players):
+                controller = game_state.players[player_id].player_id
+            if controller is not None:
+                for c in game_state.cards:
+                    if c.zone == Zone.HAND and c.controller_id == controller:
+                        name = getattr(c, "name", None)
+                        if name and name not in seen:
+                            seen.add(name)
+                            visible.append(name)
+            self._pending_metadata = {
+                "visible_cards": visible[:64],   # cap to keep batches bounded
+                "phase": getattr(game_state, "phase", None),
+                "turn": getattr(game_state, "turn_number", None),
+            }
+        except Exception:  # never let metadata bookkeeping break collection
+            self._pending_metadata = {}
 
     def on_action(
         self,
@@ -105,10 +142,10 @@ class SelfPlayCollector:
                 card_name = card.name if card is not None else None
             # If no game_state, skip — instance IDs are useless for enrichment
 
-        # Use the enum value string (e.g. "CAST_SPELL") rather than the repr.
+        # Use the enum name (e.g. "CAST_SPELL") rather than the auto() int value.
         if hasattr(action, "action_type"):
             at = action.action_type
-            action_type_str = at.value if hasattr(at, "value") else (at.name if hasattr(at, "name") else str(at))
+            action_type_str = at.name if hasattr(at, "name") else (at.value if hasattr(at, "value") else str(at))
         else:
             action_type_str = "unknown"
 
@@ -119,9 +156,11 @@ class SelfPlayCollector:
             done=done,
             action_type=action_type_str,
             card_name=card_name,
+            metadata=dict(self._pending_metadata),
         )
         self._current_transitions.append(transition)
         self._pending_features = None
+        self._pending_metadata = {}
 
     def finish_game(self, winner: int | None = None, num_turns: int = 0):
         """Finalize the current game and return the trajectory.

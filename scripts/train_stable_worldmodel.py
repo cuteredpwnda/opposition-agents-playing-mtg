@@ -189,6 +189,13 @@ def main():
     parser.add_argument("--checkpoint", type=str, default="checkpoints/stable_worldmodel.pt")
     parser.add_argument("--output-dir", type=str, default=None, help="Output directory for metrics and logs (default: auto-generated timestamp)")
     parser.add_argument("--jepa-beta", type=float, default=1.0)
+    parser.add_argument(
+        "--free-bits",
+        type=float,
+        default=0.5,
+        help="Per-latent-dim KL floor (nats). Prevents posterior collapse. "
+             "0.0 = vanilla VAE behaviour. Recommended: 0.5.",
+    )
     parser.add_argument("--no-kg", action="store_true")
     parser.add_argument("--kg-embed-dim", type=int, default=128)
     args = parser.parse_args()
@@ -213,6 +220,7 @@ def main():
         latent_dim=encoder_cfg.latent_dim,
         action_dim=136,
         jepa_beta=args.jepa_beta,
+        free_bits=args.free_bits,
     )
     world_model = WorldModel(
         WorldModelConfig(

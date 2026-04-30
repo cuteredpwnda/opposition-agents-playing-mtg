@@ -429,6 +429,41 @@ items stay for traceability.
       the rest of the exiled cards on the bottom of the library
       deterministically. Tests: `tests/test_cascade.py` (3 tests).
 
+- [x] **JEPA free-bits / KL-floor against posterior collapse** —
+      added `free_bits: float = 0.0` to `JEPAPredictorConfig` and rewrote
+      `JEPAPredictor.jepa_loss` to compute per-dimension KL, batch-average
+      it, clamp to the configured floor (default 0.5 nats/dim), then sum
+      and normalise. `scripts/train_stable_worldmodel.py` exposes
+      `--free-bits 0.5` (default). 5-epoch smoke run shows `train/kl`
+      stable at 0.5 instead of collapsing toward 0 as in
+      `runs/bg_training_20260429_080748/`.
+
+- [x] **Self-play collector populates `card_name` + `metadata.visible_cards`
+      + readable `action_type`** — `SelfPlayCollector` now resolves
+      `card_instance_id → CardInstance.name`, snapshots the visible-card set
+      (battlefield + stack + graveyard + exile + command zone + controller
+      hand, deduplicated and capped at 64) into `Transition.metadata` on
+      every `on_state(...)`, and emits `action_type` as the enum *name*
+      (e.g. `"CAST_SPELL"`) rather than the `auto()` integer value.
+      `TransitionPairDataset` consumes `metadata["visible_cards"]` and
+      falls back to `[card_name]` for legacy traces, so the existing
+      80-trajectory store still trains. Smoke verified end-to-end via a
+      synthetic 2-player `GameState` with one cast + one pass.
+
+- [x] **`scripts/weekend_campaign.ps1` driver** — single-command
+      orchestrator for the long-running ablation suite that produces the
+      paper's results section. Three streams: A (matchups: 1v1 round
+      robin among 7 agents, 4-player EDH pod, 5-seed robustness), B
+      (4 JEPA training variants — `full`, `no_kg`, `no_kl`, `small` —
+      followed by `benchmark_trained_agents.py` against fixed baselines),
+      C (LLM-model sweep: `llama3.2:1b`, `qwen2.5-coder:1.5b`,
+      `gemma3:4b` via `OLLAMA_MODEL` env var). Each cell tees stdout to
+      its own log under `runs/weekend/<cell>/run.log`; per-cell failures
+      do not abort the campaign. Pre-flight regenerates trajectories
+      with `scripts/train_pipeline.py --stage 4 --end-stage 4`. Use
+      `-DryRun` to preview, `-Stream A|B|C|AB|BC|ABC` to subset,
+      `-SkipTrajectories` if `data/trajectories/` is already fresh.
+
 ### In progress
 
 _(none — pick from queue below)_
@@ -439,24 +474,16 @@ _(empty — promote from medium)_
 
 ### Queue — Medium Priority
 
-- **JEPA KL annealing / free-bits constraint** — the stage-4/5 training run
-      (`runs/bg_training_20260429_080748/`) showed KL collapsing to 0 by epoch 19,
-      meaning the encoder bypasses the latent prior (posterior collapse).
-      Fix: add a free-bits lower bound (e.g. λ_free = 0.5 nats per dim) or a
-      KL-annealing schedule (warm-up over first N epochs) to
-      `src/world_model/training/train_jepa.py`. Verify with a short re-run
-      that `avg_kl` stays > 0.05 by epoch 10.
+- **Regenerate `data/trajectories/` with B2-aware self-play** — the current
+      80 trajectories pre-date the collector fix and only carry `card_name`
+      (no `metadata.visible_cards`). The dataset has a fallback to a single
+      `[card_name]` list, but a fresh run is needed to populate the full
+      visible-card set (battlefield+stack+graveyard+exile+command+hand) and
+      to unblock `scripts/run_kg_enrichment.py` returning > 0 synergies.
+      Driver: `scripts/weekend_campaign.ps1` runs this as the pre-flight
+      step before Stream B (or skip with `-SkipTrajectories`).
 
-- **Self-play collector: record card names in transitions** — all 80 existing
-      trajectories in `data/trajectories/` have `card_name=None` on every
-      `Transition`, and `action_type="unknown"` for all steps. Root cause:
-      `src/world_model/data_sources/self_play_collector.py` sets
-      `card_name = action.card_instance_id` (an instance UUID, not a card name)
-      and the action_type serialisation falls through to `str(...)`.
-      Fix: resolve `card_instance_id` → `GameState.get_card_instance(id).name`
-      and use `action.action_type.value` (or `.name`) consistently.
-      **Blocker for KG enrichment**: `scripts/run_kg_enrichment.py` finds
-      0 synergies until card names are populated; re-run self-play after fix.
+- **Expanded archived-checkpoint evaluation** — rerun
 
 - **Expanded archived-checkpoint evaluation** — rerun
       `scripts/benchmark_trained_agents.py` on multiple JEPA checkpoints
