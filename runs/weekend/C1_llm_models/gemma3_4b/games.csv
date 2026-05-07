@@ -1,0 +1,9 @@
+game,format,winner_seat,winner_agent,winner_deck,turns,elapsed_sec,seats,decks,error
+1,standard,player1,ollama,modern_mono_red_burn,5,1.31,"{""player1"": ""ollama"", ""player2"": ""heuristic""}","{""player1"": ""modern_mono_red_burn"", ""player2"": ""modern_azorius_control""}",
+2,standard,player1,ollama,modern_mono_red_burn,16,2.28,"{""player1"": ""ollama"", ""player2"": ""heuristic""}","{""player1"": ""modern_mono_red_burn"", ""player2"": ""modern_azorius_control""}",
+3,standard,player1,ollama,modern_mono_red_burn,7,2.28,"{""player1"": ""ollama"", ""player2"": ""heuristic""}","{""player1"": ""modern_mono_red_burn"", ""player2"": ""modern_azorius_control""}",
+4,standard,player1,ollama,modern_mono_red_burn,5,0.26,"{""player1"": ""ollama"", ""player2"": ""heuristic""}","{""player1"": ""modern_mono_red_burn"", ""player2"": ""modern_azorius_control""}",
+5,standard,player1,heuristic,modern_mono_red_burn,8,0.31,"{""player1"": ""heuristic"", ""player2"": ""ollama""}","{""player1"": ""modern_mono_red_burn"", ""player2"": ""modern_azorius_control""}",
+6,standard,player1,heuristic,modern_mono_red_burn,5,0.2,"{""player1"": ""heuristic"", ""player2"": ""ollama""}","{""player1"": ""modern_mono_red_burn"", ""player2"": ""modern_azorius_control""}",
+7,standard,player1,heuristic,modern_mono_red_burn,6,1.02,"{""player1"": ""heuristic"", ""player2"": ""ollama""}","{""player1"": ""modern_mono_red_burn"", ""player2"": ""modern_azorius_control""}",
+8,standard,player1,heuristic,modern_mono_red_burn,4,0.18,"{""player1"": ""heuristic"", ""player2"": ""ollama""}","{""player1"": ""modern_mono_red_burn"", ""player2"": ""modern_azorius_control""}",

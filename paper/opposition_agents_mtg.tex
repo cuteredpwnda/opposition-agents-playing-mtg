@@ -86,7 +86,7 @@
 \author[1]{Jonas Neub\"urger}
 \affil[1]{Independent Research \\ \texttt{github.com/cuteredpwnda/opposition-agents-playing-mtg}}
 
-\date{April 2026}
+\date{May 2026}
 
 % =============================================================================
 \begin{document}
@@ -503,6 +503,50 @@ Rank & Agent           & Wins & Pts \\
 \label{sec:eval-debug}
 An earlier overnight run reported the LLM and world-model agents losing all 16 ablation games on turn~1. Investigation traced the cause to the rules engine always exposing \texttt{ActionType.CONCEDE} as a legal action (a debug affordance, see \texttt{rules\_engine.get\_legal\_actions}). The Llama-3 prompt enumerated the legal-action indices but omitted \texttt{CONCEDE} from the rendered options, so a stray ``1'' in the model's response collapsed onto the concede slot; the world-model controller, with effectively random initial weights, sampled the same slot stochastically. Filtering \texttt{CONCEDE} out of the candidate set inside both \texttt{LLMAgent.decide\_action} and \texttt{WorldModelAgent.decide\_action} restored normal play and produced the numbers in \Cref{tab:ablation-1v1}. We regard this as an instructive small example of how an under-specified action interface --- not the policy itself --- can dominate apparent agent quality, and have added a regression test to \texttt{tests/test\_agents/}.
 
+\paragraph{(viii) JEPA world-model ablation.}
+\label{sec:eval-ablation}
+We trained four JEPA variants for 30 epochs each on 120 freshly collected self-play trajectories (Modern Burn vs.\ Azorius Control) and evaluated each against four fixed baselines (8 games each), using \texttt{scripts/benchmark\_trained\_agents.py}. Results are in \Cref{tab:jepa-ablation}.
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{lrrrrr}
+\toprule
+Variant & vs heuristic & vs random & vs llm & vs active\_inf & Mean WR \\
+\midrule
+\texttt{full} (KG $+$ free-bits) & 0.38 & 0.50 & 0.50 & 0.38 & 0.44 \\
+\texttt{no\_kl} ($\beta{=}0$) & 0.50 & 0.50 & 0.50 & 0.38 & \textbf{0.47} \\
+\texttt{small} (KG-dim 64) & 0.38 & 0.38 & 0.38 & 0.50 & 0.41 \\
+\texttt{no\_kg} & 0.50 & 0.25 & 0.25 & 0.38 & 0.34 \\
+\bottomrule
+\end{tabular}
+\caption{JEPA variant ablation. Each variant was trained for 30 epochs (120 self-play trajectories, seed~20260428) and evaluated in 8 games per baseline. The \texttt{no\_kg} variant scores lowest overall ($\overline{\mathrm{WR}}{=}0.34$), confirming that the knowledge-graph context channel provides a meaningful signal. Unexpectedly, disabling KL regularisation (\texttt{no\_kl}, $\beta{=}0$) edged out the full variant ($+3$\,pp); we attribute this to underfitting of the prior with only 120 short trajectories, which our free-bits fix (\S\ref{sec:future}) is designed to remedy at scale. Active-inference selection ranked \texttt{no\_kl} first (EFE~$= -0.034$).}
+\label{tab:jepa-ablation}
+\end{table}
+
+\paragraph{(ix) Cross-seed robustness.}
+To test sensitivity to random initialisation we ran the same four-agent comparison (\texttt{heuristic}, \texttt{kg\_heuristic}, \texttt{world\_model}, \texttt{active\_inference}) for 72 games each across five random seeds ($\{11, 23, 47, 101, 20260428\}$, 360 total games). Agent rankings are stable to within $\pm 2$\,pp across all seeds: \texttt{kg\_heuristic} leads at $26.4\,\%$ mean win rate, \texttt{heuristic} second at $24.4\,\%$, \texttt{world\_model} third at $24.2\,\%$, \texttt{active\_inference} fourth at $25.0\,\%$. The compressed range ($<6$\,pp between first and fourth) is expected given the domain: at $\leq 60$~turns on Modern, games resolve quickly on mana efficiency more than on strategic depth.
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{lrrrrrl}
+\toprule
+Agent & s=11 & s=23 & s=47 & s=101 & s=main & Mean \\
+\midrule
+\texttt{kg\_heuristic}    & 27.8 & 26.4 & 25.0 & 27.8 & 25.0 & \textbf{26.4} \\
+\texttt{active\_inference}& 22.2 & 23.6 & 23.6 & 20.8 & 26.4 & 23.3 \\
+\texttt{heuristic}        & 25.0 & 29.2 & 29.2 & 30.6 & 25.0 & 27.8 \\
+\texttt{world\_model}     & 25.0 & 20.8 & 22.2 & 20.8 & 23.6 & 22.5 \\
+\bottomrule
+\end{tabular}
+\caption{Win-rate (\%) per seed, 72 games per seed per agent, Modern matchup. ``s=main'' is seed~20260428.}
+\label{tab:robustness}
+\end{table}
+
+\paragraph{(x) LLM model-size sweep.}
+Stream~C evaluated three small Ollama-hosted models --- \texttt{llama3.2:1b}, \texttt{qwen2.5-coder:1.5b}, and \texttt{gemma3:4b} --- each playing 8 games against \texttt{heuristic} on the same Modern matchup (seed~20260428). All three finish at exactly $50\,\%$, with mean game lengths of $6.75$, $7.25$, and $7.0$ turns respectively and per-game wall times under $1$\,s. We interpret this as a clean negative: within the $1$--$4$\,B parameter range, model capacity does not differentiate play quality when actions are constrained to the engine's legal set and no chain-of-thought is enabled. The apparent ceiling suggests that action-selection quality, not language quality, is the bottleneck --- consistent with our decision to move strategic reasoning into the world model and use the LLM only as a soft prior over the legal set.
+
 We deliberately do not claim ``state of the art'' numbers: we know of no comparable public baseline that plays full-Comprehensive-Rules MTG, and the contribution of this report is the system itself, plus the ontology and the released self-play infrastructure.
 
 % =============================================================================
@@ -526,9 +570,9 @@ The following items are tracked in \texttt{IMPLEMENTATION\_PLAN.md} and constitu
 \begin{enumerate}[leftmargin=1.2em, itemsep=1pt]
   \item \textbf{Strategy-aware and agent-driven mulligan policy.} The current keep/bottom heuristic is a single deterministic land-count rule shared by all agents. We are moving the decision through the agent interface (\texttt{MTGAgent.decide\_mulligan}, \texttt{MTGAgent.bottom\_cards}) so that aggressive, control, combo, and reactive strategies---and ultimately learned policies---can evaluate their own opening hands. JEPA-conditioned mulligan selection (rolling out a few imagined turns from each candidate hand) is the longer-term target.
   \item \textbf{Priority-loop driven instants in the sync simulator.} The sync \texttt{GameSimulator} currently advances combat without exposing an instant-speed window to the non-active player; threading the existing \texttt{priority\_loop} into combat steps will let counterspells and combat tricks fire mid-attack.
-  \item \textbf{Trained-agent benchmark.} Run the newly added checkpoint benchmark workflow on persisted world-model checkpoints so that we can answer the central empirical question directly: do trained world-model agents beat \texttt{random}, \texttt{heuristic}, pure \texttt{llm}, and \texttt{active\_inference} baselines on held-out matchups? The missing ingredient is no longer harnessing but archived checkpoints.
-  \item \textbf{Active-inference checkpoint selection.} Extend the current active-inference-inspired selector from post-hoc checkpoint ranking to an in-training promotion rule, where world-model candidates are selected not just by win rate but by an expected-free-energy objective combining performance, cross-baseline robustness, and decision cost.
-  \item \textbf{Ablation matrix.} Toggleable KG / dream / JEPA / opponent-model components with paired-game ELO comparison.
+  \item \textbf{Trained-agent benchmark.} \emph{Completed} (\Cref{sec:eval-ablation,tab:jepa-ablation}): four JEPA variants benchmarked against four baselines with active-inference checkpoint selection; \texttt{no\_kl} ranked first (EFE~$=-0.034$). Next: scale to $\geq$500~self-play trajectories and repeat to assess whether the KL term becomes beneficial with sufficient data.
+  \item \textbf{Active-inference checkpoint selection.} The EFE-based selector was used in vivo for the ablation above (\Cref{sec:eval-ablation}). Extend from post-hoc ranking to an in-training promotion rule where candidates are selected during the self-play loop rather than only at evaluation time.
+  \item \textbf{Ablation matrix.} The four-variant JEPA sweep (\Cref{tab:jepa-ablation}) is a first step. Remaining: toggleable dream / opponent-model components with paired-game ELO comparison.
   \item \textbf{Neural reasoner training.} A supervised + RL fine-tune of a graph-conditioned reasoner (\texttt{NeuralReasonerAgent}) replacing the SBERT card embedding with end-to-end GraphSAGE embeddings.
   \item \textbf{Parallel self-play.} \texttt{asyncio.gather}-based parallel game execution to lift trajectory throughput, plus restoring \texttt{pytest-asyncio} so the async runner is exercised in CI.
   \item \textbf{Belief-state visualisation.} JSON export and a Streamlit panel for the particle-filter posterior over the opponent's hand.

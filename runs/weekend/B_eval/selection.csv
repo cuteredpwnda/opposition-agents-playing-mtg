@@ -1,0 +1,5 @@
+checkpoint,expected_free_energy,pragmatic_value,epistemic_value,latency_cost,horizon_cost,loss_cost
+D:\Documents\GitHubProjects\opposition-agents-playing-mtg\runs\weekend\B_train\full\model.pt,0.031516,0.4375,0.375,1.8872,8.2188,0.0
+D:\Documents\GitHubProjects\opposition-agents-playing-mtg\runs\weekend\B_train\no_kg\model.pt,0.334859,0.3438,0.2401,2.0366,10.3438,0.0
+D:\Documents\GitHubProjects\opposition-agents-playing-mtg\runs\weekend\B_train\no_kl\model.pt,-0.034071,0.4688,0.4146,1.6709,8.6562,0.0
+D:\Documents\GitHubProjects\opposition-agents-playing-mtg\runs\weekend\B_train\small\model.pt,0.050038,0.4062,0.3521,1.4088,9.125,0.0

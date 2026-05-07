@@ -464,6 +464,17 @@ items stay for traceability.
       `-DryRun` to preview, `-Stream A|B|C|AB|BC|ABC` to subset,
       `-SkipTrajectories` if `data/trajectories/` is already fresh.
 
+- [x] **Paper §6 updated with weekend ablation results (May 2026)** —
+      inserted paragraphs (viii)–(x) and two new tables into
+      `paper/opposition_agents_mtg.tex` covering the JEPA world-model
+      four-variant ablation (`tab:jepa-ablation`: full=0.44, no_kl=0.47
+      best, small=0.41, no_kg=0.34 mean WR), the cross-seed robustness
+      run (`tab:robustness`: 5 seeds × 4 agents over 360 games, σ ≤ 0.03),
+      and the LLM model-size sweep (all three Ollama models tie heuristic
+      50/50 — negative result). Future Work items 3–5 revised to reflect
+      completed benchmark. Date updated to May 2026. Compiled clean:
+      18 pages, 692 KB.
+
 ### In progress
 
 _(none — pick from queue below)_

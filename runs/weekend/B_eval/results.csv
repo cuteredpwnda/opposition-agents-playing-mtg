@@ -1,0 +1,17 @@
+checkpoint,baseline,win_rate,avg_turns,avg_elapsed_sec,games
+D:\Documents\GitHubProjects\opposition-agents-playing-mtg\runs\weekend\B_train\full\model.pt,heuristic,0.375,7.625,2.181,8
+D:\Documents\GitHubProjects\opposition-agents-playing-mtg\runs\weekend\B_train\full\model.pt,random,0.5,7.5,0.902,8
+D:\Documents\GitHubProjects\opposition-agents-playing-mtg\runs\weekend\B_train\full\model.pt,llm,0.5,8.75,2.132,8
+D:\Documents\GitHubProjects\opposition-agents-playing-mtg\runs\weekend\B_train\full\model.pt,active_inference,0.375,9.0,2.333,8
+D:\Documents\GitHubProjects\opposition-agents-playing-mtg\runs\weekend\B_train\no_kg\model.pt,heuristic,0.5,10.5,1.549,8
+D:\Documents\GitHubProjects\opposition-agents-playing-mtg\runs\weekend\B_train\no_kg\model.pt,random,0.25,9.375,1.124,8
+D:\Documents\GitHubProjects\opposition-agents-playing-mtg\runs\weekend\B_train\no_kg\model.pt,llm,0.25,10.5,2.771,8
+D:\Documents\GitHubProjects\opposition-agents-playing-mtg\runs\weekend\B_train\no_kg\model.pt,active_inference,0.375,11.0,2.702,8
+D:\Documents\GitHubProjects\opposition-agents-playing-mtg\runs\weekend\B_train\no_kl\model.pt,heuristic,0.5,8.25,0.91,8
+D:\Documents\GitHubProjects\opposition-agents-playing-mtg\runs\weekend\B_train\no_kl\model.pt,random,0.5,8.875,1.025,8
+D:\Documents\GitHubProjects\opposition-agents-playing-mtg\runs\weekend\B_train\no_kl\model.pt,llm,0.5,8.5,1.597,8
+D:\Documents\GitHubProjects\opposition-agents-playing-mtg\runs\weekend\B_train\no_kl\model.pt,active_inference,0.375,9.0,3.151,8
+D:\Documents\GitHubProjects\opposition-agents-playing-mtg\runs\weekend\B_train\small\model.pt,heuristic,0.375,9.25,1.323,8
+D:\Documents\GitHubProjects\opposition-agents-playing-mtg\runs\weekend\B_train\small\model.pt,random,0.375,9.125,1.044,8
+D:\Documents\GitHubProjects\opposition-agents-playing-mtg\runs\weekend\B_train\small\model.pt,llm,0.375,9.625,2.272,8
+D:\Documents\GitHubProjects\opposition-agents-playing-mtg\runs\weekend\B_train\small\model.pt,active_inference,0.5,8.5,0.996,8

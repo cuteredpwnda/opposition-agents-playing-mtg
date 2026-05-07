@@ -1,0 +1,31 @@
+{
+  "total_games": 72,
+  "games_completed": 72,
+  "games_errored": 0,
+  "format": "standard",
+  "pod": false,
+  "agents": [
+    "heuristic",
+    "kg_heuristic",
+    "world_model",
+    "active_inference"
+  ],
+  "decks": [
+    "data\\decks\\modern\\modern_mono_red_burn.txt",
+    "data\\decks\\modern\\modern_azorius_control.txt"
+  ],
+  "wins_by_agent": {
+    "heuristic": 18,
+    "kg_heuristic": 20,
+    "world_model": 18,
+    "active_inference": 16
+  },
+  "win_rate_by_agent": {
+    "heuristic": 0.25,
+    "kg_heuristic": 0.2777777777777778,
+    "world_model": 0.25,
+    "active_inference": 0.2222222222222222
+  },
+  "avg_turns": 8.041666666666666,
+  "avg_elapsed_sec": 1.0890277777777777
+}

@@ -1,0 +1,44 @@
+{
+  "checkpoints": [
+    "D:\\Documents\\GitHubProjects\\opposition-agents-playing-mtg\\runs\\weekend\\B_train\\full\\model.pt",
+    "D:\\Documents\\GitHubProjects\\opposition-agents-playing-mtg\\runs\\weekend\\B_train\\no_kg\\model.pt",
+    "D:\\Documents\\GitHubProjects\\opposition-agents-playing-mtg\\runs\\weekend\\B_train\\no_kl\\model.pt",
+    "D:\\Documents\\GitHubProjects\\opposition-agents-playing-mtg\\runs\\weekend\\B_train\\small\\model.pt"
+  ],
+  "baselines": [
+    "heuristic",
+    "random",
+    "llm",
+    "active_inference"
+  ],
+  "games_per_baseline": 8,
+  "best_checkpoint": "D:\\Documents\\GitHubProjects\\opposition-agents-playing-mtg\\runs\\weekend\\B_train\\no_kl\\model.pt",
+  "best_expected_free_energy": -0.034070922358083455,
+  "selection_config": {
+    "checkpoints": [
+      "D:\\Documents\\GitHubProjects\\opposition-agents-playing-mtg\\runs\\weekend\\B_train\\full\\model.pt",
+      "D:\\Documents\\GitHubProjects\\opposition-agents-playing-mtg\\runs\\weekend\\B_train\\no_kg\\model.pt",
+      "D:\\Documents\\GitHubProjects\\opposition-agents-playing-mtg\\runs\\weekend\\B_train\\no_kl\\model.pt",
+      "D:\\Documents\\GitHubProjects\\opposition-agents-playing-mtg\\runs\\weekend\\B_train\\small\\model.pt"
+    ],
+    "baselines": [
+      "heuristic",
+      "random",
+      "llm",
+      "active_inference"
+    ],
+    "decks": [
+      "data/decks/modern/modern_mono_red_burn.txt",
+      "data/decks/modern/modern_azorius_control.txt"
+    ],
+    "games": 8,
+    "max_turns": 60,
+    "seed": 20260428,
+    "out": "D:\\Documents\\GitHubProjects\\opposition-agents-playing-mtg\\runs\\weekend\\B_eval",
+    "pragmatic_weight": 1.0,
+    "epistemic_weight": 0.6,
+    "latency_weight": 0.15,
+    "horizon_weight": 0.05,
+    "loss_weight": 0.25
+  }
+}
