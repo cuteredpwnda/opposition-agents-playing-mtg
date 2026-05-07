@@ -1,6 +1,6 @@
 # Full Working Vision — Roadmap & Implementation Map
 
-> Status: April 2026. This document is the **single source of truth** for the
+> Status: May 2026. This document is the **single source of truth** for the
 > "everything turned on" milestone: agentic play (LLM + world-model + active
 > inference + KG agents) playing real games end-to-end, with self-play
 > training of the world model and a controlled ablation harness over both

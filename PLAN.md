@@ -1,6 +1,6 @@
 # Opposition Agents Playing Magic: The Gathering — Master Plan
 
-> **Status (April 2026):** Two-player games run end-to-end through both the
+> **Status (May 2026):** Two-player games run end-to-end through both the
 > sync `GameSimulator` and the async `GameRunner`. London mulligan,
 > cleanup-phase discard to `max_hand_size`, deterministic empty-library loss
 > (CR 104.3c), and a life/board/hand/library tie-breaker for max-turn timeouts

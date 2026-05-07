@@ -8,7 +8,7 @@ what is in progress, and what remains. It supersedes the phase descriptions in
 `PLAN.md`, `ARCHITECTURE.md`, and the presentation slides for tracking purposes
 — those documents retain their value as design rationale and research context.
 
-## Status Snapshot — April 2026
+## Status Snapshot — May 2026
 
 Full two-player games of Magic now run end-to-end through both the synchronous
 `GameSimulator` and the async `GameRunner`. Recent engine hardening:
@@ -35,7 +35,7 @@ coverage** (Commander, multiplayer, exotic keywords).
 
 ---
 
-## Active Work Log — Engine Quality Pass (April 2026)
+## Active Work Log — Engine Quality Pass (May 2026)
 
 Iterative bug-hunt + mechanic coverage session driven by inspection of
 `runs/edh_pod/pod_game_001.log`. New items append to the bottom; completed
@@ -896,7 +896,7 @@ The full V+M+C world model with JEPA predictor and KG context fusion is implemen
 
 ## 5. Roadmap — Remaining Work
 
-### Phase 0: Engine + Agent Polish ⬅️ ACTIVE (April 2026)
+### Phase 0: Engine + Agent Polish ⬅️ ACTIVE (May 2026)
 
 **Goal:** Make full games not only run, but be *interestingly* playable so that
 every downstream training and benchmark signal is meaningful.

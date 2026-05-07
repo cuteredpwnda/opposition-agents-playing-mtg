@@ -1,6 +1,6 @@
 # Open-Source MTG Game Engine & GraphRAG Research
 
-*Compiled: March 2026*
+*Compiled: May 2026*
 
 ---
 

@@ -7,7 +7,7 @@
 
 A research framework that combines **knowledge-graph-grounded JEPA world models**, **active-inference LLM agents**, and a from-scratch **Magic: The Gathering** game engine to study reasoning under uncertainty in the most combinatorially complex commercial card game.
 
-> **Status (April 2026):** Full two-player games are playable end-to-end. The
+> **Status (May 2026):** Full two-player games are playable end-to-end. The
 > engine now implements the London mulligan, cleanup-phase discard to a
 > `max_hand_size` of 7, deterministic loss on drawing from an empty library
 > (CR 104.3c), and a life → board → hand → library tie-breaker for
