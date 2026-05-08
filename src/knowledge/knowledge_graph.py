@@ -215,49 +215,49 @@ class MTGKnowledgeGraph:
     # Synergy & counter-play queries
     # -----------------------------------------------------------------------
 
-        async def get_synergies_for(self, card_name: str) -> list[dict[str, Any]]:
-                """Find cards that synergize with a given card.
+    async def get_synergies_for(self, card_name: str) -> list[dict[str, Any]]:
+        """Find cards that synergize with a given card.
 
-                Returns a union of deterministic base edges and learned extension
-                evidence events.
-                """
-                query = """
-                CALL {
-                    MATCH (c:Card {cardName: $card_name})-[s:SYNERGIZES_WITH]-(other:Card)
-                    RETURN other.cardName AS card,
-                                 coalesce(s.strength, 0.0) AS base_strength,
-                                 0.0 AS learned_strength,
-                                 0 AS evidence,
-                                 coalesce(s.description, "deterministic_base") AS description
+        Returns a union of deterministic base edges and learned extension
+        evidence events.
+        """
+        query = """
+        CALL {
+            MATCH (c:Card {cardName: $card_name})-[s:SYNERGIZES_WITH]-(other:Card)
+            RETURN other.cardName AS card,
+                   coalesce(s.strength, 0.0) AS base_strength,
+                   0.0 AS learned_strength,
+                   0 AS evidence,
+                   coalesce(s.description, "deterministic_base") AS description
 
-                    UNION ALL
+            UNION ALL
 
-                    MATCH (c:Card {cardName: $card_name})-[:SUPPORTED_BY]-(ev:LearnedSynergyEvidence)-[:SUPPORTED_BY]-(other:Card)
-                    WHERE other.cardName <> $card_name
-                    WITH other, count(ev) AS evidence, coalesce(sum(ev.weight), 0.0) AS learned_strength
-                    RETURN other.cardName AS card,
-                                 0.0 AS base_strength,
-                                 learned_strength,
-                                 evidence,
-                                 "learned_extension" AS description
-                }
-                WITH card,
-                         sum(base_strength) AS base_strength,
-                         sum(learned_strength) AS learned_strength,
-                         sum(evidence) AS evidence,
-                         collect(DISTINCT description) AS descs
-                RETURN card,
-                             (base_strength + learned_strength) AS strength,
-                             base_strength,
-                             learned_strength,
-                             evidence,
-                             CASE
-                                 WHEN size(descs) > 1 THEN "deterministic_base+learned_extension"
-                                 ELSE head(descs)
-                             END AS description
-                ORDER BY strength DESC, evidence DESC
-                """
-                return await self._run_query(query, card_name=card_name)
+            MATCH (c:Card {cardName: $card_name})-[:SUPPORTED_BY]-(ev:LearnedSynergyEvidence)-[:SUPPORTED_BY]-(other:Card)
+            WHERE other.cardName <> $card_name
+            WITH other, count(ev) AS evidence, coalesce(sum(ev.weight), 0.0) AS learned_strength
+            RETURN other.cardName AS card,
+                   0.0 AS base_strength,
+                   learned_strength,
+                   evidence,
+                   "learned_extension" AS description
+        }
+        WITH card,
+             sum(base_strength) AS base_strength,
+             sum(learned_strength) AS learned_strength,
+             sum(evidence) AS evidence,
+             collect(DISTINCT description) AS descs
+        RETURN card,
+               (base_strength + learned_strength) AS strength,
+               base_strength,
+               learned_strength,
+               evidence,
+               CASE
+                   WHEN size(descs) > 1 THEN "deterministic_base+learned_extension"
+                   ELSE head(descs)
+               END AS description
+        ORDER BY strength DESC, evidence DESC
+        """
+        return await self._run_query(query, card_name=card_name)
 
     async def get_answers_to(self, card_name: str) -> list[dict[str, Any]]:
         """Find cards that counter/answer a given card."""

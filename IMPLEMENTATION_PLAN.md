@@ -43,6 +43,63 @@ items stay for traceability.
 
 ### Done
 
+- [x] **H1–H5 architectural engine items (May 2026)** — full implementation pass for
+      all five deferred CR-correctness items:
+
+  * **H1 — Layer system (CR 613)** — complete rewrite of
+    `src/engine/continuous_effects.py` (~380 lines): `Layer` IntEnum with 10 sublayers,
+    `ContinuousEffect` dataclass with `apply: Callable`, `ContinuousEffectsRegistry`
+    with `register`, `expire_for_card`, `expire_end_of_turn`, `apply_to`. Factory
+    helpers: `make_anthem_effect`, `make_keyword_grant_effect`, `make_set_pt_effect`,
+    `make_eot_pump_effect`. `effective_power`/`effective_toughness` in
+    `src/engine/keywords.py` now delegate here. ETB paths in
+    `src/engine/rules_engine.py` call `auto_install_effects` (oracle-text anthem/keyword
+    parsing); SBA death loop calls `expire_for_card`. Cleanup in
+    `src/orchestrator/game_runner.py` calls `expire_end_of_turn`.
+
+  * **H2 — Replacement effects as typed events (CR 614)** — `src/engine/replacement_effects.py`
+    extended with `DiesEvent`, `EntersBattlefieldEvent`, `DrawCardEvent`, `DamageEvent`
+    dataclasses plus `apply_dies_event`, `apply_etb_event`, `apply_draw_event` typed helpers.
+
+  * **H3 — Watcher event-observer system** — new `src/engine/watchers.py`:
+    `GameEventKind` enum (12 kinds), `GameEvent`, abstract `Watcher`, six concrete
+    watchers (`SpellsCastThisTurnWatcher`, `LifeLostThisTurnWatcher`,
+    `LifeGainedThisTurnWatcher`, `PlayerAttackedThisTurnWatcher`,
+    `LandPlayedThisTurnWatcher`, `DamageThisTurnWatcher`), `WatcherRegistry` with
+    routing + `reset_turn`. Wired: `on_spell_cast` in `rules_engine.py`, `on_creature_attacked`
+    in `combat.py`, `on_life_lost`/`on_life_gained` in `replacement_effects.py`.
+    Cleanup calls `reset_turn()`.
+
+  * **H4 — Face-down permanents (CR 707)** — new `src/engine/face_down.py`:
+    `FaceDownMode` enum (MORPHED, MEGAMORPHED, MANIFESTED, DISGUISED, CLOAKED),
+    `_apply_face_down_stub` (saves `_face_up_data`, installs 2/2-colorless stub),
+    `_restore_face_up_data`, `manifest`, `cast_face_down` (delegates to `alternate_costs`
+    + registers Layer.COPY effect), `turn_face_up` (morph or manifested path, fires
+    "turned face up" triggers), `is_face_down`, `face_down_mode`, `can_be_turned_face_up`.
+
+  * **H5 — Delayed triggered abilities (CR 603.7)** — new `src/engine/delayed_triggers.py`:
+    `TriggerPoint` enum (5 fire points), `DelayedTrigger` dataclass with `condition`
+    guard, `once`/`only_this_turn` flags, `DelayedTriggerRegistry` with `schedule`,
+    `fire`, `expire_end_of_turn`, `cancel_for_card`. `schedule`/`fire` convenience
+    wrappers. Wired into `game_runner.py` at END_OF_COMBAT (new), NEXT_UPKEEP,
+    NEXT_END_STEP, END_OF_TURN + `expire_end_of_turn()` at cleanup. Myriad's
+    inline token exile migrated to a scheduled `END_OF_COMBAT` trigger.
+
+  Tests: `tests/test_continuous_effects.py` (7), `tests/test_watchers.py` (11),
+  `tests/test_face_down.py` (11), `tests/test_delayed_triggers.py` (9). Full suite
+  (excluding network-dependent tests): **513 passed, 27 skipped, 0 failed**.
+
+ — source fixes: `src/engine/rules_engine.py`
+      (player index clamping after elimination), `src/knowledge/knowledge_graph.py`
+      (`get_synergies_for` indentation — was dead code nested inside another method),
+      `src/orchestrator/jsonl_trace.py` (`on_action` missing `game_state=` kwarg),
+      `src/world_model/schmidhuber_worldmodel_adapter.py` (`c.latent_dim` →
+      `c.encoder.latent_dim` x2); test fixes: stale `CardInstance`/`PlayerState`/
+      `GameState` API usage in `test_engine/`, `asyncio.run()` in
+      `test_deck_builder_scoring.py`, `result.winner` str handling in
+      `test_ollama_agent.py`, `mulligan_enabled=False` in `test_end_to_end_game.py`,
+      two-transition trajectories for `test_schmidhuber_worldmodel_adapter_trainable`.
+
 - [x] **Stable JEPA per-epoch metrics CSV logging fixed** —
       `scripts/train_stable_worldmodel.py` now writes real epoch-averaged
       `train/total`, `train/prediction`, and `train/kl` values to
@@ -475,13 +532,505 @@ items stay for traceability.
       completed benchmark. Date updated to May 2026. Compiled clean:
       18 pages, 692 KB.
 
+- [x] **Deck-Builder Agent G1–G3, G9, G10 (kickoff)** — implemented
+      `src/agents/deck_builder/` package with four modules:
+      `constraints.py` (G1 — colour identity, singleton, deck-size, mana
+      curve, format legality; pure-Python, no network), `scorer.py` (G2 —
+      alpha·synergy + beta·archetype + gamma·combo + delta·WM; best-effort
+      async KG calls, graceful offline fallback), `agent.py` (G3 — greedy
+      constructor: resolve commanders → shuffle+cap pool → score_batch loop
+      → pad basics → return `Decklist`), and `scripts/brew_decks.py` (G9
+      CLI with `--commander`, `--seed`, `--pool-sample`, `--kg`, `--out`
+      flags).  36 focused unit tests in `tests/test_deck_builder_constraints.py`
+      (22 tests) and `tests/test_deck_builder_scoring.py` (14 tests) all
+      pass.  Queue updated: G4 (batched evaluator) + G5 (mutation loop)
+      are the next steps.
+
+- [x] **Massive mechanic coverage pass — May 2026** — added engine support
+      for ~30 keywords/effects spanning evasion, counter-based combat,
+      alternate costs, and graveyard mechanics. Cross-checked each against
+      the XMage Java reference (MIT-licensed, magefree/mage) to confirm
+      semantics match the Comprehensive Rules.
+      - **`src/engine/keywords.py`**: `can_be_blocked_by()` enforces
+        flying / reach / horsemanship / shadow / fear / intimidate / skulk /
+        landwalk; new helpers `_card_colors`, `_is_artifact_type`,
+        `annihilator_count`, `toxic_count`, `dredge_count`,
+        `modular_count`, `reinforce_cost`.
+      - **`src/engine/combat.py`** rewritten: full evasion via
+        `can_be_blocked_by`, infect/wither (-1/-1 to creatures, poison
+        to players via infect, trample-aware), toxic N (poison on combat
+        damage even via trample), flanking (-1/-1 EOT to non-flanking
+        blockers), exalted (sole-attacker bonus), battle cry (other
+        attackers +1/+0), myriad (token copies attacking other
+        opponents), annihilator N (defender sacrifices N).
+      - **`src/engine/triggers.py`** appended undying / persist (with
+        XMage-matched counter checks), modular death-counter transfer,
+        evolve, constellation, heroic, exploit, bloodthirst, magecraft,
+        boast eligibility, training, raid condition, encore copy
+        creation, storm copy push (off-by-one fix vs. XMage:
+        `count - 1` to exclude the storm spell itself), spells-cast
+        counter.
+      - **`src/engine/alternate_costs.py`** (new ~500 LOC): convoke,
+        delve, improvise, emerge, spectacle, surge, madness, miracle,
+        overload, escape, jump-start, retrace, foretell, ninjutsu,
+        buyback, replicate, entwine, affinity, suspend (with upkeep
+        tick + free cast at 0 counters), morph / megamorph (face-down
+        2/2, turn face-up).
+      - **`src/engine/spell_effects.py`** new effect handlers: `drain`,
+        `investigate` (Clue token), `populate`, `amass` (Zombie Army
+        token), `explore`, `connive`, `adapt`, `wheel`.
+      - **`src/engine/tokens.py`**: `create_gold_token`,
+        `create_map_token`, `create_powerstone_token`,
+        `create_shard_token`, `create_incubator_token`,
+        `create_walker_emblem`, `create_copy_token` (CR 707.2).
+      - **`src/engine/rules_engine.py`**: SBA death section now invokes
+        modular transfer, undying, and persist replacements (LIFO order
+        per CR 603.6c). ETB resolution (creature path + permanent path)
+        runs bloodthirst, evolve, and constellation hooks. Cast
+        resolution increments `spells_cast_this_turn` and triggers
+        storm, heroic, magecraft.
+      - **`src/orchestrator/game_runner.py`**: upkeep step ticks
+        suspended cards (`tick_suspend_counters` + `cast_suspended_card`).
+        Cleanup step now resets per-turn counters (`spells_cast_this_turn`,
+        `life_lost_this_turn`, `attacked_this_turn`) so storm / spectacle /
+        surge / raid don't leak across turns.
+      - **`src/engine/combat.py` `declare_attackers`**: invokes
+        `check_training_triggers` after exalted / battle cry.
+      - **Tests**: `tests/test_new_mechanics.py` (14 focused unit
+        tests covering undying return, persist counter, modular
+        transfer, infect-to-creature, infect-to-player poison, storm
+        copy count, explore, connive, amass, populate, adapt, wheel,
+        annihilator sac, exalted bonus, flanking penalty, shadow
+        block legality, fear block legality, convoke tap, delve
+        exile, escape cost). Full suite: 488 passed, 27 skipped, 0
+        failures.
+      - **References cross-checked** (XMage MIT,
+        github.com/magefree/mage): `UndyingAbility.java`,
+        `PersistAbility.java`, `ModularAbility.java`,
+        `InfectAbility.java`, `WitherAbility.java`,
+        `ToxicAbility.java`, `StormAbility.java`,
+        `CascadeAbility.java`, `AnnihilatorAbility.java`,
+        `MyriadAbility.java`, `ConvokeAbility.java`,
+        `DelveAbility.java`, `EscapeAbility.java`,
+        `MorphAbility.java`, `MadnessAbility.java`,
+        `SuspendAbility.java`,
+        `BecomesTargetSourceTriggeredAbility.java`.
+
 ### In progress
 
 _(none — pick from queue below)_
 
 ### Queue — High Priority
 
-_(empty — promote from medium)_
+These five items finish the engine's structural backbone so that *any*
+new mechanic can be expressed declaratively instead of bolted on with
+case-by-case `if` chains. Each has a sketched module layout so the
+work can be picked up without redesign.
+
+#### H1 — Continuous-effects layer system (CR 613) ✅ Implemented
+
+**Why**: power/toughness, type-changing, ability-granting, controller-
+changing, and color-changing effects all need to be applied in a fixed
+order (layers 1–7) every time a permanent's characteristics are read.
+Today these live as ad-hoc `eot_*` fields and `parse_static_abilities`
+patches; they cannot model effect dependency or timestamp ordering.
+
+**Reference**: XMage's
+`Mage/src/main/java/mage/abilities/effects/ContinuousEffects.java`
+plus `Layer.java` / `SubLayer.java`. We mirror only the seven layers
+we actually need.
+
+**New module**: `src/engine/continuous_effects.py`
+
+```python
+"""Continuous-effects engine (CR 613).
+
+Each effect declares (layer, sublayer, duration, source_id, timestamp)
+and a callable that mutates a *characteristic snapshot* of a card.
+Snapshots are computed lazily on read and cached per
+`(card.instance_id, state.turn_number, state.stack_depth)` to avoid
+recomputing every effective_power() call.
+"""
+from __future__ import annotations
+from dataclasses import dataclass, field
+from enum import IntEnum
+from typing import Callable, Optional
+
+from .game_state import CardInstance, GameState
+
+
+class Layer(IntEnum):
+    COPY = 1                 # 613.1a — copy effects
+    CONTROL = 2              # 613.1b — control-changing
+    TEXT = 3                 # 613.1c — text-changing
+    TYPE = 4                 # 613.1d — type/subtype/supertype
+    COLOR = 5                # 613.1e — color
+    ABILITY = 6              # 613.1f — adding/removing abilities
+    PT_CDA = 70              # 613.2a — characteristic-defining P/T
+    PT_SET = 71              # 613.2b — set base P/T
+    PT_MOD = 72              # 613.2c — +N/+M, anthem effects
+    PT_COUNTER = 73          # 613.2d — +1/+1 / -1/-1 counters
+    PT_SWITCH = 74           # 613.2e — switch P/T
+
+
+@dataclass
+class ContinuousEffect:
+    layer: Layer
+    duration: str            # "permanent" | "end_of_turn" | "until_leaves"
+    source_id: str           # CardInstance.instance_id of source
+    timestamp: int           # state.next_timestamp() at creation
+    apply: Callable[[CardInstance, GameState], None]
+    target_filter: Callable[[CardInstance, GameState], bool] = lambda c, s: True
+    dependent_on: list[str] = field(default_factory=list)  # other effect ids
+
+
+class ContinuousEffectsRegistry:
+    """Stores active continuous effects and applies them in CR 613 order."""
+
+    def __init__(self) -> None:
+        self._effects: list[ContinuousEffect] = []
+
+    def add(self, effect: ContinuousEffect) -> None: ...
+    def remove_by_source(self, source_id: str) -> None: ...
+    def expire_end_of_turn(self) -> None: ...
+
+    def apply_to(self, card: CardInstance, state: GameState) -> CardInstance:
+        """Return a *snapshot* of `card` with all continuous effects
+        applied in CR 613 order. Caller treats the snapshot as
+        read-only; do NOT mutate it back into the registry."""
+        snapshot = card.shallow_copy()
+        # Sort by (layer, dependency-resolved order, timestamp).
+        for effect in self._sorted_effects():
+            if effect.target_filter(snapshot, state):
+                effect.apply(snapshot, state)
+        return snapshot
+```
+
+**Migration path**:
+1. Land the registry + `Layer` enum first; keep the existing
+   `eot_power_bonus` / `keyword_grants` paths working.
+2. Reroute `keywords.effective_power()` /
+   `keywords.effective_toughness()` to call
+   `state.continuous_effects.apply_to(card, state).power`.
+3. Replace `parse_static_abilities` ad-hoc fields with effect
+   installs at ETB (`apply_replacements` already runs there).
+4. Migrate spell-effect P/T pumps to register a Layer.PT_MOD
+   effect with `duration="end_of_turn"` instead of mutating
+   `eot_power_bonus`.
+5. Add tests in `tests/test_continuous_effects.py` covering
+   anthem stacking (Glorious Anthem + Honor of the Pure), Humility
+   + Opalescence interaction (CR 613 dependency), and
+   characteristic-defining abilities (Tarmogoyf P/T).
+
+**Touched files**: `src/engine/continuous_effects.py` (new),
+`src/engine/keywords.py`, `src/engine/spell_effects.py`,
+`src/engine/game_state.py` (`next_timestamp()` + registry init),
+`src/engine/rules_engine.py` (effect installation hooks).
+
+#### H2 — Replacement-effects framework as first-class objects ✅ Implemented
+
+**Why**: today "enters tapped", commander-zone redirect, undying,
+persist, regeneration, and damage prevention each live in a different
+function. Adding a new replacement (e.g. *if a creature would die,
+exile it instead*) requires hand-editing every death path. CR 614
+defines them as a uniform event-rewriting layer.
+
+**Reference**: XMage's `ReplacementEffectImpl` and
+`ContinuousEffects.replaceEvent`.
+
+**Existing partial**: `src/engine/replacement_effects.py` already has
+a `ReplacementRegistry` with damage-prevention / death-to-exile /
+lifegain-doubling parsers. Extend rather than rewrite.
+
+**New event types** to model uniformly:
+
+```python
+# src/engine/replacement_effects.py — extend Event subclasses
+@dataclass
+class DiesEvent(Event):
+    card: CardInstance
+    from_zone: Zone
+
+@dataclass
+class EntersBattlefieldEvent(Event):
+    card: CardInstance
+    tapped: bool = False
+    counters: dict[str, int] = field(default_factory=dict)
+
+@dataclass
+class DrawCardEvent(Event):
+    player_id: str
+    count: int
+
+@dataclass
+class DamageEvent(Event):
+    source_id: str
+    target_id: str          # card or player id
+    amount: int
+    is_combat: bool
+```
+
+**Migration**:
+1. Move the undying / persist hooks (just landed in
+   `rules_engine.check_state_based_actions`) into
+   `ReplacementRegistry` handlers keyed on `DiesEvent`. The SBA loop
+   then calls `registry.replace(DiesEvent(...))` and either gets back
+   a modified event (e.g. "return to battlefield instead") or
+   proceeds to the graveyard move.
+2. Move "enters tapped" into a `EntersBattlefieldEvent` replacement
+   so depletion lands, snow-covered scry-lands, etc. all share one
+   path.
+3. Add `regeneration` (CR 701.16) and `prevent N damage`
+   (CR 615.1) as parsers.
+4. Tests: `tests/test_replacement_event_chain.py` — verify multiple
+   replacements stacking on a single event use APNAP order
+   (CR 616.1).
+
+**Touched files**: `src/engine/replacement_effects.py`,
+`src/engine/rules_engine.py` (death + ETB paths), new test file.
+
+#### H3 — Watcher / event-observer infrastructure ✅ Implemented
+
+**Why**: per-turn counters (`spells_cast_this_turn`,
+`life_lost_this_turn`, `attacked_this_turn`) are scattered across
+ad-hoc attribute writes and a single cleanup-step reset block.
+XMage centralises this with `Watcher` subclasses that subscribe to
+`GameEvent` types and own the bookkeeping.
+
+**Reference**: XMage's
+`Mage/src/main/java/mage/watchers/Watcher.java` plus
+`CastSpellLastTurnWatcher`, `LifeLossThisTurnWatcher`,
+`PlayerAttackedThisTurnWatcher`.
+
+**New module**: `src/engine/watchers.py`
+
+```python
+"""Game-event watchers (XMage-style observers).
+
+A watcher subscribes to one or more GameEvent kinds, accumulates
+state across the turn (or game), and is reset by the engine at the
+appropriate phase boundary. Watchers are pure observers — they do
+NOT mutate game state.
+"""
+from __future__ import annotations
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any
+
+
+class GameEventKind(str, Enum):
+    SPELL_CAST = "spell_cast"
+    LIFE_LOST = "life_lost"
+    LIFE_GAINED = "life_gained"
+    DAMAGE_DEALT = "damage_dealt"
+    CREATURE_ATTACKED = "creature_attacked"
+    CARD_DRAWN = "card_drawn"
+    PERMANENT_ETB = "permanent_etb"
+    PERMANENT_LTB = "permanent_ltb"
+
+
+@dataclass
+class GameEvent:
+    kind: GameEventKind
+    player_id: str | None = None
+    source_id: str | None = None
+    target_id: str | None = None
+    amount: int = 0
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+class Watcher(ABC):
+    """Subscribe to events; reset at well-defined boundaries."""
+    reset_at: str = "turn"   # "turn" | "game" | "phase"
+
+    @abstractmethod
+    def watches(self) -> set[GameEventKind]: ...
+
+    @abstractmethod
+    def observe(self, event: GameEvent) -> None: ...
+
+    def reset(self) -> None:
+        """Called by engine at the configured boundary."""
+
+
+class WatcherRegistry:
+    def __init__(self) -> None:
+        self._watchers: list[Watcher] = []
+        self._by_kind: dict[GameEventKind, list[Watcher]] = {}
+
+    def register(self, watcher: Watcher) -> None: ...
+    def fire(self, event: GameEvent) -> None: ...
+    def reset_turn(self) -> None: ...
+    def get(self, watcher_cls: type) -> Watcher | None: ...
+
+
+# Concrete watchers replacing the current ad-hoc per-turn counters.
+
+class SpellsCastThisTurnWatcher(Watcher):
+    def __init__(self) -> None:
+        self.counts: dict[str, int] = {}      # player_id -> count
+        self.spells: list[GameEvent] = []     # in cast order
+
+    def watches(self): return {GameEventKind.SPELL_CAST}
+    def observe(self, event):
+        self.counts[event.player_id] = self.counts.get(event.player_id, 0) + 1
+        self.spells.append(event)
+    def reset(self): self.counts.clear(); self.spells.clear()
+
+
+class LifeLostThisTurnWatcher(Watcher):
+    def __init__(self) -> None:
+        self.totals: dict[str, int] = {}
+    def watches(self): return {GameEventKind.LIFE_LOST}
+    def observe(self, event):
+        self.totals[event.player_id] = self.totals.get(event.player_id, 0) + event.amount
+    def reset(self): self.totals.clear()
+
+
+class PlayerAttackedThisTurnWatcher(Watcher):
+    def __init__(self) -> None:
+        self.attackers: set[str] = set()
+    def watches(self): return {GameEventKind.CREATURE_ATTACKED}
+    def observe(self, event):
+        self.attackers.add(event.player_id)
+    def reset(self): self.attackers.clear()
+```
+
+**Migration**:
+1. Add `state.watchers: WatcherRegistry` initialised with the three
+   default watchers above.
+2. Replace `state.spells_cast_this_turn` increments with
+   `state.watchers.fire(GameEvent(SPELL_CAST, player_id=..., ...))`.
+3. Replace per-player `life_lost_this_turn` mutations with
+   `LIFE_LOST` events fired from the damage / drain paths.
+4. Cleanup step calls `state.watchers.reset_turn()` instead of the
+   manual loop.
+5. `count_spells_cast_this_turn` / spectacle / surge / raid all read
+   from the watcher registry.
+6. Tests: `tests/test_watchers.py` — observer registration,
+   per-turn reset, and one integration test (storm count via
+   watcher).
+
+**Touched files**: `src/engine/watchers.py` (new),
+`src/engine/game_state.py` (registry attribute),
+`src/engine/rules_engine.py` (event firing on cast / draw / damage),
+`src/engine/triggers.py` (storm / magecraft / spectacle / surge read
+from watcher), `src/orchestrator/game_runner.py` (cleanup reset).
+
+#### H4 — Face-down spells and permanents (CR 707) ✅ Implemented
+
+**Why**: morph and megamorph already pay the {3} alternate cost, but
+the face-down object's *characteristics* (2/2 colorless creature, no
+name, no abilities) are not actually swapped in. Without this,
+opponents can read the card text of a "face-down" creature and a
+morph blocker incorrectly applies the face-up power.
+
+**Reference**: XMage's
+`BecomesFaceDownCreatureEffect.java` (Layer 1A copy effect) plus
+`MorphAbility.java` (already studied).
+
+**Hooks**:
+
+```python
+# src/engine/face_down.py — new module
+
+class FaceDownState(Enum):
+    FACE_UP = "up"
+    MORPHED = "morphed"
+    MEGAMORPHED = "megamorphed"
+    MANIFESTED = "manifested"
+    DISGUISED = "disguised"     # MKM
+    CLOAKED = "cloaked"         # WOE
+
+
+def cast_face_down(state: GameState, card: CardInstance, mode: FaceDownState) -> None:
+    """Push card onto stack with face-down characteristics.
+
+    Stores the original `card_data` under `card.face_up_data` and
+    swaps in a 2/2 colorless creature stub. The continuous-effects
+    registry (H1) installs a Layer.COPY effect so reads through
+    `effective_*` see the face-down values."""
+
+def turn_face_up(state: GameState, card: CardInstance, paid_cost: dict[str, int]) -> None:
+    """Pay morph/megamorph cost, restore face_up_data, fire ETB-style
+    triggers gated by `if you turn ~ face up` (CR 702.36e)."""
+```
+
+**Touched files**: `src/engine/face_down.py` (new),
+`src/engine/alternate_costs.py` (`cast_face_down` + `turn_face_up`
+already stubbed there — move to the new module),
+`src/engine/continuous_effects.py` (Layer.COPY support),
+`src/engine/rules_engine.py` (special action for "turn face up"),
+new test `tests/test_face_down.py`.
+
+#### H5 — Delayed triggered abilities ✅ Implemented
+
+**Why**: myriad ("exile those tokens at end of combat"), Wishclaw
+Talisman ("at the beginning of the next end step, return…"), and
+flickering ("return at the beginning of the next end step") all need
+a one-shot triggered ability that fires at a specific later phase
+boundary. Today our myriad implementation hand-rolls EOT exile
+inline; this doesn't compose for arbitrary effects.
+
+**Reference**: XMage's
+`Mage/src/main/java/mage/abilities/triggers/DelayedTriggeredAbility.java`
+and `AtTheEndOfCombatDelayedTriggeredAbility.java`.
+
+**New module**: `src/engine/delayed_triggers.py`
+
+```python
+"""Delayed triggered abilities — one-shot triggers that fire at a
+named future game event."""
+from __future__ import annotations
+from dataclasses import dataclass
+from enum import Enum
+from typing import Callable
+
+from .game_state import GameState
+
+
+class TriggerPoint(str, Enum):
+    END_OF_COMBAT = "end_of_combat"
+    END_OF_TURN = "end_of_turn"
+    NEXT_UPKEEP = "next_upkeep"
+    NEXT_END_STEP = "next_end_step"
+    BEFORE_NEXT_UNTAP = "before_next_untap"
+
+
+@dataclass
+class DelayedTrigger:
+    trigger_point: TriggerPoint
+    effect: Callable[[GameState], None]
+    controller_id: str
+    description: str
+    only_this_turn: bool = True   # most delayed triggers expire if missed
+
+
+class DelayedTriggerRegistry:
+    def __init__(self) -> None:
+        self._pending: list[DelayedTrigger] = []
+
+    def schedule(self, trigger: DelayedTrigger) -> None: ...
+    def fire(self, state: GameState, point: TriggerPoint) -> None:
+        """Fire (and remove) all triggers scheduled for `point`."""
+```
+
+**Migration**:
+1. Plumb `state.delayed_triggers: DelayedTriggerRegistry`.
+2. `game_runner` calls `state.delayed_triggers.fire(state, point)`
+   at end of combat, end of turn, beginning of upkeep.
+3. Rewrite myriad's inline EOT exile in
+   `src/engine/combat.py::_fire_myriad` to schedule a
+   `DelayedTrigger(END_OF_COMBAT, lambda s: exile(token))`.
+4. Add encore's "exile at end of turn" the same way.
+5. Tests: `tests/test_delayed_triggers.py` — schedule, fire-once,
+   off-turn-cleanup.
+
+**Touched files**: `src/engine/delayed_triggers.py` (new),
+`src/engine/combat.py` (myriad), `src/engine/triggers.py`
+(`resolve_encore`), `src/orchestrator/game_runner.py` (fire hooks
+at combat / EOT / upkeep), new test file.
 
 ### Queue — Medium Priority
 
@@ -495,19 +1044,20 @@ _(empty — promote from medium)_
       step before Stream B (or skip with `-SkipTrajectories`).
 
 - **Expanded archived-checkpoint evaluation** — rerun
-
-- **Expanded archived-checkpoint evaluation** — rerun
       `scripts/benchmark_trained_agents.py` on multiple JEPA checkpoints
       (`jepa_epoch_10.pt` … `jepa_final.pt`) with a larger game budget and update
       `paper/opposition_agents_mtg.tex` once the result is statistically more
       informative than the current 4-game smoke run.
 
-- **Deck-Builder Agent (Phase G)** — self-improving brewer that builds,
-  playtests, and adapts decks via world-model + KG scoring. See
-  [Phase G](#phase-g-deck-builder-agent-self-improving-brewer) for the
-  10-task breakdown (G1-G10). Suggested kickoff: G1 (constraints) +
-  G3 (greedy builder) → smoke run with Standard pool, then G4-G5
-  (evaluator + mutation loop).
+- **Deck-Builder Agent — G4 batched evaluator + G5 mutation loop** — next
+  steps after the G1/G2/G3/G9/G10 kickoff that landed.  G4 wraps the pod
+  runner to produce per-card marginal win contribution; G5 adds simulated
+  annealing / (μ+λ) evolutionary swaps.  See Phase G section for full task
+  list.
+
+- **Deck-Builder Agent — G6 combo-flowchart bias + G7 KG feedback** —
+  optional second objective (maximise kill-chain length) and write-back of
+  winning synergy evidence to Neo4j.  Defer until G4/G5 are validated.
 
 ### Queue — Low Priority / Polish
 
@@ -1306,6 +1856,15 @@ pod sim still completes a 6-turn run.
 Ordering: roughly by frequency in modern Magic / how visible the gap is
 in pod games. Strike-through items have been completed but kept here as
 historical reference.
+
+> **Architectural note (May 2026)** — many of the items below depend on
+> the structural backbone described in §2 Queue items **H1–H5**
+> (continuous-effects layers, replacement-effects framework, watchers,
+> face-down characteristics, delayed triggered abilities). Implementing
+> H1–H5 first means each remaining mechanic becomes a small declarative
+> registration instead of a new bespoke code path. When picking from
+> this checklist, check whether your mechanic is blocked by H1–H5 and
+> promote that work first if so.
 
 ### Cast-time / casting-cost mechanics
 

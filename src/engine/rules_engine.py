@@ -726,6 +726,43 @@ class RulesEngine:
                     # Prowess (CR 702.108): non-creature spells boost
                     # prowess creatures controller controls.
                     apply_prowess_on_cast(state, action.player_id, card)
+                    # Track spells cast this turn (storm/surge/spectacle)
+                    state.spells_cast_this_turn = getattr(state, "spells_cast_this_turn", 0) + 1
+                    # Watcher notification (H3)
+                    try:
+                        from .watchers import on_spell_cast
+                        on_spell_cast(state, action.player_id, card.instance_id)
+                    except Exception:
+                        pass
+                    # Storm (CR 702.41): copy storm spell for each spell cast before it
+                    from .triggers import apply_storm_copies
+                    from .keywords import has as _kw_has
+                    if _kw_has(card, "storm"):
+                        apply_storm_copies(state, stack_item, action.player_id)
+                    # Heroic (CR 702.105): triggers when creature is targeted
+                    from .triggers import check_heroic_triggers, check_magecraft_triggers
+                    if valid_targets:
+                        hero_trigs = check_heroic_triggers(state, action.player_id, valid_targets)
+                        for ht in hero_trigs:
+                            ht_item = StackItem(
+                                source_card_id=ht.source_card_id,
+                                controller_id=ht.controller_id,
+                                is_spell=False,
+                                card_data={"name": f"[Trigger] {ht.description}", "type_line": "Ability"},
+                            )
+                            state.stack.append(ht_item)
+                            state.triggered_abilities.append(ht)
+                    # Magecraft (CR 702.145): triggers when instant/sorcery cast or copied
+                    mc_trigs = check_magecraft_triggers(state, action.player_id, card)
+                    for mt in mc_trigs:
+                        mt_item = StackItem(
+                            source_card_id=mt.source_card_id,
+                            controller_id=mt.controller_id,
+                            is_spell=False,
+                            card_data={"name": f"[Trigger] {mt.description}", "type_line": "Ability"},
+                        )
+                        state.stack.append(mt_item)
+                        state.triggered_abilities.append(mt)
                     caster = next(
                         (p for p in state.players if p.player_id == action.player_id),
                         None,
@@ -983,6 +1020,32 @@ class RulesEngine:
                 
                 # Store the trigger for resolution
                 state.triggered_abilities.append(trigger)
+
+            # Bloodthirst, evolve, constellation ETB hooks
+            from .triggers import check_bloodthirst_etb, check_evolve_triggers, check_constellation_triggers
+            check_bloodthirst_etb(state, card)
+            check_evolve_triggers(state, card)
+            for con_trigger in check_constellation_triggers(state, card):
+                con_item = StackItem(
+                    source_card_id=con_trigger.source_card_id,
+                    controller_id=con_trigger.controller_id,
+                    is_spell=False,
+                    card_data={"name": f"[Trigger] {con_trigger.description}", "type_line": "Ability"},
+                )
+                state.stack.append(con_item)
+                state.triggered_abilities.append(con_trigger)
+            # Layer effects: install static abilities (anthems, keyword grants)
+            try:
+                from .continuous_effects import auto_install_effects
+                auto_install_effects(state, card)
+            except Exception:
+                pass
+            # Replacement effects: install ETB-gated replacements
+            try:
+                from .replacement_effects import install_replacements_for
+                install_replacements_for(state, card)
+            except Exception:
+                pass
         
         else:
             type_line = (card.card_data.get("type_line") or "").lower()
@@ -1019,6 +1082,30 @@ class RulesEngine:
                     state.stack.append(trigger_stack_item)
                     state.log(f"[TRIGGER (ETB)] {trigger.description} added to stack")
                     state.triggered_abilities.append(trigger)
+                # Bloodthirst, evolve, constellation for permanent spells
+                from .triggers import check_bloodthirst_etb, check_evolve_triggers, check_constellation_triggers
+                check_bloodthirst_etb(state, card)
+                check_evolve_triggers(state, card)
+                for con_trigger in check_constellation_triggers(state, card):
+                    con_item = StackItem(
+                        source_card_id=con_trigger.source_card_id,
+                        controller_id=con_trigger.controller_id,
+                        is_spell=False,
+                        card_data={"name": f"[Trigger] {con_trigger.description}", "type_line": "Ability"},
+                    )
+                    state.stack.append(con_item)
+                    state.triggered_abilities.append(con_trigger)
+                # Layer effects + replacement effects at ETB
+                try:
+                    from .continuous_effects import auto_install_effects
+                    auto_install_effects(state, card)
+                except Exception:
+                    pass
+                try:
+                    from .replacement_effects import install_replacements_for
+                    install_replacements_for(state, card)
+                except Exception:
+                    pass
                 state.log(f"    ◀ {card.name} resolves")
             else:
                 # Instant / Sorcery: apply effect, then to graveyard.
@@ -1174,14 +1261,40 @@ class RulesEngine:
                     state.stack.append(trigger_stack_item)
                     state.log(f"[TRIGGER (DEATH)] {trigger.description} added to stack")
                     state.triggered_abilities.append(trigger)
-                
+
+                # Modular: transfer +1/+1 counters before moving to graveyard
+                from .triggers import check_modular_death
+                check_modular_death(state, card)
+
                 # Commander goes to command zone; others go to graveyard
                 if state.format == "commander" and card.instance_id == getattr(state, "commanders", {}).get(card.owner_id):
                     state = move_card(state, card.instance_id, Zone.BATTLEFIELD, Zone.COMMAND_ZONE, card.owner_id)
                     state.log(f"{card.name} returns to the command zone")
                     events.append(f"{card.name} returns to the command zone")
                 else:
+                    # Check undying / persist BEFORE moving to graveyard
+                    from .triggers import check_undying, check_persist, apply_undying_return, apply_persist_return
+                    will_undying = check_undying(state, card)
+                    will_persist = check_persist(state, card)
+                    # Expire any continuous/replacement effects this card was providing
+                    try:
+                        from .continuous_effects import expire_for_card as _cef
+                        _cef(state, card.instance_id)
+                    except Exception:
+                        pass
+                    try:
+                        from .replacement_effects import remove_replacements_for as _rrf
+                        _rrf(state, card.instance_id)
+                    except Exception:
+                        pass
                     state = move_card(state, card.instance_id, Zone.BATTLEFIELD, Zone.GRAVEYARD, card.owner_id)
+                    # Undying / persist: return from graveyard to battlefield
+                    if will_undying:
+                        apply_undying_return(state, card)
+                        events.append(f"{card.name} returns via undying")
+                    elif will_persist:
+                        apply_persist_return(state, card)
+                        events.append(f"{card.name} returns via persist")
 
                 card.damage_marked = 0
 
@@ -1278,6 +1391,13 @@ class RulesEngine:
         # Remove dead players from the game
         orig_count = len(state.players)
         state.players = [p for p in state.players if p.player_id not in died_this_check]
+
+        # Clamp turn-order indices so priority/active player don't go OOB
+        # after elimination (common in Commander 3→2 or 2→1 player transitions).
+        if len(state.players) < orig_count and state.players:
+            n = len(state.players)
+            state.active_player_index = state.active_player_index % n
+            state.priority_player_index = state.priority_player_index % n
 
         # Game ends if only one player remains or fewer
         if len(state.players) == 1:

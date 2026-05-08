@@ -66,6 +66,9 @@ def detect_effect_kind(oracle_text: str) -> str:
         return "drain_each"
     if "each opponent" in text and "damage" in text:
         return "damage_each"
+    # Drain: deals damage to target and gains life
+    if re.search(r"deal[s]? \d+ damage to (target|any)", text) and "you gain" in text and "life" in text:
+        return "drain"
     if "deal" in text and "damage" in text:
         return "damage"
     if "sacrifice" in text and "target" not in text:
@@ -77,8 +80,23 @@ def detect_effect_kind(oracle_text: str) -> str:
         return "edict"
     if "mill" in text or ("put" in text and "top" in text and "graveyard" in text):
         return "mill"
+    # New token types
+    if "investigate" in text:
+        return "investigate"
     if "create" in text and "token" in text:
         return "token"
+    if "populate" in text:
+        return "populate"
+    if re.search(r"\bamass\b", text):
+        return "amass"
+    if re.search(r"\bexplore\b", text):
+        return "explore"
+    if re.search(r"\bconnive\b", text):
+        return "connive"
+    if re.search(r"\badapt\b", text):
+        return "adapt"
+    if re.search(r"\bwheel\b.*(?:discard|draw)", text) or re.search(r"each player discards.*then draws", text):
+        return "wheel"
     if "scry" in text:
         return "scry"
     if "surveil" in text:
@@ -935,6 +953,233 @@ def apply_spell_effect(
                 victim = opp_hand[0]
                 move_card(state, victim.instance_id, Zone.HAND, Zone.GRAVEYARD, opp.player_id)
                 state.log(f"{name}: {opp.name} discards {victim.name}")
+        return state
+
+    if kind == "drain":
+        # "Deal N damage to target, you gain N life"
+        amount = _parse_amount(oracle, default=1)
+        for tid in targets:
+            tplayer = _find_player(state, tid)
+            if tplayer is not None:
+                tplayer.life_total -= amount
+                state.log(f"{name} drains {amount} from {tplayer.name}")
+                continue
+            tcard = _find_card(state, tid)
+            if tcard is not None and tcard.zone == Zone.BATTLEFIELD:
+                tcard.damage_marked += amount
+                state.log(f"{name} deals {amount} drain damage to {tcard.name}")
+        if not targets:
+            opp = _opponent(state, controller_id)
+            if opp:
+                opp.life_total -= amount
+                state.log(f"{name} drains {amount} from {opp.name}")
+        controller = _find_player(state, controller_id)
+        if controller:
+            controller.life_total += amount
+            state.log(f"{name}: {controller.name} gains {amount} life")
+        return state
+
+    if kind == "investigate":
+        # Create Clue artifact tokens equal to the number specified
+        from . import tokens as _tok
+        count = _parse_amount(oracle, default=1)
+        for _ in range(count):
+            _tok.create_clue_token(state, controller_id)
+        state.log(f"{name}: {controller_id} investigates ({count} Clue token(s))")
+        return state
+
+    if kind == "populate":
+        # Copy a creature token you control (CR 701.32)
+        token_creatures = [
+            c for c in state.cards
+            if c.zone == Zone.BATTLEFIELD
+            and c.controller_id == controller_id
+            and c.is_creature()
+            and c.is_token
+        ]
+        if token_creatures:
+            # Choose the biggest token to copy
+            original = max(token_creatures, key=_power)
+            from .game_state import CardInstance as CI
+            copy_token = CI(
+                instance_id=f"populate_{original.instance_id}_{id(original)}",
+                card_data=dict(original.card_data),
+                zone=Zone.BATTLEFIELD,
+                owner_id=controller_id,
+                controller_id=controller_id,
+            )
+            copy_token.is_token = True
+            copy_token.counters = dict(original.counters)
+            copy_token.summoning_sick = True
+            state.cards.append(copy_token)
+            state.log(f"{name}: populates a copy of {original.name}")
+        else:
+            state.log(f"{name}: populate — no token creature to copy")
+        return state
+
+    if kind == "amass":
+        # Amass N: put N +1/+1 counters on a Zombie Army token;
+        # if you don't control one, create a 0/0 Zombie Army token first (CR 701.46)
+        from . import tokens as _tok
+        from .counters import add_counter
+        n_match = re.search(r"\bamass\s+(\d+)\b", oracle.lower())
+        n = int(n_match.group(1)) if n_match else 1
+        # Find existing Zombie Army token
+        army = next(
+            (c for c in state.cards
+             if c.zone == Zone.BATTLEFIELD
+             and c.controller_id == controller_id
+             and c.is_token
+             and "zombie" in (c.type_line or "").lower()
+             and "army" in (c.type_line or "").lower()),
+            None,
+        )
+        if army is None:
+            army = _tok.create_creature_token(
+                state, controller_id,
+                power=0, toughness=0,
+                subtypes=("Zombie", "Army"),
+            )
+        add_counter(army, "+1/+1", n)
+        state.log(f"{name}: amasses {n} — Zombie Army now has {army.counters.get('+1/+1', 0)} +1/+1 counters")
+        return state
+
+    if kind == "explore":
+        # Explore (CR 701.39): reveal top card; if land, put in hand;
+        # else put +1/+1 counter and optionally put revealed card to graveyard
+        for tid in targets:
+            tc = _find_card(state, tid)
+            if tc is None or not tc.is_creature() or tc.zone != Zone.BATTLEFIELD:
+                continue
+            library = [
+                c for c in state.cards
+                if c.zone == Zone.LIBRARY and c.owner_id == controller_id
+            ]
+            if not library:
+                # If no cards to reveal, just put +1/+1 counter
+                from .counters import add_counter
+                add_counter(tc, "+1/+1", 1)
+                state.log(f"{name}: {tc.name} explores — library empty, gets +1/+1")
+                continue
+            revealed = library[0]
+            state.log(f"{name}: {tc.name} explores — reveals {revealed.name}")
+            if revealed.is_land():
+                move_card(state, revealed.instance_id, Zone.LIBRARY, Zone.HAND, controller_id)
+                state.log(f"{name}: {revealed.name} put into hand")
+            else:
+                from .counters import add_counter
+                add_counter(tc, "+1/+1", 1)
+                state.log(f"{name}: {tc.name} gets +1/+1 counter")
+                # Heuristic: send non-land to graveyard if it's not castable now
+                controller_player = _find_player(state, controller_id)
+                total_mana = sum((controller_player.mana_pool or {}).values()) if controller_player else 0
+                if revealed.cmc > total_mana + 1:
+                    move_card(state, revealed.instance_id, Zone.LIBRARY, Zone.GRAVEYARD, controller_id)
+                    state.log(f"{name}: {revealed.name} sent to graveyard")
+        if not targets:
+            # If no target specified, explore targeting any of our creatures
+            my_creatures = [
+                c for c in state.cards
+                if c.zone == Zone.BATTLEFIELD
+                and c.controller_id == controller_id
+                and c.is_creature()
+            ]
+            if my_creatures:
+                tc = max(my_creatures, key=_power)
+                library = [
+                    c for c in state.cards
+                    if c.zone == Zone.LIBRARY and c.owner_id == controller_id
+                ]
+                if library:
+                    revealed = library[0]
+                    if revealed.is_land():
+                        move_card(state, revealed.instance_id, Zone.LIBRARY, Zone.HAND, controller_id)
+                    else:
+                        from .counters import add_counter
+                        add_counter(tc, "+1/+1", 1)
+        return state
+
+    if kind == "connive":
+        # Connive N: draw N cards, discard N cards;
+        # for each nonland discarded, put +1/+1 counter on this creature (CR 701.47)
+        for tid in targets:
+            tc = _find_card(state, tid)
+            if tc is None or not tc.is_creature() or tc.zone != Zone.BATTLEFIELD:
+                continue
+            n_match = re.search(r"\bconnive\s+(\d+)\b", oracle.lower())
+            n = int(n_match.group(1)) if n_match else 1
+            # Draw N
+            library = [
+                c for c in state.cards
+                if c.zone == Zone.LIBRARY and c.owner_id == controller_id
+            ]
+            drawn = []
+            for _ in range(min(n, len(library))):
+                c = library.pop(0)
+                move_card(state, c.instance_id, Zone.LIBRARY, Zone.HAND, controller_id)
+                drawn.append(c)
+            state.log(f"{name}: {tc.name} connives — draws {len(drawn)} card(s)")
+            # Discard N (worst cards, greedily)
+            hand = [
+                c for c in state.cards
+                if c.zone == Zone.HAND and c.owner_id == controller_id
+            ]
+            hand.sort(key=lambda c: (c.is_land(), c.cmc or 0))  # discard non-lands first if they're cheap
+            discarded_nonlands = 0
+            for i in range(min(n, len(hand))):
+                card_to_discard = hand[i]
+                move_card(state, card_to_discard.instance_id, Zone.HAND, Zone.GRAVEYARD, controller_id)
+                if not card_to_discard.is_land():
+                    discarded_nonlands += 1
+            if discarded_nonlands > 0:
+                from .counters import add_counter
+                add_counter(tc, "+1/+1", discarded_nonlands)
+                state.log(f"{name}: {tc.name} gets {discarded_nonlands} +1/+1 counter(s) (connive)")
+        return state
+
+    if kind == "adapt":
+        # Adapt N: if no +1/+1 counters on this creature, put N +1/+1 counters (CR 701.33)
+        n_match = re.search(r"\badapt\s+(\d+)\b", oracle.lower())
+        n = int(n_match.group(1)) if n_match else 1
+        for tid in targets:
+            tc = _find_card(state, tid)
+            if tc is None or not tc.is_creature() or tc.zone != Zone.BATTLEFIELD:
+                continue
+            if tc.counters.get("+1/+1", 0) == 0:
+                from .counters import add_counter
+                add_counter(tc, "+1/+1", n)
+                state.log(f"{name}: {tc.name} adapts {n} (+1/+1 counters)")
+            else:
+                state.log(f"{name}: {tc.name} can't adapt (already has +1/+1 counters)")
+        if not targets:
+            my_creatures = [
+                c for c in state.cards
+                if c.zone == Zone.BATTLEFIELD
+                and c.controller_id == controller_id
+                and c.is_creature()
+                and c.counters.get("+1/+1", 0) == 0
+            ]
+            if my_creatures:
+                tc = max(my_creatures, key=_power)
+                from .counters import add_counter
+                add_counter(tc, "+1/+1", n)
+                state.log(f"{name}: {tc.name} adapts {n}")
+        return state
+
+    if kind == "wheel":
+        # Each player discards their hand and draws 7 (CR 702 / classic Wheel of Fortune)
+        for player in state.players:
+            # Discard hand
+            hand_cards = [c for c in state.cards if c.zone == Zone.HAND and c.owner_id == player.player_id]
+            for c in hand_cards:
+                move_card(state, c.instance_id, Zone.HAND, Zone.GRAVEYARD, player.player_id)
+            # Draw 7
+            library = [c for c in state.cards if c.zone == Zone.LIBRARY and c.owner_id == player.player_id]
+            drawn = 0
+            for c in library[:7]:
+                move_card(state, c.instance_id, Zone.LIBRARY, Zone.HAND, player.player_id)
+                drawn += 1
+            state.log(f"{name}: {player.name} discards {len(hand_cards)}, draws {drawn}")
         return state
 
     # noop / unrecognised — just log

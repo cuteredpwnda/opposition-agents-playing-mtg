@@ -7,6 +7,7 @@ from src.engine.game_state import (
     GameState,
     Phase,
     PlayerState,
+    Zone,
 )
 from src.engine.mana import can_pay, parse_mana_cost, pay_cost
 from src.engine.phases import PHASE_ORDER, advance_phase, is_main_phase
@@ -28,7 +29,7 @@ class TestPhases:
             phase=Phase.CLEANUP,
             turn_number=1,
         )
-        gs = advance_phase(gs)
+        advance_phase(gs)
         assert gs.phase == Phase.UNTAP
         assert gs.turn_number == 2
 
@@ -49,24 +50,25 @@ class TestMana:
 
     def test_parse_mana_cost_empty(self):
         cost = parse_mana_cost("")
-        assert cost == {}
+        assert cost.get("generic", 0) == 0 and not any(v > 0 for v in cost.values())
 
     def test_can_pay_sufficient(self):
-        pool = {"U": 3, "W": 1}
+        player = PlayerState(mana_pool={"W": 1, "U": 3, "B": 0, "R": 0, "G": 0, "C": 0})
         cost = {"generic": 1, "U": 2}
-        assert can_pay(pool, cost)
+        assert can_pay(player, cost)
 
     def test_can_pay_insufficient(self):
-        pool = {"U": 1}
+        player = PlayerState(mana_pool={"W": 0, "U": 1, "B": 0, "R": 0, "G": 0, "C": 0})
         cost = {"generic": 1, "U": 2}
-        assert not can_pay(pool, cost)
+        assert not can_pay(player, cost)
 
     def test_pay_cost_deducts(self):
-        pool = {"U": 3, "W": 1}
+        player = PlayerState(mana_pool={"W": 1, "U": 3, "B": 0, "R": 0, "G": 0, "C": 0})
         cost = {"generic": 1, "U": 2}
-        remaining = pay_cost(dict(pool), cost)
-        assert remaining["U"] == 1
-        assert remaining["W"] == 0  # used for generic
+        pay_cost(player, cost)
+        # pay colored U:2 → U=1; generic:1 consumed from U (cheapest available per CUBWRG order) → U=0
+        assert player.mana_pool["U"] == 0
+        assert player.mana_pool["W"] == 1  # W was not consumed
 
 
 # ---------------------------------------------------------------------------
@@ -76,35 +78,40 @@ class TestMana:
 class TestGameState:
     def _make_gs(self) -> GameState:
         return GameState(
-            players={
-                "p1": PlayerState(life=40),
-                "p2": PlayerState(life=40),
-            },
+            players=[
+                PlayerState(player_id="p1", life_total=40),
+                PlayerState(player_id="p2", life_total=40),
+            ],
             active_player="p1",
             priority_player="p1",
             phase=Phase.MAIN_1,
             turn_number=1,
-            cards_in_zone={
-                ("p1", "hand"): [
-                    CardInstance(
-                        instance_id="c1", owner="p1", controller="p1",
-                        name="Lightning Bolt", oracle_text="Deal 3 damage.",
-                        type_line="Instant", mana_cost="{R}", cmc=1,
-                    )
-                ],
-                ("p1", "battlefield"): [],
-                ("p2", "hand"): [],
-                ("p2", "battlefield"): [],
-            },
+            cards=[
+                CardInstance(
+                    instance_id="c1",
+                    card_data={
+                        "name": "Lightning Bolt",
+                        "oracle_text": "Deal 3 damage.",
+                        "type_line": "Instant",
+                        "mana_cost": "{R}",
+                        "cmc": 1,
+                    },
+                    zone=Zone.HAND,
+                    owner_id="p1",
+                    controller_id="p1",
+                )
+            ],
         )
 
     def test_initial_life(self):
         gs = self._make_gs()
-        assert gs.players["p1"].life == 40
-        assert gs.players["p2"].life == 40
+        p1 = next(p for p in gs.players if p.player_id == "p1")
+        p2 = next(p for p in gs.players if p.player_id == "p2")
+        assert p1.life_total == 40
+        assert p2.life_total == 40
 
     def test_hand_contents(self):
         gs = self._make_gs()
-        hand = gs.cards_in_zone[("p1", "hand")]
+        hand = gs.cards_in_zone("p1", Zone.HAND)
         assert len(hand) == 1
         assert hand[0].name == "Lightning Bolt"

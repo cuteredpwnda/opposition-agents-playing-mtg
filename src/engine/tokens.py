@@ -165,6 +165,103 @@ def create_treasure_tokens(state: GameState, controller_id: str, count: int) -> 
     return [create_treasure_token(state, controller_id) for _ in range(count)]
 
 
+def create_gold_token(state: GameState, controller_id: str) -> CardInstance:
+    """Gold: Artifact — Gold. ``Sacrifice this: Add one mana of any color.`` (Theros-era)"""
+    return create_token(
+        state, controller_id,
+        name="Gold Token",
+        type_line="Token Artifact \u2014 Gold",
+        oracle_text="Sacrifice this artifact: Add one mana of any color.",
+    )
+
+
+def create_map_token(state: GameState, controller_id: str) -> CardInstance:
+    """Map: Artifact — Map. ``{1}, {T}, Sacrifice this: Look at the top card of your library.``"""
+    return create_token(
+        state, controller_id,
+        name="Map Token",
+        type_line="Token Artifact \u2014 Map",
+        oracle_text="{1}, {T}, Sacrifice this artifact: Look at the top card of your library. You may put it on the bottom.",
+    )
+
+
+def create_powerstone_token(state: GameState, controller_id: str) -> CardInstance:
+    """Powerstone: Artifact. ``{T}: Add {C}. This mana can't be spent to cast nonartifact spells.``"""
+    return create_token(
+        state, controller_id,
+        name="Powerstone Token",
+        type_line="Token Artifact \u2014 Powerstone",
+        oracle_text="{T}: Add {C}. This mana can't be spent to cast nonartifact spells.",
+    )
+
+
+def create_shard_token(state: GameState, controller_id: str) -> CardInstance:
+    """Shard: Enchantment. ``{2}, Sacrifice this: Scry 1, then draw a card.``"""
+    return create_token(
+        state, controller_id,
+        name="Shard Token",
+        type_line="Token Enchantment \u2014 Shard",
+        oracle_text="{2}, Sacrifice this enchantment: Scry 1, then draw a card.",
+    )
+
+
+def create_incubator_token(
+    state: GameState, controller_id: str, charge: int = 0
+) -> CardInstance:
+    """Incubator: Artifact. ``{2}: Transform.`` Transforms into a 0/0 Phyrexian creature."""
+    token = create_token(
+        state, controller_id,
+        name="Incubator Token",
+        type_line="Token Artifact \u2014 Incubator",
+        oracle_text="{2}: Transform this artifact.",
+    )
+    if charge > 0:
+        token.counters["+1/+1"] = charge
+    return token
+
+
+def create_walker_emblem(
+    state: GameState, controller_id: str, planeswalker_name: str, effect_text: str
+) -> CardInstance:
+    """Create an emblem for a planeswalker ultimate (stored in exile zone as token)."""
+    from .game_state import CardInstance as CI
+    import uuid
+    emblem = CI(
+        instance_id=f"emblem_{planeswalker_name.lower().replace(' ', '_')}_{uuid.uuid4().hex[:6]}",
+        card_data={
+            "name": f"{planeswalker_name} Emblem",
+            "type_line": "Emblem",
+            "oracle_text": effect_text,
+            "is_token": True,
+        },
+        zone=Zone.COMMAND_ZONE,
+        owner_id=controller_id,
+        controller_id=controller_id,
+    )
+    emblem.is_token = True
+    state.cards.append(emblem)
+    state.log(f"{controller_id} gets an emblem: {effect_text[:60]}")
+    return emblem
+
+
+def create_copy_token(
+    state: GameState, controller_id: str, original: CardInstance
+) -> CardInstance:
+    """Create a token that is a copy of ``original`` (CR 707.2)."""
+    copy = create_token(
+        state, controller_id,
+        name=original.name,
+        type_line=original.type_line,
+        power=original.card_data.get("power"),
+        toughness=original.card_data.get("toughness"),
+        oracle_text=original.oracle_text,
+        keywords=[k for k in (original.card_data.get("keywords") or [])],
+    )
+    # Copy counters from original (tokens don't normally enter with these, but explicit copies do)
+    copy.counters = dict(original.counters)
+    return copy
+
+
 def sacrifice_for_mana(
     state: GameState, treasure: CardInstance, color: str = "C",
 ) -> bool:

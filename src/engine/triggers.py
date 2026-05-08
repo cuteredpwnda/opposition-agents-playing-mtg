@@ -774,3 +774,423 @@ def resolve_trigger(state: GameState, trigger: Trigger) -> GameState:
         state.log(f"[Trigger] fallback effect failed: {exc!r}")
 
     return state
+
+
+# ---------------------------------------------------------------------------
+# Undying (CR 702.93) & Persist (CR 702.79)
+# ---------------------------------------------------------------------------
+
+
+def check_undying(state: GameState, dying_card: CardInstance) -> bool:
+    """Return True if undying fires — card had no +1/+1 counter."""
+    from .keywords import has as has_kw
+    if not has_kw(dying_card, "undying"):
+        return False
+    return dying_card.counters.get("+1/+1", 0) == 0
+
+
+def check_persist(state: GameState, dying_card: CardInstance) -> bool:
+    """Return True if persist fires — card had no -1/-1 counter."""
+    from .keywords import has as has_kw
+    if not has_kw(dying_card, "persist"):
+        return False
+    return dying_card.counters.get("-1/-1", 0) == 0
+
+
+def apply_undying_return(state: GameState, card: CardInstance) -> None:
+    """Return card to battlefield with a +1/+1 counter (CR 702.93)."""
+    from .zones import move_card
+    from .counters import add_counter
+    move_card(state, card.instance_id, Zone.GRAVEYARD, Zone.BATTLEFIELD, card.owner_id)
+    add_counter(card, "+1/+1", 1)
+    card.summoning_sick = True
+    state.log(f"Undying: {card.name} returns to battlefield with a +1/+1 counter")
+
+
+def apply_persist_return(state: GameState, card: CardInstance) -> None:
+    """Return card to battlefield with a -1/-1 counter (CR 702.79)."""
+    from .zones import move_card
+    from .counters import add_counter
+    move_card(state, card.instance_id, Zone.GRAVEYARD, Zone.BATTLEFIELD, card.owner_id)
+    add_counter(card, "-1/-1", 1)
+    card.summoning_sick = True
+    state.log(f"Persist: {card.name} returns to battlefield with a -1/-1 counter")
+
+
+# ---------------------------------------------------------------------------
+# Modular (CR 702.43)
+# ---------------------------------------------------------------------------
+
+
+def check_modular_death(state: GameState, dying_card: CardInstance) -> None:
+    """When a modular creature dies, put its +1/+1 counters on an artifact
+    creature you control (CR 702.43b)."""
+    from .keywords import modular_count, has as has_kw
+    from .counters import add_counter, remove_counter
+    n = dying_card.counters.get("+1/+1", 0)
+    if n <= 0:
+        return
+    if not has_kw(dying_card, "modular"):
+        # Counters only transfer via modular
+        return
+    # Pick best artifact creature target (highest power first)
+    from .keywords import effective_power
+    targets = [
+        c for c in state.cards
+        if c.zone == Zone.BATTLEFIELD
+        and c.controller_id == dying_card.controller_id
+        and c.is_creature()
+        and "artifact" in (c.type_line or "").lower()
+        and c.instance_id != dying_card.instance_id
+    ]
+    if not targets:
+        return
+    targets.sort(key=lambda c: effective_power(c), reverse=True)
+    target = targets[0]
+    add_counter(target, "+1/+1", n)
+    state.log(f"Modular: {dying_card.name}'s {n} +1/+1 counter(s) move to {target.name}")
+
+
+# ---------------------------------------------------------------------------
+# Evolve (CR 702.98)
+# ---------------------------------------------------------------------------
+
+
+def check_evolve_triggers(state: GameState, entering_card: CardInstance) -> None:
+    """When a creature enters under your control, check each creature you
+    control with evolve — if the entering card has greater power or
+    toughness, put a +1/+1 counter on the evolving creature (CR 702.98)."""
+    if not entering_card.is_creature():
+        return
+    from .keywords import has as has_kw, effective_power, effective_toughness
+    from .counters import add_counter
+    ep = effective_power(entering_card)
+    et = effective_toughness(entering_card)
+    for card in state.cards:
+        if card.zone != Zone.BATTLEFIELD:
+            continue
+        if card.controller_id != entering_card.controller_id:
+            continue
+        if card.instance_id == entering_card.instance_id:
+            continue
+        if not has_kw(card, "evolve"):
+            continue
+        cp = effective_power(card)
+        ct = effective_toughness(card)
+        if ep > cp or et > ct:
+            add_counter(card, "+1/+1", 1)
+            state.log(f"Evolve: {card.name} gets +1/+1 counter (entering {entering_card.name} is bigger)")
+
+
+# ---------------------------------------------------------------------------
+# Constellation (CR 702.105) — whenever an enchantment enters under your control
+# ---------------------------------------------------------------------------
+
+
+def check_constellation_triggers(state: GameState, entering_card: CardInstance) -> list[Trigger]:
+    """Fire constellation triggers when an enchantment ETBs (CR 702.105)."""
+    triggered: list[Trigger] = []
+    if "enchantment" not in (entering_card.type_line or "").lower():
+        return triggered
+    for card in state.cards:
+        if card.zone != Zone.BATTLEFIELD:
+            continue
+        if card.controller_id != entering_card.controller_id:
+            continue
+        oracle_lower = (card.oracle_text or "").lower()
+        if "constellation" not in oracle_lower and \
+                "whenever an enchantment enters" not in oracle_lower:
+            continue
+        m = re.search(
+            r"constellation\s*[—\-:]\s*(.+?)(?:\.|$)|"
+            r"whenever an enchantment enters[^,]*,\s*(.+?)(?:\.|$)",
+            card.oracle_text or "", re.IGNORECASE,
+        )
+        if m:
+            effect = (m.group(1) or m.group(2) or "").strip()
+            triggered.append(Trigger(
+                source_card_id=card.instance_id,
+                controller_id=card.controller_id,
+                trigger_type=TriggerType.ENTERS_BATTLEFIELD,
+                description=effect or "constellation",
+            ))
+    return triggered
+
+
+# ---------------------------------------------------------------------------
+# Heroic (CR 702.104) — whenever you cast a spell that targets this
+# ---------------------------------------------------------------------------
+
+
+def check_heroic_triggers(
+    state: GameState, caster_id: str, targets: list[str]
+) -> list[Trigger]:
+    """Fire heroic triggers for each targeted permanent (CR 702.104)."""
+    triggered: list[Trigger] = []
+    for card in state.cards:
+        if card.zone != Zone.BATTLEFIELD:
+            continue
+        if card.controller_id != caster_id:
+            continue
+        if card.instance_id not in targets:
+            continue
+        oracle_lower = (card.oracle_text or "").lower()
+        if "heroic" not in oracle_lower and \
+                "whenever you cast a spell that targets" not in oracle_lower:
+            continue
+        m = re.search(
+            r"heroic\s*[—\-:]\s*(.+?)(?:\.|$)|"
+            r"whenever you cast a spell that targets[^,]*,\s*(.+?)(?:\.|$)",
+            card.oracle_text or "", re.IGNORECASE,
+        )
+        if m:
+            effect = (m.group(1) or m.group(2) or "").strip()
+            triggered.append(Trigger(
+                source_card_id=card.instance_id,
+                controller_id=card.controller_id,
+                trigger_type=TriggerType.CAST,
+                description=effect or "heroic",
+            ))
+    return triggered
+
+
+# ---------------------------------------------------------------------------
+# Exploit (CR 702.108) — when this creature ETBs, may sacrifice a creature
+# ---------------------------------------------------------------------------
+
+
+def check_exploit_triggers(state: GameState, entering_card: CardInstance) -> list[Trigger]:
+    """If a creature with exploit ETBs, generate an exploit trigger (CR 702.108)."""
+    triggered: list[Trigger] = []
+    from .keywords import has as has_kw
+    if not has_kw(entering_card, "exploit"):
+        return triggered
+    triggered.append(Trigger(
+        source_card_id=entering_card.instance_id,
+        controller_id=entering_card.controller_id,
+        trigger_type=TriggerType.ENTERS_BATTLEFIELD,
+        description="exploit: may sacrifice a creature",
+    ))
+    return triggered
+
+
+def resolve_exploit(state: GameState, source: CardInstance) -> bool:
+    """Resolve exploit: sacrifice a creature, return True if exploited."""
+    from .zones import move_card
+    from .keywords import has as has_kw
+    # Pick the weakest creature to sacrifice (excluding the exploiting creature)
+    from .keywords import effective_power
+    candidates = [
+        c for c in state.cards
+        if c.zone == Zone.BATTLEFIELD
+        and c.is_creature()
+        and c.controller_id == source.controller_id
+        and c.instance_id != source.instance_id
+    ]
+    if not candidates:
+        return False
+    candidates.sort(key=lambda c: effective_power(c))
+    victim = candidates[0]
+    move_card(state, victim.instance_id, Zone.BATTLEFIELD, Zone.GRAVEYARD, victim.owner_id)
+    state.log(f"Exploit: {source.name} exploits {victim.name}")
+    # Fire "when you exploit" effect
+    oracle = (source.oracle_text or "")
+    m = re.search(
+        r"when (?:this creature )?exploits a creature,?\s*(.+?)(?:\.|$)",
+        oracle, re.IGNORECASE,
+    )
+    if m:
+        effect = m.group(1).strip()
+        trig = Trigger(
+            source_card_id=source.instance_id,
+            controller_id=source.controller_id,
+            trigger_type=TriggerType.ENTERS_BATTLEFIELD,
+            description=effect,
+        )
+        resolve_trigger(state, trig)
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Bloodthirst (CR 702.54) — ETBs with N +1/+1 if opponent lost life
+# ---------------------------------------------------------------------------
+
+
+def check_bloodthirst_etb(state: GameState, entering_card: CardInstance) -> None:
+    """If card has bloodthirst and an opponent lost life this turn, add counters."""
+    from .keywords import has as has_kw
+    from .counters import add_counter
+    oracle = (entering_card.oracle_text or "").lower()
+    m = re.search(r"\bbloodthirst\s+(\d+)\b", oracle)
+    if not m:
+        return
+    n = int(m.group(1))
+    controller_id = entering_card.controller_id
+    # Check if any opponent lost life this turn
+    opponent_lost_life = getattr(state, "opponent_lost_life_this_turn", False)
+    if not opponent_lost_life:
+        # Check via damage log or life totals
+        for p in state.players:
+            if p.player_id != controller_id and getattr(p, "life_lost_this_turn", 0) > 0:
+                opponent_lost_life = True
+                break
+    if opponent_lost_life:
+        add_counter(entering_card, "+1/+1", n)
+        state.log(f"Bloodthirst {n}: {entering_card.name} enters with {n} +1/+1 counter(s)")
+
+
+# ---------------------------------------------------------------------------
+# Raid (Khans of Tarkir) — if you attacked this turn
+# ---------------------------------------------------------------------------
+
+
+def check_raid_condition(state: GameState, player_id: str) -> bool:
+    """Return True if the given player attacked a creature this turn."""
+    return getattr(state, "player_attacked_this_turn", {}).get(player_id, False)
+
+
+# ---------------------------------------------------------------------------
+# Magecraft (Strixhaven) — whenever you cast or copy an instant or sorcery
+# ---------------------------------------------------------------------------
+
+
+def check_magecraft_triggers(
+    state: GameState, caster_id: str, spell_card: CardInstance
+) -> list[Trigger]:
+    """Fire magecraft triggers when a player casts or copies an instant/sorcery."""
+    triggered: list[Trigger] = []
+    type_line = (spell_card.type_line or "").lower()
+    if "instant" not in type_line and "sorcery" not in type_line:
+        return triggered
+    for card in state.cards:
+        if card.zone != Zone.BATTLEFIELD:
+            continue
+        if card.controller_id != caster_id:
+            continue
+        oracle_lower = (card.oracle_text or "").lower()
+        if "magecraft" not in oracle_lower and \
+                "whenever you cast or copy an instant or sorcery" not in oracle_lower:
+            continue
+        m = re.search(
+            r"magecraft\s*[—\-:]\s*(.+?)(?:\.|$)|"
+            r"whenever you cast or copy an instant or sorcery[^,]*,\s*(.+?)(?:\.|$)",
+            card.oracle_text or "", re.IGNORECASE,
+        )
+        if m:
+            effect = (m.group(1) or m.group(2) or "").strip()
+            triggered.append(Trigger(
+                source_card_id=card.instance_id,
+                controller_id=card.controller_id,
+                trigger_type=TriggerType.CAST,
+                description=effect or "magecraft",
+            ))
+    return triggered
+
+
+# ---------------------------------------------------------------------------
+# Boast (Kaldheim) — activated only if this creature attacked this turn
+# ---------------------------------------------------------------------------
+
+
+def can_boast(state: GameState, card: CardInstance) -> bool:
+    """Return True if this creature can use its boast ability (attacked this turn)."""
+    from .keywords import has as has_kw
+    oracle = (card.oracle_text or "").lower()
+    if "boast" not in oracle:
+        return False
+    attacked_ids = getattr(state, "attacked_this_turn", set())
+    return card.instance_id in attacked_ids
+
+
+# ---------------------------------------------------------------------------
+# Training (Innistrad: Midnight Hunt) — gets +1/+1 when attacks with bigger
+# ---------------------------------------------------------------------------
+
+
+def check_training_triggers(state: GameState, attacker_ids: list[str]) -> None:
+    """When a training creature attacks alongside a creature with greater power,
+    put a +1/+1 counter on the training creature (CR 702.155)."""
+    from .keywords import has as has_kw, effective_power
+    from .counters import add_counter
+    for aid in attacker_ids:
+        card = next((c for c in state.cards if c.instance_id == aid), None)
+        if card is None or not has_kw(card, "training"):
+            continue
+        my_pow = effective_power(card)
+        # Check if any other attacking creature has greater power
+        bigger_attacker = any(
+            effective_power(next((c for c in state.cards if c.instance_id == oid), card)) > my_pow
+            for oid in attacker_ids
+            if oid != aid
+        )
+        if bigger_attacker:
+            add_counter(card, "+1/+1", 1)
+            state.log(f"Training: {card.name} gets +1/+1 counter")
+
+
+# ---------------------------------------------------------------------------
+# Storm (CR 702.40)
+# ---------------------------------------------------------------------------
+
+
+def count_spells_cast_this_turn(state: GameState) -> int:
+    """Return the number of spells cast this turn before the current one."""
+    return getattr(state, "spells_cast_this_turn", 0)
+
+
+def apply_storm_copies(state: GameState, storm_spell_item, caster_id: str) -> None:
+    """Push N copies of the storm spell onto the stack, where N = spells cast
+    before it this turn (CR 702.40).
+
+    Note: ``spells_cast_this_turn`` includes the storm spell itself (it was
+    incremented by the cast handler before this trigger fires), so we copy
+    ``count - 1`` times to match XMage / CR."""
+    from .game_state import StackItem
+    total = count_spells_cast_this_turn(state)
+    n = total - 1  # exclude the storm spell itself
+    if n <= 0:
+        return
+    state.log(f"Storm: creating {n} cop{'y' if n == 1 else 'ies'} of {storm_spell_item.card_data.get('name', 'spell')}")
+    for _ in range(n):
+        copy = StackItem(
+            source_card_id=storm_spell_item.source_card_id,
+            controller_id=caster_id,
+            is_spell=False,
+            card_data=dict(storm_spell_item.card_data),
+            targets=list(getattr(storm_spell_item, "targets", []) or []),
+        )
+        copy.card_data["is_storm_copy"] = True
+        state.stack.append(copy)
+
+
+# ---------------------------------------------------------------------------
+# Encore (Commander 2019) — pay cost: exile from graveyard; for each opponent,
+# create a copy that attacks that opponent; exile at end of step
+# ---------------------------------------------------------------------------
+
+
+def resolve_encore(state: GameState, card: CardInstance, caster_id: str) -> None:
+    """Create a tapped copy of card attacking each opponent, then exile card."""
+    from .zones import move_card
+    from .game_state import CardInstance as CI
+    # Exile the source card from graveyard
+    move_card(state, card.instance_id, Zone.GRAVEYARD, Zone.EXILE, card.owner_id)
+    opponents = [p for p in state.players if p.player_id != caster_id]
+    for opp in opponents:
+        token = CI(
+            instance_id=f"encore_{card.instance_id}_{opp.player_id}",
+            card_data=dict(card.card_data),
+            zone=Zone.BATTLEFIELD,
+            owner_id=caster_id,
+            controller_id=caster_id,
+        )
+        token.is_token = True
+        token.tapped = True  # attacking, so tapped
+        token.summoning_sick = False
+        token.card_data["encore_exile_at_eot"] = True
+        state.cards.append(token)
+        if state.combat is None:
+            state.combat = __import__("src.engine.game_state", fromlist=["CombatState"]).CombatState()
+        state.combat.attackers[token.instance_id] = opp.player_id
+        state.log(f"Encore: {card.name} token attacks {opp.name}")
+

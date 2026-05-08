@@ -28,6 +28,51 @@ from typing import Callable, Optional
 from src.engine.game_state import CardInstance, GameState, Zone
 
 
+# ---------------------------------------------------------------------------
+# Typed event dataclasses (H2 — CR 614 first-class events)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class DiesEvent:
+    """CR 614 — a creature would be put into the graveyard from the battlefield."""
+    card: CardInstance
+    from_zone: Zone = Zone.BATTLEFIELD
+    destination_zone: Zone = Zone.GRAVEYARD
+    replaced_by: str = ""   # source_id of replacement if replaced
+
+
+@dataclass
+class EntersBattlefieldEvent:
+    """CR 614 — a permanent would enter the battlefield."""
+    card: CardInstance
+    tapped: bool = False
+    counters: dict[str, int] = field(default_factory=dict)
+    replaced_by: str = ""
+
+
+@dataclass
+class DrawCardEvent:
+    """CR 614 — a player would draw a card."""
+    player_id: str
+    count: int = 1
+    replaced_by: str = ""
+
+
+@dataclass
+class DamageEvent:
+    """CR 614 — a source would deal damage."""
+    source_id: str
+    target_id: str   # card instance_id OR player_id
+    amount: int
+    is_combat: bool = False
+    replaced_by: str = ""
+
+
+# ---------------------------------------------------------------------------
+# Legacy dict-based framework (still used internally, kept for back-compat)
+# ---------------------------------------------------------------------------
+
+
 @dataclass
 class ReplacementEffect:
     """A registered replacement effect (CR 614.1)."""
@@ -202,6 +247,12 @@ def apply_lifegain(state: GameState, player_id: str, amount: int) -> int:
     if player is None:
         return 0
     player.life_total += final
+    # Watcher notification
+    try:
+        from .watchers import on_life_gained
+        on_life_gained(state, player_id, final)
+    except Exception:
+        pass
     return final
 
 
@@ -233,4 +284,69 @@ def apply_damage_to_player(
     if player is None:
         return 0
     player.life_total -= final
+    # Watcher notification
+    try:
+        from .watchers import on_life_lost
+        on_life_lost(state, player_id, final, source_card_id)
+    except Exception:
+        pass
     return final
+
+
+# ---------------------------------------------------------------------------
+# Typed event helpers (H2 public API)
+# ---------------------------------------------------------------------------
+
+
+def apply_dies_event(state: GameState, event: DiesEvent) -> DiesEvent:
+    """Run ``creature_dies`` replacements and return the (possibly modified) event.
+
+    Callers consult ``event.destination_zone`` afterwards — it will be
+    ``Zone.EXILE`` if a "exile instead" replacement fired.
+    """
+    raw = {
+        "type": "creature_dies",
+        "card_id": event.card.instance_id,
+        "destination_zone": event.destination_zone,
+    }
+    result = apply_replacements(state, raw)
+    if result is None:
+        return event
+    event.destination_zone = result.get("destination_zone", Zone.GRAVEYARD)
+    event.replaced_by = result.get("replaced_by", "")
+    return event
+
+
+def apply_etb_event(state: GameState, event: EntersBattlefieldEvent) -> EntersBattlefieldEvent:
+    """Run ``enters_battlefield`` replacements (e.g. enters tapped, with counters)."""
+    raw = {
+        "type": "enters_battlefield",
+        "card_id": event.card.instance_id,
+        "tapped": event.tapped,
+        "counters": event.counters,
+    }
+    # Parse oracle text for "enters tapped" and "enters with N counters"
+    text = (event.card.oracle_text or "").lower()
+    if "enters tapped" in text or "enters the battlefield tapped" in text:
+        raw["tapped"] = True
+    result = apply_replacements(state, raw)
+    if result is not None:
+        event.tapped = result.get("tapped", event.tapped)
+        event.counters = result.get("counters", event.counters)
+        event.replaced_by = result.get("replaced_by", "")
+    return event
+
+
+def apply_draw_event(state: GameState, event: DrawCardEvent) -> DrawCardEvent:
+    """Run ``draw_card`` replacements (e.g. replacement draws, skip draws)."""
+    raw = {
+        "type": "draw_card",
+        "player_id": event.player_id,
+        "count": event.count,
+    }
+    result = apply_replacements(state, raw)
+    if result is not None:
+        event.count = result.get("count", event.count)
+        event.replaced_by = result.get("replaced_by", "")
+    return event
+

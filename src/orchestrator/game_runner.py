@@ -603,6 +603,33 @@ class GameRunner:
 
             # Upkeep + end step: fire phase-based triggers.
             if phase == Phase.UPKEEP or phase == Phase.END_STEP:
+                # Suspend: tick time counters on suspended cards at upkeep
+                if phase == Phase.UPKEEP:
+                    from src.engine.alternate_costs import tick_suspend_counters, cast_suspended_card
+                    freed = tick_suspend_counters(game_state, game_state.active_player.player_id)
+                    for sus_card in freed:
+                        cast_suspended_card(game_state, sus_card)
+                    # Fire NEXT_UPKEEP delayed triggers (H5)
+                    try:
+                        from src.engine.delayed_triggers import (
+                            get_delayed_registry, TriggerPoint
+                        )
+                        get_delayed_registry(game_state).fire(
+                            game_state, TriggerPoint.NEXT_UPKEEP
+                        )
+                    except Exception:
+                        pass
+                if phase == Phase.END_STEP:
+                    # Fire NEXT_END_STEP delayed triggers (H5)
+                    try:
+                        from src.engine.delayed_triggers import (
+                            get_delayed_registry, TriggerPoint
+                        )
+                        get_delayed_registry(game_state).fire(
+                            game_state, TriggerPoint.NEXT_END_STEP
+                        )
+                    except Exception:
+                        pass
                 from src.engine.triggers import check_phase_triggers
                 from src.engine.game_state import TriggerType, StackItem
                 ttype = TriggerType.UPKEEP if phase == Phase.UPKEEP else TriggerType.END_STEP
@@ -691,6 +718,16 @@ class GameRunner:
                 from src.engine.combat import resolve_combat_damage
                 # Resolve combat damage
                 resolve_combat_damage(game_state)
+                # Fire END_OF_COMBAT delayed triggers (myriad token exile etc.)
+                try:
+                    from src.engine.delayed_triggers import (
+                        get_delayed_registry, TriggerPoint
+                    )
+                    get_delayed_registry(game_state).fire(
+                        game_state, TriggerPoint.END_OF_COMBAT
+                    )
+                except Exception:
+                    pass
             
             if phase == Phase.CLEANUP:
                 # Empty all players' mana pools and discard down to max hand size
@@ -712,6 +749,39 @@ class GameRunner:
                     clear_crew_eot(game_state)
                 except Exception:
                     pass
+                # Reset per-turn counters used by storm/spectacle/surge/raid/etc.
+                game_state.spells_cast_this_turn = 0
+                for player in game_state.players:
+                    if hasattr(player, "life_lost_this_turn"):
+                        player.life_lost_this_turn = 0
+                    if hasattr(player, "attacked_this_turn"):
+                        player.attacked_this_turn = False
+                # Expire end-of-turn continuous effects (layer system)
+                try:
+                    from src.engine.continuous_effects import expire_end_of_turn as _cfeot
+                    _cfeot(game_state)
+                except Exception:
+                    pass
+                # Expire end-of-turn watcher reset (H3)
+                try:
+                    from src.engine.watchers import get_watcher_registry
+                    get_watcher_registry(game_state).reset_turn()
+                except Exception:
+                    pass
+                # Fire end-of-turn delayed triggers (H5)
+                try:
+                    from src.engine.delayed_triggers import get_delayed_registry, TriggerPoint
+                    reg = get_delayed_registry(game_state)
+                    reg.fire(game_state, TriggerPoint.END_OF_TURN)
+                    reg.expire_end_of_turn()
+                except Exception:
+                    pass
+                # Clear summoning-sick flag on permanents that have been
+                # under their controller's control since their last upkeep
+                # (handled at untap, but normalize attacked-this-turn here).
+                for c in game_state.cards:
+                    if hasattr(c, "attacked_this_turn"):
+                        c.attacked_this_turn = False
                 for player in game_state.players:
                     empty_mana_pool(player)
                     hand_cards = [
