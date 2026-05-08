@@ -15,42 +15,42 @@
         "player3": "Urza, Lord High Artificer",
         "player4": "Meren of Clan Nel Toth"
       },
-      "winner": "atraxa_praetors_voice_core",
-      "winner_seat": "player2",
-      "turns": 7,
-      "elapsed_sec": 3.37,
+      "winner": "krenko_mob_boss_core",
+      "winner_seat": "player1",
+      "turns": 5,
+      "elapsed_sec": 2.72,
       "agent_actions": {
         "player1": {
-          "PASS_PRIORITY": 126,
-          "CAST_SPELL": 9,
-          "PLAY_LAND": 5,
+          "PASS_PRIORITY": 80,
+          "CAST_SPELL": 5,
+          "PLAY_LAND": 3,
           "DECLARE_ATTACKERS": 0,
           "ACTIVATE_ABILITY": 0,
           "OTHER": 0
         },
         "player2": {
-          "PASS_PRIORITY": 134,
+          "PASS_PRIORITY": 84,
           "CAST_SPELL": 2,
           "PLAY_LAND": 2,
-          "DECLARE_ATTACKERS": 3,
+          "DECLARE_ATTACKERS": 1,
           "ACTIVATE_ABILITY": 0,
           "OTHER": 0
         },
         "player3": {
-          "PASS_PRIORITY": 129,
-          "CAST_SPELL": 6,
-          "PLAY_LAND": 4,
-          "DECLARE_ATTACKERS": 1,
+          "PASS_PRIORITY": 82,
+          "CAST_SPELL": 4,
+          "PLAY_LAND": 3,
+          "DECLARE_ATTACKERS": 0,
           "ACTIVATE_ABILITY": 0,
-          "OTHER": 4
+          "OTHER": 0
         },
         "player4": {
-          "PASS_PRIORITY": 124,
-          "CAST_SPELL": 4,
-          "PLAY_LAND": 6,
-          "DECLARE_ATTACKERS": 1,
+          "PASS_PRIORITY": 80,
+          "CAST_SPELL": 2,
+          "PLAY_LAND": 4,
+          "DECLARE_ATTACKERS": 0,
           "ACTIVATE_ABILITY": 2,
-          "OTHER": 6
+          "OTHER": 0
         }
       },
       "agent_llm_calls": {
@@ -64,6 +64,6 @@
     }
   ],
   "wins": {
-    "atraxa_praetors_voice_core": 1
+    "krenko_mob_boss_core": 1
   }
 }

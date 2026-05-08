@@ -508,35 +508,73 @@ class GameRunner:
             others = [c for c in bf if c not in lands]
 
             def _fmt_perm(c) -> str:
+                # Face-down permanents hide their identity (CR 707)
+                if getattr(c, "face_down", False) or c.card_data.get("_face_down"):
+                    mode = getattr(c, "_face_down_mode", "face-down")
+                    tag = "T" if c.tapped else "U"
+                    return f"[{mode}][{tag}]"
                 tag = "T" if c.tapped else "U"
+                # Summoning sickness indicator
+                sick = ""
+                if c.is_creature() and getattr(c, "summoning_sick", False):
+                    sick = "~"
                 pt = ""
                 if c.is_creature():
                     try:
-                        from src.engine.static_abilities import get_effective_power_toughness
-                        eff_p, eff_t = get_effective_power_toughness(c, game_state)
+                        from src.engine.keywords import effective_power as _ep, effective_toughness as _et
+                        eff_p = _ep(c, game_state)
+                        eff_t = _et(c, game_state)
                         base_p = c.card_data.get("power", "?")
                         base_t = c.card_data.get("toughness", "?")
+                        dmg = getattr(c, "damage_marked", 0)
+                        dmg_str = f" ⚔{dmg}" if dmg > 0 else ""
                         try:
                             base_p_int = int(base_p)
                             base_t_int = int(base_t)
                             if (eff_p, eff_t) != (base_p_int, base_t_int):
-                                pt = f" {eff_p}/{eff_t} (base {base_p}/{base_t})"
+                                pt = f" {eff_p}/{eff_t}(base {base_p}/{base_t}){dmg_str}"
                             else:
-                                pt = f" {eff_p}/{eff_t}"
+                                pt = f" {eff_p}/{eff_t}{dmg_str}"
                         except (TypeError, ValueError):
-                            pt = f" {base_p}/{base_t}"
+                            pt = f" {base_p}/{base_t}{dmg_str}"
                     except Exception:
                         pwr = c.card_data.get("power", "?")
                         tgh = c.card_data.get("toughness", "?")
                         pt = f" {pwr}/{tgh}"
-                return f"{c.name}{pt}[{tag}]"
+                # Counter summary (only non-empty buckets)
+                counters = getattr(c, "counters", {})
+                ctr_str = ""
+                if counters:
+                    parts = []
+                    for k, v in counters.items():
+                        if v:
+                            parts.append(f"{v}{k}")
+                    if parts:
+                        ctr_str = " {" + ",".join(parts) + "}"
+                return f"{sick}{c.name}{pt}{ctr_str}[{tag}]"
 
             land_part = (f"{len(lands)} lands "
                          f"({sum(1 for l in lands if not l.tapped)} untapped)")
             you_label = p.name or p.player_id
+            # Poison counters + commander damage annotations
+            extras: list[str] = []
+            if getattr(p, "poison_counters", 0):
+                extras.append(f"☠ {p.poison_counters} poison")
+            cmd_dmg = getattr(p, "commander_damage_received", {})
+            if cmd_dmg:
+                for src_id, amt in cmd_dmg.items():
+                    if amt >= 5:  # only log once it's a real threat
+                        # Try to get commander name
+                        cmd_card = next(
+                            (c for c in game_state.cards if c.instance_id == src_id),
+                            None
+                        )
+                        cmd_name = cmd_card.name if cmd_card else src_id
+                        extras.append(f"{amt} cmd dmg from {cmd_name}")
+            extras_str = ("  [" + ", ".join(extras) + "]") if extras else ""
             game_state.log(
                 f"  • {you_label}: life {p.life_total}, "
-                f"hand {hand_n}, lib {lib_n}, gy {gy_n} | {land_part}"
+                f"hand {hand_n}, lib {lib_n}, gy {gy_n} | {land_part}{extras_str}"
             )
             if others:
                 # Group identical permanents for compactness.
@@ -730,6 +768,63 @@ class GameRunner:
                     pass
             
             if phase == Phase.CLEANUP:
+                # Watcher-based turn summary — fires before reset so data is still live.
+                try:
+                    from src.engine.watchers import (
+                        get_watcher_registry,
+                        SpellsCastThisTurnWatcher,
+                        LifeLostThisTurnWatcher,
+                        LifeGainedThisTurnWatcher,
+                        PlayerAttackedThisTurnWatcher,
+                        LandPlayedThisTurnWatcher,
+                    )
+                    reg = get_watcher_registry(game_state)
+                    spells_w = reg.get(SpellsCastThisTurnWatcher)
+                    lost_w = reg.get(LifeLostThisTurnWatcher)
+                    gained_w = reg.get(LifeGainedThisTurnWatcher)
+                    atk_w = reg.get(PlayerAttackedThisTurnWatcher)
+                    land_w = reg.get(LandPlayedThisTurnWatcher)
+                    summary_lines: list[str] = []
+                    for p in game_state.players:
+                        pid = p.player_id
+                        parts: list[str] = []
+                        sc = spells_w.count_for(pid) if spells_w else 0
+                        lc = land_w.count_for(pid) if land_w else 0
+                        gained = gained_w.gained_by(pid) if gained_w else 0
+                        lost = lost_w.lost_by(pid) if lost_w else 0
+                        attacked = atk_w.did_attack(pid) if atk_w else False
+                        if sc:
+                            parts.append(f"{sc} spell{'s' if sc != 1 else ''}")
+                        if lc:
+                            parts.append(f"{lc} land{'s' if lc != 1 else ''}")
+                        if attacked:
+                            n_atk = len([
+                                a for a in (atk_w.attacker_ids if atk_w else set())
+                                if any(
+                                    c.instance_id == a and c.controller_id == pid
+                                    for c in game_state.cards
+                                )
+                            ])
+                            parts.append(f"attacked ({n_atk or '?'} creature{'s' if n_atk != 1 else ''})")
+                        life_parts: list[str] = []
+                        if gained:
+                            life_parts.append(f"+{gained}")
+                        if lost:
+                            life_parts.append(f"-{lost}")
+                        if life_parts:
+                            net = gained - lost
+                            sign = "+" if net >= 0 else ""
+                            parts.append(f"life {'/'.join(life_parts)} (net {sign}{net})")
+                        if parts:
+                            label = p.name or pid
+                            summary_lines.append(f"  │ {label}: {', '.join(parts)}")
+                    if summary_lines:
+                        game_state.log("  ┌─── TURN SUMMARY ───")
+                        for sl in summary_lines:
+                            game_state.log(sl)
+                        game_state.log("  └────────────────────")
+                except Exception:
+                    pass
                 # Empty all players' mana pools and discard down to max hand size
                 from src.engine.mana import empty_mana_pool
                 from src.engine.zones import move_card
