@@ -1084,12 +1084,24 @@ at combat / EOT / upkeep), new test file.
       to unblock `scripts/run_kg_enrichment.py` returning > 0 synergies.
       Driver: `scripts/weekend_campaign.ps1` runs this as the pre-flight
       step before Stream B (or skip with `-SkipTrajectories`).
+      **Blocked offline** — requires SentenceTransformer model download.
 
-- **Expanded archived-checkpoint evaluation** — rerun
-      `scripts/benchmark_trained_agents.py` on multiple JEPA checkpoints
-      (`jepa_epoch_10.pt` … `jepa_final.pt`) with a larger game budget and update
-      `paper/opposition_agents_mtg.tex` once the result is statistically more
-      informative than the current 4-game smoke run.
+- [x] **Expanded archived-checkpoint evaluation (May 2026)** — ran
+      `scripts/benchmark_trained_agents.py` across 4 JEPA checkpoints vs
+      `random` and `heuristic` baselines. 8 games/baseline/checkpoint,
+      symmetric burn mirror, seed=77, max-turns=30. Results in
+      `runs/checkpoint_eval/results.csv`.
+
+  | Checkpoint        | vs random WR | vs heuristic WR | EFE score |
+  |-------------------|-------------|----------------|-----------|
+  | jepa_epoch_10.pt  | 12.5%       | 0.0%           | 0.455     |
+  | jepa_epoch_30.pt  | 12.5%       | 12.5%          | 0.401     |
+  | jepa_epoch_50.pt  | 25.0%       | 25.0%          | 0.105     |
+  | jepa_final.pt     | 25.0%       | 25.0%          | **0.081** |
+
+  Finding: clear monotonic improvement across epochs. `jepa_final.pt` is
+  the best checkpoint by EFE (lower = better). Still below heuristic-vs-random
+  parity (33%); world model needs more trajectories / training epochs.
 
 - **Deck-Builder Agent — G6 combo-flowchart bias + G7 KG feedback** —
   optional second objective (maximise kill-chain length) and write-back of

@@ -1,0 +1,40 @@
+{
+  "checkpoints": [
+    "checkpoints/jepa/jepa_epoch_10.pt",
+    "checkpoints/jepa/jepa_epoch_30.pt",
+    "checkpoints/jepa/jepa_epoch_50.pt",
+    "checkpoints/jepa/jepa_final.pt"
+  ],
+  "baselines": [
+    "random",
+    "heuristic"
+  ],
+  "games_per_baseline": 8,
+  "best_checkpoint": "checkpoints/jepa/jepa_final.pt",
+  "best_expected_free_energy": 0.08053125000000005,
+  "selection_config": {
+    "checkpoints": [
+      "checkpoints/jepa/jepa_epoch_10.pt",
+      "checkpoints/jepa/jepa_epoch_30.pt",
+      "checkpoints/jepa/jepa_epoch_50.pt",
+      "checkpoints/jepa/jepa_final.pt"
+    ],
+    "baselines": [
+      "random",
+      "heuristic"
+    ],
+    "decks": [
+      "data/decks/modern/modern_mono_red_burn.txt",
+      "data/decks/modern/modern_mono_red_burn.txt"
+    ],
+    "games": 8,
+    "max_turns": 30,
+    "seed": 77,
+    "out": "runs/checkpoint_eval",
+    "pragmatic_weight": 1.0,
+    "epistemic_weight": 0.6,
+    "latency_weight": 0.15,
+    "horizon_weight": 0.05,
+    "loss_weight": 0.25
+  }
+}
