@@ -18,7 +18,7 @@
       "winner": "atraxa_praetors_voice_core",
       "winner_seat": "player2",
       "turns": 7,
-      "elapsed_sec": 2.74,
+      "elapsed_sec": 3.37,
       "agent_actions": {
         "player1": {
           "PASS_PRIORITY": 126,
