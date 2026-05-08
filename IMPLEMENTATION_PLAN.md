@@ -616,6 +616,39 @@ items stay for traceability.
         `SuspendAbility.java`,
         `BecomesTargetSourceTriggeredAbility.java`.
 
+- [x] **Enhanced game logging (May 2026)** — `src/orchestrator/game_runner.py`
+  enriched with:
+  * `~` prefix on summoning-sick creatures in board snapshot.
+  * `⚔N` shows damage marked on a creature mid-combat.
+  * Counter bucket summary `{3+1/+1}` shown inline on permanents.
+  * Poison counters + commander damage (≥5) annotated per player line.
+  * Face-down permanents hide their name: `[morphed][U]`.
+  * **Turn summary block** (from watchers, fires before cleanup reset):
+    e.g. `│ Alice: 2 spells, 1 land, attacked (3 creatures), life +4/-7`.
+  Draw logging was already present in `zones.py`; no duplicate added.
+
+- [x] **Deck-Builder Agent — G4 batched evaluator + G5 mutation loop (May 2026)** —
+  * `src/agents/deck_builder/evaluator.py` (new): `DeckEvaluator` wraps
+    `GameRunner` to measure empirical win rate against reference decks/agents.
+    Per-card marginal contribution via appearance-weighting (+1/N on wins,
+    −1/N on losses). `EvalResult` exposes `.win_rate`, `.top_contributors(n)`,
+    `.bottom_contributors(n)`.
+  * `src/agents/deck_builder/mutator.py` (new): `DeckMutator` (μ+λ) / SA loop:
+    pick K worst cards, score replacements via `CardScorer.score_batch`,
+    evaluate mutated deck, accept with greedy or SA criterion. Returns
+    `(best_decklist, MutationLog)`.
+  * Both exported from `src/agents/deck_builder/__init__.py`.
+  * 14 tests in `tests/test_deck_builder_evaluator_mutator.py` — all pass.
+  * Full suite: **527 passed, 27 skipped, 0 failures**.
+
+- [x] **1v1 agent round-robin baseline benchmark (May 2026)** —
+  `scripts/run_matchups.py` run with `--agents random heuristic world_model`
+  (4 games/pair, seed=42, burn vs control decks). Results in
+  `runs/ablation_1v1/games.csv` + `summary.json`.
+  Raw: random 9W/37.5%, heuristic 9W/37.5%, world_model 6W/25.0%.
+  Key finding: burn deck seat dominated (deck assignment confounds agent skill).
+  Symmetric rematch planned as Low Priority queue item.
+
 ### In progress
 
 _(none — pick from queue below)_
@@ -1049,19 +1082,20 @@ at combat / EOT / upkeep), new test file.
       `paper/opposition_agents_mtg.tex` once the result is statistically more
       informative than the current 4-game smoke run.
 
-- **Deck-Builder Agent — G4 batched evaluator + G5 mutation loop** — next
-  steps after the G1/G2/G3/G9/G10 kickoff that landed.  G4 wraps the pod
-  runner to produce per-card marginal win contribution; G5 adds simulated
-  annealing / (μ+λ) evolutionary swaps.  See Phase G section for full task
-  list.
-
 - **Deck-Builder Agent — G6 combo-flowchart bias + G7 KG feedback** —
   optional second objective (maximise kill-chain length) and write-back of
   winning synergy evidence to Neo4j.  Defer until G4/G5 are validated.
 
 ### Queue — Low Priority / Polish
 
-_(currently empty — see Done above)_
+- **Symmetric deck 1v1 benchmark** — rerun `scripts/run_matchups.py` with
+  both agents using the *same* deck (e.g. both pilot `modern_mono_red_burn.txt`)
+  so deck advantage doesn't dominate the results, giving a cleaner agent-skill
+  signal. The current burn-vs-control results are confounded by deck asymmetry.
+
+- **EDH pod benchmark results** — collect and record results from the
+  ongoing `runs/ablation_pod/` pod run (random / heuristic / world_model /
+  heuristic at four seats). Update this plan once complete.
 
 ---
 
