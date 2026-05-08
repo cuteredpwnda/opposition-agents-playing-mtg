@@ -428,13 +428,30 @@ We keep implementation detail intentionally brief here because the scientific ob
 
 We report preliminary results; a full benchmark suite (\Cref{sec:future}) is in development. Current evidence is of three kinds.
 
-\paragraph{(i) Engine correctness.} The repository contains $\sim$30 pytest modules covering combat, the stack, triggered/static/replacement abilities, and end-to-end games. The whole-suite runtime is dominated by integration tests; unit tests under \texttt{tests/test\_engine/} and \texttt{tests/test\_knowledge/} pass on Python~3.11 and 3.12.
+\paragraph{(i) Engine correctness.} The repository contains $\sim$50 pytest modules (513~passing tests, 27~skipped, 0~failures) covering combat, the stack, triggered/static/replacement/continuous abilities, watchers, face-down permanents, delayed triggered abilities, and end-to-end games. The whole-suite runtime is under 20~seconds on a single CPU.
 
 \paragraph{(ii) Knowledge-graph coverage.} The OWL ontology v1.1 declares 17 top-level classes and 24 object/data properties. After Scryfall ingestion of a representative Standard environment ($\sim$5{,}000 cards) the graph contains the cards, their oracle-text SBERT embeddings, and combo edges imported from Commander Spellbook.
 
 \paragraph{(iii) Self-play promotion loop.} The promotion loop of \Cref{alg:promotion} is exercised by two unit tests (\texttt{tests/test\_rl\_trainer.py}); both pass. End-to-end promotion behaviour --- whether champions stabilise after $\mathcal{O}(10)$ rounds of $N=20$ games --- is the next planned experiment and is not reported here.
 
-\paragraph{Checkpoint-benchmark status.} We have \emph{not yet} run a clean benchmark in this workspace showing archived, fully trained world-model checkpoints outperforming \texttt{heuristic}, \texttt{random}, or pure \texttt{llm} baselines. The current results establish that the post-fix world-model agent can play normally and tie the heuristic baseline on the tested Modern matchup, but the repository did not contain persisted training checkpoints at the time of writing. To close that gap we added a dedicated checkpoint benchmark path (\texttt{scripts/benchmark\_trained\_agents.py}) and an active-inference-inspired checkpoint selector, so the next training run can be evaluated as a true trained-vs-baseline comparison rather than a smoke test.
+\paragraph{Checkpoint-benchmark status.} We ran a clean checkpoint evaluation using \texttt{scripts/benchmark\_trained\_agents.py} across four archived JEPA checkpoints (\texttt{jepa\_epoch\_10.pt}, \texttt{epoch\_30}, \texttt{epoch\_50}, \texttt{jepa\_final.pt}) against \texttt{random} and \texttt{heuristic} baselines (8~games per baseline per checkpoint, symmetric Mono-Red mirror, seed~77, \texttt{--max-turns}~30). Results are in \Cref{tab:checkpoint-eval}. The final checkpoint achieves 25\,\% win rate against both baselines, below the heuristic-vs-random parity level of $\sim$33\,\%, indicating that the world model still needs more training data or epochs to match the hand-tuned heuristic. The active-inference-inspired checkpoint selector identifies \texttt{jepa\_final.pt} as best by expected free energy (EFE~0.081; lower is better).
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{lrrr}
+\toprule
+Checkpoint & vs.\ random WR & vs.\ heuristic WR & EFE \\
+\midrule
+\texttt{jepa\_epoch\_10.pt} & 12.5\% & 0.0\%  & 0.455 \\
+\texttt{jepa\_epoch\_30.pt} & 12.5\% & 12.5\% & 0.401 \\
+\texttt{jepa\_epoch\_50.pt} & 25.0\% & 25.0\% & 0.105 \\
+\texttt{jepa\_final.pt}     & 25.0\% & 25.0\% & \textbf{0.081} \\
+\bottomrule
+\end{tabular}
+\caption{JEPA checkpoint evaluation on symmetric Mono-Red mirror match (8 games/baseline/checkpoint, seed~77, max-turns~30). Win rate against \texttt{random} and \texttt{heuristic} baselines. EFE is the active-inference-inspired selection score (lower is better).}
+\label{tab:checkpoint-eval}
+\end{table}
 
 \paragraph{(iv) Pairwise ablation against the heuristic baseline.}
 We use the in-tree \texttt{scripts/run\_matchups.py} harness to play each candidate agent versus the strategy-aware \texttt{HeuristicAgent} on a fixed Modern matchup (Mono-Red Burn vs.\ Azorius Control), 16 games per cell with seat order swapped to remove going-first bias, \texttt{--max-turns}~30, seed~7. Results are summarised in \Cref{tab:ablation-1v1}. The KG-grounded heuristic and the LLM agent both clear 50\,\% against the baseline; the world-model agent ties; the LLM--WM--KG \emph{fusion} agent currently underperforms its components, which we attribute to (a)~its much larger per-decision latency biasing toward conservative passes when the cost-aware short-circuit fires, and (b)~uncalibrated mixture weights $(\alpha,\beta,\gamma,\delta)$ in the $\sigma$ scoring of \S\ref{sec:fusion}. Calibration is queued in \Cref{sec:future}.
