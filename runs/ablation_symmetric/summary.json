@@ -1,0 +1,28 @@
+{
+  "total_games": 48,
+  "games_completed": 48,
+  "games_errored": 0,
+  "format": "standard",
+  "pod": false,
+  "agents": [
+    "random",
+    "heuristic",
+    "world_model"
+  ],
+  "decks": [
+    "data\\decks\\modern\\modern_mono_red_burn.txt",
+    "data\\decks\\modern\\modern_mono_red_burn.txt"
+  ],
+  "wins_by_agent": {
+    "random": 20,
+    "heuristic": 16,
+    "world_model": 12
+  },
+  "win_rate_by_agent": {
+    "random": 0.4166666666666667,
+    "heuristic": 0.3333333333333333,
+    "world_model": 0.25
+  },
+  "avg_turns": 6.666666666666667,
+  "avg_elapsed_sec": 0.9166666666666666
+}

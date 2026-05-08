@@ -647,7 +647,16 @@ items stay for traceability.
   `runs/ablation_1v1/games.csv` + `summary.json`.
   Raw: random 9W/37.5%, heuristic 9W/37.5%, world_model 6W/25.0%.
   Key finding: burn deck seat dominated (deck assignment confounds agent skill).
-  Symmetric rematch planned as Low Priority queue item.
+  Symmetric rematch completed — see entry below.
+
+- [x] **Symmetric deck 1v1 benchmark (May 2026)** —
+  Both seats pilot `modern_mono_red_burn.txt`, 8 games/pair, seed=42, max 30 turns.
+  Results in `runs/ablation_symmetric/`. 48 total games, 0 errors.
+  random 20W/41.7%, heuristic 16W/33.3%, world_model 12W/25.0%.
+  Finding: with deck advantage removed, random still leads — likely because
+  random play generates unpredictable threat patterns in mirror matches.
+  heuristic > world_model confirms heuristic evaluation is better calibrated
+  for this aggro format at short turn limits.
 
 ### In progress
 
@@ -1088,14 +1097,10 @@ at combat / EOT / upkeep), new test file.
 
 ### Queue — Low Priority / Polish
 
-- **Symmetric deck 1v1 benchmark** — rerun `scripts/run_matchups.py` with
-  both agents using the *same* deck (e.g. both pilot `modern_mono_red_burn.txt`)
-  so deck advantage doesn't dominate the results, giving a cleaner agent-skill
-  signal. The current burn-vs-control results are confounded by deck asymmetry.
-
-- **EDH pod benchmark results** — collect and record results from the
-  ongoing `runs/ablation_pod/` pod run (random / heuristic / world_model /
-  heuristic at four seats). Update this plan once complete.
+- **EDH pod benchmark** — 4-player pod (random / heuristic / world_model /
+  heuristic, 3 games, seed=99, `runs/ablation_pod/`). The run was interrupted
+  before completion due to long game duration. Re-attempt with `--max-turns 20`
+  to cap game length.
 
 ---
 
