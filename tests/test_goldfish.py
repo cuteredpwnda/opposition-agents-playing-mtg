@@ -179,11 +179,43 @@ def test_goldfish_stats_summary_contains_key_info():
         avg_power_per_turn=[0.0, 1.0, 3.5],
         avg_creatures_per_turn=[0.0, 1.0, 2.5],
         curve_hit_rate=0.65,
+        win_rate_convergence=[0.0, 0.5, 0.67],
+        target_card_by_turn={2: 0.3, 3: 0.6},
+        top_winning_lines=[["Lightning Bolt", "Lightning Bolt", "Shard Volley"]],
     )
     summary = stats.summary(deck_name="test_deck")
     assert "test_deck" in summary
     assert "70.0%" in summary     # win rate
     assert "65.0%" in summary     # curve hit rate
+    assert "Target card" in summary
+    assert "Winning lines" in summary
+
+
+def test_goldfish_run_has_winning_line_and_target_card_turn():
+    run = GoldfishRun(
+        kill_turn=4,
+        turns_played=4,
+        winning_line=["Goblin Guide", "Lightning Bolt", "Shard Volley"],
+        target_card_turn=2,
+    )
+    assert run.won is True
+    assert run.winning_line[0] == "Goblin Guide"
+    assert run.target_card_turn == 2
+
+
+def test_goldfish_stats_win_rate_convergence():
+    stats = GoldfishStats(
+        runs=4,
+        wins=2,
+        kill_turns=[2, 4],
+        avg_spells_per_turn=[],
+        avg_power_per_turn=[],
+        avg_creatures_per_turn=[],
+        curve_hit_rate=0.5,
+        win_rate_convergence=[1.0, 0.5, 0.33, 0.5],
+    )
+    assert len(stats.win_rate_convergence) == 4
+    assert stats.win_rate_convergence[-1] == pytest.approx(0.5)
 
 
 # ---------------------------------------------------------------------------
@@ -216,6 +248,9 @@ def test_goldfish_runner_aggregates_wins():
     assert stats.runs == 5
     assert stats.wins == 5
     assert stats.win_rate == pytest.approx(1.0)
+    # convergence list has one entry per run
+    assert len(stats.win_rate_convergence) == 5
+    assert stats.win_rate_convergence[-1] == pytest.approx(1.0)
 
 
 def test_goldfish_runner_aggregates_losses():
@@ -268,3 +303,52 @@ def test_goldfish_runner_uses_derived_seeds():
 
     # 3 games → seeds 100, 101, 102
     assert seeds_used == [100, 101, 102]
+
+
+# ---------------------------------------------------------------------------
+# to_trajectories
+# ---------------------------------------------------------------------------
+
+def test_to_trajectories_returns_one_trajectory_per_run():
+    from src.agents.goldfish_runner import GoldfishRun, TurnSnapshot, GoldfishRunner
+
+    snap = TurnSnapshot(
+        turn=1,
+        spells_cast=0,
+        land_played=1,
+        creatures=0,
+        total_power=0,
+        opponent_life=20,
+        spell_names=[],
+    )
+    runs = [
+        GoldfishRun(kill_turn=3, turns_played=3, snapshots=[snap], winning_line=["Bolt"]),
+        GoldfishRun(kill_turn=None, turns_played=5, snapshots=[snap]),
+    ]
+    trajectories = GoldfishRunner.to_trajectories(runs)
+    assert len(trajectories) == 2
+    assert trajectories[0].source == "goldfish"
+    assert trajectories[0].winner == 0   # active player won
+    assert trajectories[1].winner == 1   # opponent (active player lost)
+
+
+def test_to_trajectories_transitions_count_matches_snapshots():
+    from src.agents.goldfish_runner import GoldfishRun, TurnSnapshot, GoldfishRunner
+
+    snaps = [
+        TurnSnapshot(
+            turn=t,
+            spells_cast=1,
+            land_played=1,
+            creatures=1,
+            total_power=2,
+            opponent_life=20 - t * 2,
+            spell_names=["Goblin Guide"],
+        )
+        for t in range(1, 5)
+    ]
+    run = GoldfishRun(kill_turn=4, turns_played=4, snapshots=snaps, winning_line=["Goblin Guide"])
+    trajectories = GoldfishRunner.to_trajectories([run])
+    assert len(trajectories[0].transitions) == len(snaps)
+    # Last transition should be marked done
+    assert trajectories[0].transitions[-1].done is True

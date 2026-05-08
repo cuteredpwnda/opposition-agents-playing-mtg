@@ -248,6 +248,70 @@ class RLTrainer:
             self.champion_id, _ = self.pool.get_best_agents()
             logger.info("Initial champion agent: %s", self.champion_id)
 
+    async def warmup_with_goldfish(
+        self,
+        decklist: list[dict],
+        runs: int = 200,
+        max_turns: int = 10,
+        target_card: str | None = None,
+        seed: int | None = None,
+    ) -> "GoldfishStats":  # type: ignore[name-defined]
+        """Pre-seed the trajectory store with cheap goldfish traces.
+
+        Goldfish games (single player vs. NullAgent) are ~10× faster to
+        generate than self-play games because there is no opponent decision
+        overhead.  Calling this before the main training loop gives the world
+        model a head-start on card-play mechanics before it has to deal with
+        opponent interaction.
+
+        Parameters
+        ----------
+        decklist:
+            The deck to goldfish, as a list of Scryfall-format card dicts.
+        runs:
+            Number of goldfish games to simulate.
+        max_turns:
+            Per-player turn limit.
+        target_card:
+            Optional card name to track in the goldfish stats.
+        seed:
+            RNG seed for reproducibility.
+
+        Returns
+        -------
+        GoldfishStats
+            Aggregated statistics from the goldfish run (useful for logging).
+        """
+        from src.agents.goldfish_runner import GoldfishRunner, GoldfishStats
+
+        if self.trajectory_store is None and self.config.collect_trajectories:
+            from src.world_model.trajectory import TrajectoryStore
+            store_path = os.path.join(self.config.checkpoint_dir, "trajectories")
+            self.trajectory_store = TrajectoryStore(store_path)
+
+        runner = GoldfishRunner(
+            agent_type="heuristic",
+            runs=runs,
+            max_turns=max_turns,
+            seed=seed,
+            target_card=target_card,
+        )
+        raw_runs = await runner.run_raw(decklist)
+        stats = GoldfishRunner._aggregate(raw_runs, target_card=target_card)
+
+        if self.trajectory_store is not None:
+            trajectories = GoldfishRunner.to_trajectories(raw_runs)
+            for traj in trajectories:
+                self.trajectory_store.add(traj)
+            logger.info(
+                "Goldfish warmup: %d trajectories added to store (%d wins, avg kill T%.1f)",
+                len(trajectories),
+                stats.wins,
+                stats.avg_kill_turn or 0.0,
+            )
+
+        return stats
+
     async def train(self):
         """Main RL training loop."""
         self.setup()

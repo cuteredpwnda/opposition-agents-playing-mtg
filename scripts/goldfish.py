@@ -70,8 +70,6 @@ def _load_deck_fallback(deck_path: str) -> list[dict]:
 
 
 def _save_results(stats: "GoldfishStats", out_dir: str, deck_name: str) -> None:  # type: ignore[name-defined]  # noqa: F821
-    from src.agents.goldfish_runner import GoldfishStats  # re-import for type safety
-
     os.makedirs(out_dir, exist_ok=True)
     safe_name = "".join(c if c.isalnum() or c in "-_" else "_" for c in deck_name)
     out_path = Path(out_dir) / f"goldfish_{safe_name}.json"
@@ -82,7 +80,10 @@ def _save_results(stats: "GoldfishStats", out_dir: str, deck_name: str) -> None:
         "win_rate": stats.win_rate,
         "avg_kill_turn": stats.avg_kill_turn,
         "kill_turn_distribution": {str(k): v for k, v in stats.kill_turn_distribution.items()},
+        "win_rate_convergence": stats.win_rate_convergence,
         "curve_hit_rate": stats.curve_hit_rate,
+        "target_card_by_turn": {str(k): v for k, v in stats.target_card_by_turn.items()},
+        "top_winning_lines": stats.top_winning_lines,
         "avg_spells_per_turn": stats.avg_spells_per_turn,
         "avg_power_per_turn": stats.avg_power_per_turn,
         "avg_creatures_per_turn": stats.avg_creatures_per_turn,
@@ -104,11 +105,13 @@ async def _main(args: argparse.Namespace) -> None:
         max_turns=args.max_turns,
         seed=args.seed,
         starting_life=args.life,
+        target_card=args.target_card,
     )
 
+    target_str = f", target={args.target_card!r}" if args.target_card else ""
     print(
         f"Simulating {args.runs} goldfish games  "
-        f"(agent={args.agent}, max_turns={args.max_turns}, life={args.life}) …",
+        f"(agent={args.agent}, max_turns={args.max_turns}, life={args.life}{target_str}) …",
         flush=True,
     )
 
@@ -147,6 +150,10 @@ def main() -> None:
     parser.add_argument(
         "--life", type=int, default=20, metavar="N",
         help="Starting life total for both players (default 20)."
+    )
+    parser.add_argument(
+        "--target-card", default=None, metavar="CARD",
+        help="Card name to track (cEDH-style): shows probability of casting it by turn N."
     )
     parser.add_argument(
         "--out", default=None, metavar="DIR",

@@ -658,7 +658,41 @@ items stay for traceability.
   heuristic > world_model confirms heuristic evaluation is better calibrated
   for this aggro format at short turn limits.
 
-### In progress
+- [x] **Goldfish simulator + cEDH-style stats + world model trajectory export (May 2026)** —
+  Solo Monte Carlo simulation of deck play vs. a do-nothing opponent, mirroring
+  the cEDH Rhystic Goldfish Simulator feature set.
+  * `src/agents/null_agent.py` (new): `NullAgent` — always passes priority;
+    registered as `"null"` in `AGENT_REGISTRY`.
+  * `src/agents/goldfish_runner.py` (new): `GoldfishRunner`, `GoldfishStats`,
+    `GoldfishRun`, `TurnSnapshot`. Features:
+    - Win-rate convergence curve (`win_rate_convergence: list[float]`) —
+      rolling win rate after each run, mirrors cEDH simulator.
+    - Winning lines (`top_winning_lines: list[list[str]]`) — most-frequent
+      ordered spell sequences from winning games (Counter-ranked).
+    - Target-card tracking (`target_card_by_turn: dict[int, float]`) — CDF
+      of turns by which the named card was first cast.
+    - `run_raw()` for raw run access without aggregation.
+    - `to_trajectories(runs)` static method — converts `list[GoldfishRun]`
+      to `list[Trajectory]` (source="goldfish") for world-model training.
+  * `src/orchestrator/game_runner.py`: `GameConfig.on_turn_end` callback hook
+    added; fires at CLEANUP phase before watcher reset.
+  * `scripts/goldfish.py` (new): CLI — `--deck`, `--runs`, `--max-turns`,
+    `--agent`, `--seed`, `--life`, `--target-card`, `--out`. Emits JSON
+    with all new stats fields.
+  * `src/training/rl_trainer.py`: `warmup_with_goldfish()` async method —
+    pre-seeds `trajectory_store` with goldfish traces before self-play.
+  * `tests/test_goldfish.py` (new): 21 unit tests — all pass.
+  * Full suite: **553 passed, 27 skipped, 0 failures**.
+
+- [x] **JEPA checkpoint evaluation benchmark (May 2026)** —
+  `scripts/benchmark_trained_agents.py` run against epoch-10/30/50/final
+  checkpoints vs. random + heuristic baselines (8 games each, seed=77, max 30 turns).
+  Results in `runs/checkpoint_eval/`. Best checkpoint: `jepa_final.pt`
+  (EFE=0.0805, 25% win rate vs both baselines). Selection score uses
+  active-inference-inspired EFE: pragmatic + epistemic − latency − horizon − loss.
+  Full ranking: final (0.081) > epoch_50 (0.105) > epoch_30 (0.401) > epoch_10 (0.455).
+
+
 
 _(none — pick from queue below)_
 
