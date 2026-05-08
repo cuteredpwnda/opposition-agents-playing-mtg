@@ -16,6 +16,7 @@ from typing import Any, Callable
 
 from src.agents.base_agent import MTGAgent
 from src.agents.heuristic_agent import HeuristicAgent
+from src.agents.null_agent import NullAgent
 from src.agents.random_agent import RandomAgent
 
 # Factory signature: (player_id: str, **kwargs) -> MTGAgent.
@@ -24,6 +25,10 @@ _AgentFactory = Callable[..., MTGAgent]
 
 def _make_random(player_id: str, **kw: Any) -> MTGAgent:
     return RandomAgent(player_id=player_id, name=kw.pop("name", f"Random({player_id})"))
+
+
+def _make_null(player_id: str, **kw: Any) -> MTGAgent:
+    return NullAgent(player_id=player_id, name=kw.pop("name", f"Null({player_id})"))
 
 
 def _make_heuristic(player_id: str, **kw: Any) -> MTGAgent:
@@ -159,6 +164,7 @@ def _make_llm_fusion(player_id: str, **kw: Any) -> MTGAgent:
 
 AGENT_REGISTRY: dict[str, _AgentFactory] = {
     "random": _make_random,
+    "null": _make_null,
     "heuristic": _make_heuristic,
     "kg_heuristic": _make_kg_heuristic,
     "human": _make_human,
@@ -192,6 +198,7 @@ __all__ = [
     "MTGAgent",
     "RandomAgent",
     "HeuristicAgent",
+    "NullAgent",
     "AGENT_REGISTRY",
     "make_agent",
     "list_agents",

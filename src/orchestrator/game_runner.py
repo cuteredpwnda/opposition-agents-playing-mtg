@@ -8,6 +8,7 @@ and the main game loop via LangGraph.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -37,6 +38,10 @@ class GameConfig:
     # Optional WotC Commander Bracket (1=Exhibition .. 5=cEDH); informational
     # only at runtime — used by deck loaders / matchmaking, not the rules.
     bracket: int | None = None
+    # Optional callback invoked at the start of each CLEANUP phase, before
+    # watcher state is reset.  Receives the live GameState so callers can
+    # snapshot per-turn data (e.g. GoldfishRunner collects board stats here).
+    on_turn_end: Callable[["GameState"], None] | None = None
 
 
 @dataclass
@@ -825,6 +830,13 @@ class GameRunner:
                         game_state.log("  └────────────────────")
                 except Exception:
                     pass
+                # Notify the optional per-turn hook BEFORE watcher reset so
+                # it can still read turn statistics (e.g. GoldfishRunner).
+                if self.config.on_turn_end is not None:
+                    try:
+                        self.config.on_turn_end(game_state)
+                    except Exception:
+                        pass
                 # Empty all players' mana pools and discard down to max hand size
                 from src.engine.mana import empty_mana_pool
                 from src.engine.zones import move_card
