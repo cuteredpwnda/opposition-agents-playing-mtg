@@ -714,6 +714,23 @@ items stay for traceability.
     with a single boolean.
   * Full suite: **593 passed, 27 skipped, 0 failures** (+18 mulligan tests).
 
+- [x] **Deck-builder CLI integration (G1–G5 pipeline, May 2026)** — end-to-end
+  deck construction + empirical evaluation + evolutionary optimization.
+  * `scripts/brew_decks.py` (updated): Enhanced from basic construction to
+    full pipeline: build → [optional: evaluate] → [optional: mutate] → save.
+  * New argparse options:
+    - `--eval`: enable evaluation vs reference deck (G4)
+    - `--eval-reference PATH`: path to decklist (default: krenko baseline)
+    - `--eval-games N`: games per reference opponent (default: 4)
+    - `--mutate`: run mutation loop (G5) — requires `--eval`
+    - `--mutate-generations N`: iteration count (default: 3)
+    - `--mutate-swaps-per-iter N`: card swaps per generation (default: 2)
+  * Example: `brew_decks.py --commander "Atraxa" --eval --eval-reference data/decks/edh/atraxa_core.txt --eval-games 4 --mutate --mutate-generations 2`
+  * **Impact**: Demonstrates complete G1–G5 workflow. Deck scores, identifies
+    weak cards, iteratively improves via swaps. Produces publishable artifact
+    (`runs/brews/{commander}_{seed}.txt`). No new modules required — wires
+    existing evaluator + mutator + scorer.
+
 ### In progress
 
 ### Queue — High Priority
