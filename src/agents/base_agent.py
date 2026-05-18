@@ -9,8 +9,21 @@ from __future__ import annotations
 
 import abc
 from dataclasses import dataclass, field
+from enum import Enum
 
 from src.engine.game_state import Action, GameState
+
+
+class AgentStrategy(str, Enum):
+    """Mulligan strategy hint for agents without explicit learned policies.
+    
+    Used by `MTGAgent.strategy` property to guide the default mulligan
+    heuristic in `src/agents/mulligan.py`.
+    """
+    AGGRESSIVE = "aggressive"   # 1–3 lands, 2+ cheap spells
+    CONTROL = "control"         # 3–5 lands, 1+ non-land
+    COMBO = "combo"             # 2–5 lands, 4+ non-lands
+    REACTIVE = "reactive"       # 2–5 lands, 1+ cheap interaction
 
 
 @dataclass

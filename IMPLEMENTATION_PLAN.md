@@ -692,9 +692,29 @@ items stay for traceability.
   active-inference-inspired EFE: pragmatic + epistemic − latency − horizon − loss.
   Full ranking: final (0.081) > epoch_50 (0.105) > epoch_30 (0.401) > epoch_10 (0.455).
 
+- [x] **Strategy-aware mulligan policies (May 2026)** — intelligent opening-hand
+  decisions based on deck archetype.
+  * `src/agents/base_agent.py`: Added `AgentStrategy` enum (AGGRESSIVE, CONTROL,
+    COMBO, REACTIVE) representing four major MTG archetypes.
+  * `src/agents/heuristic_agent.py`: `HeuristicAgent.strategy` property now
+    returns `AgentStrategy.AGGRESSIVE` (if `prefer_aggressive=True`) or
+    `AgentStrategy.CONTROL` (if `prefer_aggressive=False`). Feeds directly
+    into `decide_mulligan()` via existing `should_keep()` heuristic in
+    `src/agents/mulligan.py`.
+  * Mulligan heuristics already in place:
+    - **Aggressive**: 1–3 lands, 2+ cheap spells (CMC ≤ 2)
+    - **Control**: 3–5 lands, 1+ non-land
+    - **Combo**: 2–5 lands, 4+ non-lands (cards to chain)
+    - **Reactive**: 2–5 lands, 1+ cheap interaction (CMC ≤ 2)
+  * `tests/test_mulligan_strategies.py` (new): 18 comprehensive unit tests
+    covering each strategy's keep/mulligan decision boundary. All pass.
+  * **Impact**: Every agent now has context-aware mulligan decisions. Self-play
+    training immediately benefits from smarter opening hands. Agents can be
+    configured to aggressive (burn / tempo) or control (blue decks) play styles
+    with a single boolean.
+  * Full suite: **593 passed, 27 skipped, 0 failures** (+18 mulligan tests).
 
-
-_(none — pick from queue below)_
+### In progress
 
 ### Queue — High Priority
 
