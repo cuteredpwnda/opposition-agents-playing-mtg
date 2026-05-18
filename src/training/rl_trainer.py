@@ -14,6 +14,7 @@ This is the production RL loop that wires everything together.
 from __future__ import annotations
 
 import asyncio
+import csv
 import logging
 import os
 import json
@@ -65,6 +66,7 @@ class RLConfig:
     checkpoint_dir: str = "checkpoints/rl"
     log_dir: str = "logs/rl"
     save_every: int = 10
+    metrics_csv: str | None = None  # Path to CSV file for iteration metrics; auto-generated if None
 
 
 class AgentPool:
@@ -135,6 +137,8 @@ class RLTrainer:
         self.card_embeddings_model = None
         self.champion_id: str | None = None
         self.stats: list[dict[str, Any]] = []
+        self._csv_file = None
+        self._csv_writer = None
 
     def setup(self):
         """Initialize all components."""
@@ -243,10 +247,71 @@ class RLTrainer:
         os.makedirs(self.config.checkpoint_dir, exist_ok=True)
         os.makedirs(self.config.log_dir, exist_ok=True)
 
+        # Initialize CSV metrics file
+        self._init_csv_writer()
+
         # Initialize champion agent for iterative self-play
         if self.pool.agents:
             self.champion_id, _ = self.pool.get_best_agents()
             logger.info("Initial champion agent: %s", self.champion_id)
+
+    def _init_csv_writer(self) -> None:
+        """Initialize CSV file for metrics logging."""
+        if self.config.metrics_csv is None:
+            csv_path = Path(self.config.log_dir) / "training_metrics.csv"
+        else:
+            csv_path = Path(self.config.metrics_csv)
+        
+        csv_path.parent.mkdir(parents=True, exist_ok=True)
+        self._csv_file = open(csv_path, "w", newline="", buffering=1)
+        fieldnames = [
+            "iteration",
+            "games_played",
+            "wins",
+            "draws",
+            "win_rate",
+            "train_loss",
+            "buffer_size",
+            "champion_id",
+            "champion_elo",
+            "top_elo",
+        ]
+        self._csv_writer = csv.DictWriter(self._csv_file, fieldnames=fieldnames)
+        self._csv_writer.writeheader()
+        logger.info("CSV metrics writer initialized: %s", csv_path)
+
+    def _write_metrics(self, iteration: int, stats: dict[str, Any]) -> None:
+        """Write iteration metrics to CSV."""
+        if self._csv_writer is None:
+            return
+        
+        wins = stats.get("wins", 0)
+        total = stats.get("games_played", 0)
+        win_rate = wins / total if total > 0 else 0.0
+        
+        champion_elo = self.pool.elo.get(self.champion_id, 1200.0) if self.champion_id else 0.0
+        top_elo = max(self.pool.elo.values()) if self.pool.elo else 0.0
+        
+        row = {
+            "iteration": iteration,
+            "games_played": total,
+            "wins": wins,
+            "draws": stats.get("draws", 0),
+            "win_rate": f"{win_rate:.3f}",
+            "train_loss": f"{stats.get('train_loss', 0.0):.6f}",
+            "buffer_size": stats.get("buffer_size", 0),
+            "champion_id": self.champion_id or "None",
+            "champion_elo": f"{champion_elo:.1f}",
+            "top_elo": f"{top_elo:.1f}",
+        }
+        self._csv_writer.writerow(row)
+        self._csv_file.flush()
+
+    def _close_csv_writer(self) -> None:
+        """Close CSV file after training completes."""
+        if self._csv_file is not None:
+            self._csv_file.close()
+            logger.info("CSV metrics file closed")
 
     async def warmup_with_goldfish(
         self,
@@ -389,6 +454,7 @@ class RLTrainer:
                 "elo_ratings": dict(self.pool.elo),
             }
             self.stats.append(iter_stats)
+            self._write_metrics(iteration + 1, iter_stats)  # Write to CSV
             logger.info(
                 "Results: %d games, %d decisive, loss=%.4f, buffer=%d",
                 len(game_results), wins, train_loss,
@@ -401,6 +467,7 @@ class RLTrainer:
 
         # Final save
         self._save_checkpoint(self.config.num_iterations)
+        self._close_csv_writer()  # Close CSV file
         logger.info("RL Training complete! Stats saved to %s", self.config.log_dir)
 
     async def _run_games(

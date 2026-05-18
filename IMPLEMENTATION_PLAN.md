@@ -731,6 +731,21 @@ items stay for traceability.
     (`runs/brews/{commander}_{seed}.txt`). No new modules required — wires
     existing evaluator + mutator + scorer.
 
+- [x] **CSV metrics logging for RLTrainer (May 2026)** — real-time training
+  visibility across long self-play runs.
+  * `src/training/rl_trainer.py`: Added CSV metrics writer with:
+    - `RLConfig.metrics_csv`: Path to output CSV (auto-generated if None)
+    - `_init_csv_writer()`: Initialize CSV file with headers
+    - `_write_metrics()`: Write per-iteration metrics to disk
+    - `_close_csv_writer()`: Graceful cleanup on training completion
+  * Fields exported: iteration, games_played, wins, draws, win_rate, train_loss,
+    buffer_size, champion_id, champion_elo, top_elo
+  * Output path: `logs/rl/training_metrics.csv` (or custom via `--metrics-csv`)
+  * **Impact**: Training progress visible in real-time via spreadsheet tools.
+    Enables quick ablation studies, hyperparameter sweeps, and early-stopping
+    decisions. No overhead — buffered writes (line_buffering=True).
+  * Tests: `test_rl_trainer.py` — 2 tests pass (agent pool, promotion logic).
+
 ### In progress
 
 ### Queue — High Priority
