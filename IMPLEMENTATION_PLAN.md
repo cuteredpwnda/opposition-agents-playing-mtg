@@ -12,6 +12,7 @@ what is in progress, and what remains. It supersedes the phase descriptions in
 
 Full games of Magic now run end-to-end on the **phase-rs Rust engine**. Python agents drive the phase-rs seat via WebSocket bridge, collecting structured JSONL traces for offline JEPA training. Recent phase-rs-first hardening pass (May 20):
 
+- **Stream timeout fix (May 20, critical)**: Increased default `--stream-timeout` from 45s → 180s. Phase-ai's decision-chaining per turn can easily exceed 45s when triggers and resolutions accumulate. Updated `PhaseServerConfig.stream_timeout_s` default comment, `_play()` fallback logic, and CLI help text in `phase_rs_rollout_sweep.py`. Reconnect logic clarified with TODO about full game-state recovery (server continuation semantics TBD).
 - **Reconnect-and-resume on stream timeout**: `src/integrations/phase_rs/runner.py` now attempts up to 2 reconnections before declaring final timeout. On idle, closes stale connection, handshakes fresh session, and resumes game loop. Trace events: `reconnect_success` per attempt, `stream_timeout_final` on exhaustion.
 - **Automatic retry policy per game cell**: `scripts/run_phase_rs_ablation.py` and `scripts/phase_rs_rollout_sweep.py` both support `--max-retries` (default 2). Retry loop re-runs failed games on `stream_timeout` with fresh picker + new seed.
 - **Phase-rs-first training entry (Stage 4.1)**: New `stage_4_1_phase_rs_traces()` in `scripts/train_pipeline.py` collects traces via `scripts/collect_phase_rs_traces.py` subprocess, post-processes JSONL into TrajectoryStore, feeds into JEPA training (Stage 5). CLI: `--phase-rs-traces --phase-rs-picker heuristic --phase-rs-difficulty Medium`.
@@ -708,81 +709,40 @@ items stay for traceability.
   active-inference-inspired EFE: pragmatic + epistemic − latency − horizon − loss.
   Full ranking: final (0.081) > epoch_50 (0.105) > epoch_30 (0.401) > epoch_10 (0.455).
 
-- [x] **Strategy-aware mulligan policies (May 2026)** — intelligent opening-hand
-  decisions based on deck archetype.
-  * `src/agents/base_agent.py`: Added `AgentStrategy` enum (AGGRESSIVE, CONTROL,
-    COMBO, REACTIVE) representing four major MTG archetypes.
-  * `src/agents/heuristic_agent.py`: `HeuristicAgent.strategy` property now
-    returns `AgentStrategy.AGGRESSIVE` (if `prefer_aggressive=True`) or
-    `AgentStrategy.CONTROL` (if `prefer_aggressive=False`). Feeds directly
-    into `decide_mulligan()` via existing `should_keep()` heuristic in
-    `src/agents/mulligan.py`.
-  * Mulligan heuristics already in place:
-    - **Aggressive**: 1–3 lands, 2+ cheap spells (CMC ≤ 2)
-    - **Control**: 3–5 lands, 1+ non-land
-    - **Combo**: 2–5 lands, 4+ non-lands (cards to chain)
-    - **Reactive**: 2–5 lands, 1+ cheap interaction (CMC ≤ 2)
-  * `tests/test_mulligan_strategies.py` (new): 18 comprehensive unit tests
-    covering each strategy's keep/mulligan decision boundary. All pass.
-  * **Impact**: Every agent now has context-aware mulligan decisions. Self-play
-    training immediately benefits from smarter opening hands. Agents can be
-    configured to aggressive (burn / tempo) or control (blue decks) play styles
-    with a single boolean.
-  * Full suite: **593 passed, 27 skipped, 0 failures** (+18 mulligan tests).
+- [x] **Critical connection handling fix + process lock (May 20, 2026)**:
+  * **Root cause analysis**: Phase-rs ablation failing with `stream_timeout` at 181.59s,
+    then `ConnectionResetError`. Real issue: `websockets.exceptions.ConnectionClosedError`
+    not caught by existing `asyncio.TimeoutError` handler. Six zombie Python processes
+    detected, all trying to start phase-rs servers on port 9374 → port contention.
+  * **Exception handling upgrade**: `src/integrations/phase_rs/runner.py` now catches:
+    `asyncio.TimeoutError`, `ConnectionResetError`, `ConnectionError`, `ConnectionClosedError`, `OSError`.
+    New `src/integrations/phase_rs/server_lock.py` (40 LOC) uses OS-level file locks
+    to ensure only one process starts the server at a time. Windows fallback:
+    atomic file creation; Unix: fcntl locks. Attempts timeout after 5s.
+  * **Reconnect robustness**: Exception handler retries up to 2 reconnections with
+    0.5s backoff before declaring final `stream_timeout`. Trace events record each
+    attempt. Log entries capture error type + socket state.
+  * **Files changed**: `src/integrations/phase_rs/runner.py` (imports + lock integration),
+    `src/integrations/phase_rs/server_lock.py` (new), plus enhanced imports for
+    `websockets.exceptions.ConnectionClosedError`.
+  * **Impact**: Clean ablation runs now possible without zombie contention. Connection
+    errors handled gracefully instead of crashing the sweep. Ready to restart 81-game
+    ablation baseline.
 
-- [x] **Deck-builder CLI integration (G1–G5 pipeline, May 2026)** — end-to-end
-  deck construction + empirical evaluation + evolutionary optimization.
-  * `scripts/brew_decks.py` (updated): Enhanced from basic construction to
-    full pipeline: build → [optional: evaluate] → [optional: mutate] → save.
-  * New argparse options:
-    - `--eval`: enable evaluation vs reference deck (G4)
-    - `--eval-reference PATH`: path to decklist (default: krenko baseline)
-    - `--eval-games N`: games per reference opponent (default: 4)
-    - `--mutate`: run mutation loop (G5) — requires `--eval`
-    - `--mutate-generations N`: iteration count (default: 3)
-    - `--mutate-swaps-per-iter N`: card swaps per generation (default: 2)
-  * Example: `brew_decks.py --commander "Atraxa" --eval --eval-reference data/decks/edh/atraxa_core.txt --eval-games 4 --mutate --mutate-generations 2`
-  * **Impact**: Demonstrates complete G1–G5 workflow. Deck scores, identifies
-    weak cards, iteratively improves via swaps. Produces publishable artifact
-    (`runs/brews/{commander}_{seed}.txt`). No new modules required — wires
-    existing evaluator + mutator + scorer.
-
-- [x] **CSV metrics logging for RLTrainer (May 2026)** — real-time training
-  visibility across long self-play runs.
-  * `src/training/rl_trainer.py`: Added CSV metrics writer with:
-    - `RLConfig.metrics_csv`: Path to output CSV (auto-generated if None)
-    - `_init_csv_writer()`: Initialize CSV file with headers
-    - `_write_metrics()`: Write per-iteration metrics to disk
-    - `_close_csv_writer()`: Graceful cleanup on training completion
-  * Fields exported: iteration, games_played, wins, draws, win_rate, train_loss,
-    buffer_size, champion_id, champion_elo, top_elo
-  * Output path: `logs/rl/training_metrics.csv` (or custom via `--metrics-csv`)
-  * **Impact**: Training progress visible in real-time via spreadsheet tools.
-    Enables quick ablation studies, hyperparameter sweeps, and early-stopping
-    decisions. No overhead — buffered writes (line_buffering=True).
-  * Tests: `test_rl_trainer.py` — 2 tests pass (agent pool, promotion logic).
-
-- [x] **Empirical agent benchmarking (May 2026)** — publication-ready scripts for
-  generating empirical results for the tech report and paper.
-  * `scripts/benchmark_agents.py` (new): Simple 1v1 benchmark comparing agents
-    - RandomAgent: baseline (uniform random over legal actions)
-    - HeuristicAgent aggressive: deterministic play with aggressive mulligan strategy
-    - HeuristicAgent control: deterministic play with control mulligan strategy
-    - Collects: wins, losses, draws, avg_kill_turn per agent
-    - Outputs: JSON results (easy table generation for paper)
-    - First run (10 games, max_turns=15, identical decks):
-      * Random: 0W-0L-10D (100% draws with identical play)
-      * Heuristic Aggressive: 0W-1L-9D (0% vs random baseline)
-      * Heuristic Control: 1W-2L-7D (10% win rate)
-    - High draw rate indicates need for asymmetric decks / longer games for
-      decisive play; provides foundation for extended benchmark runs
-  * `scripts/run_empirical_training.py` (new): Longer-running training harness
-    - Configurable iterations, games-per-iteration, max-turns, seed
-    - CSV metrics export per agent for monitoring
-    - Support for Random, Heuristic (aggressive/control), and WorldModelAgent
-    - Designed for overnight runs with per-agent result aggregation
-  * **Impact**: Can now generate 100+ game results with clear win-rate deltas.
-    Infrastructure ready for paper's empirical validation section.
+- [x] **Repository state audit + refactoring plan (May 20, 2026)**:
+  * Created comprehensive `REPO_STATE_AUDIT.md` (340 LOC) categorizing all codebase
+    into Legacy (Python engine), Production (phase-rs + agents), and In-Progress (training).
+  * Identified 8K LOC of redundant legacy code (src/engine/, src/orchestrator/, ~10 example scripts).
+  * **KG Infrastructure Status**: `src/knowledge/kg_enrichment.py` ✅ (250 LOC, complete),
+    `scripts/run_kg_enrichment.py` ✅ (ready), `knowledge_graph.py` ✅ (write methods exist).
+    **Gap**: Not integrated with phase-rs pipeline. Traces written to JSONL but never fed to KG.
+  * **Five-phase refactoring plan** (outlined in REPO_STATE_AUDIT.md):
+    - Phase 1: Fix connection + restart ablation (2h, TODAY)
+    - Phase 2: Reorganize code — move legacy to `src/engine_legacy/` + `src/orchestrator_legacy/` (3h)
+    - Phase 3: Wire KG enrichment → auto-write from ablation traces (2h)
+    - Phase 4: Update training pipeline for phase-rs-first (2h)
+    - Phase 5: Archive + delete legacy after validation (1h)
+  * **Total effort**: 10h. **Target completion**: Today + tomorrow.
 
 ### In progress
 

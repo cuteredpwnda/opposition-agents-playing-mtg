@@ -254,7 +254,13 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--format", default=None, help="Game format (Standard, Pioneer, Modern, Commander, etc.). Defaults to Standard.")
     p.add_argument("--uri", default="ws://127.0.0.1:9374/ws")
     p.add_argument("--autostart", action="store_true")
-    p.add_argument("--stream-timeout", type=float, default=45.0)
+    p.add_argument(
+        "--stream-timeout",
+        type=float,
+        default=180.0,
+        help="Per-message timeout in seconds while game is streaming (default 180s). "
+        "Increase if phase-ai decisions chain longer than expected.",
+    )
     p.add_argument("--max-actions", type=int, default=2000)
     p.add_argument("--seed", type=int, default=7)
     p.add_argument("--max-retries", type=int, default=2, help="Retry transient failures per game cell.")

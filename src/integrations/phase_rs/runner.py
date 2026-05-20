@@ -26,7 +26,14 @@ from src.integrations.phase_rs.client import (
     PhaseServerError,
     StateUpdate,
 )
+from src.integrations.phase_rs.server_lock import acquire_server_lock, release_server_lock
 from src.integrations.phase_rs.server_process import PhaseServerProcess
+
+# Import websockets exceptions if available (for better error handling)
+try:
+    from websockets.exceptions import ConnectionClosedError
+except ImportError:
+    ConnectionClosedError = ConnectionError  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +89,8 @@ async def run_game(
     log: list[str] = []
 
     owned_server: PhaseServerProcess | None = None
+    server_lock_fd: int | None = None
+    
     if server_process is not None:
         owned_server = server_process
         if owned_server._proc is None and not owned_server._adopted:  # noqa: SLF001
@@ -95,15 +104,21 @@ async def run_game(
             build_commit=cfg.build_commit,
         )
     elif autostart_server:
-        owned_server = PhaseServerProcess().start()
-        cfg = PhaseServerConfig(
-            uri=owned_server.uri,
-            headers=cfg.headers,
-            request_timeout_s=cfg.request_timeout_s,
-            stream_timeout_s=cfg.stream_timeout_s,
-            client_version=cfg.client_version,
-            build_commit=cfg.build_commit,
-        )
+        # Acquire lock to prevent multiple processes from starting their own servers
+        server_lock_fd = acquire_server_lock(timeout=5.0)
+        if server_lock_fd is not None:
+            owned_server = PhaseServerProcess().start()
+            cfg = PhaseServerConfig(
+                uri=owned_server.uri,
+                headers=cfg.headers,
+                request_timeout_s=cfg.request_timeout_s,
+                stream_timeout_s=cfg.stream_timeout_s,
+                client_version=cfg.client_version,
+                build_commit=cfg.build_commit,
+            )
+        else:
+            log.append("could not acquire server lock; attempting to connect to existing server")
+            # Fall through: cfg already has default URI
 
     try:
         return await _play(
@@ -119,6 +134,9 @@ async def run_game(
             format_name=format_name,
         )
     finally:
+        # Clean up server lock
+        if server_lock_fd is not None:
+            release_server_lock(server_lock_fd)
         # Only stop a server we spun up implicitly (autostart_server=True).
         # When the caller passed an explicit ``server_process`` we leave
         # lifecycle to them.
@@ -142,7 +160,8 @@ async def _play(
     # Never block forever in the streaming loop. If the server goes quiet
     # unexpectedly (dropped GameOver, stale socket, etc.), attempt to
     # reconnect and resume; if all reconnection attempts fail, end cleanly.
-    stream_timeout_s = cfg.stream_timeout_s if cfg.stream_timeout_s is not None else 45.0
+    # Default 180s allows phase-ai time to chain many decisions per turn.
+    stream_timeout_s = cfg.stream_timeout_s if cfg.stream_timeout_s is not None else 180.0
 
     async with PhaseServerClient(cfg) as client:
         hello = await client.handshake()
@@ -225,23 +244,40 @@ async def _play(
             # timeout so AI thinking pauses don't trigger spurious TimeoutErrors.
             try:
                 msg = await client.recv(timeout=stream_timeout_s)
-            except asyncio.TimeoutError:
-                # Attempt to reconnect and resume before giving up.
+            except (
+                asyncio.TimeoutError,
+                ConnectionResetError,
+                ConnectionError,
+                ConnectionClosedError,
+                OSError,
+            ) as e:
+                # Stream timeout or connection errors: phase-ai's turn may have chained many
+                # decisions, or the network connection dropped. Attempt to reconnect and resume.
+                exc_name = type(e).__name__
+                log.append(
+                    f"stream error ({exc_name}) after {stream_timeout_s:.1f}s; "
+                    f"attempting reconnect"
+                )
                 for attempt in range(1, reconnect_attempts + 1):
                     log.append(
-                        f"stream timeout after {stream_timeout_s:.1f}s; "
                         f"reconnect attempt {attempt}/{reconnect_attempts}"
                     )
                     try:
-                        # Close old connection and open a new one.
+                        # Close old connection and open a new one, then attempt
+                        # to resume the existing game using the player token.
+                        player_token = client.config.headers.get("X-Player-Token")
+                        game_code = None  # Would need to track this from GameCreated
+                        
                         await client.close()
                         await asyncio.sleep(0.5)
                         new_client = PhaseServerClient(cfg)
                         await new_client.__aenter__()
-                        # Attempt to rejoin the game. If the game is still live,
-                        # the server should accept the player_token and resume.
-                        hello = await new_client.handshake()
-                        logger.debug("phase-rs: reconnect attempt %d succeeded", attempt)
+                        # Handshake to verify connection is live.
+                        await new_client.handshake()
+                        logger.debug(
+                            "phase-rs: reconnect attempt %d established new connection",
+                            attempt,
+                        )
                         # Patch the client in the outer context so we can keep looping.
                         client = new_client  # noqa: F841 - reassign for next iteration
                         log.append(f"reconnected successfully (attempt {attempt})")
@@ -252,9 +288,15 @@ async def _play(
                                 "turn": int(latest_state.get("turn_number", 0)),
                             }
                         )
+                        # Note: Full game state recovery is not yet implemented.
+                        # The server may continue from where it left off if the
+                        # websocket transport itself handles it. Otherwise the
+                        # game is lost and we should implement a proper rejoin.
                         break  # Success; continue main loop
                     except Exception as e:
-                        logger.debug("phase-rs: reconnect attempt %d failed: %s", attempt, e)
+                        logger.debug(
+                            "phase-rs: reconnect attempt %d failed: %s", attempt, e
+                        )
                         await asyncio.sleep(0.5)
                 else:
                     # All reconnection attempts failed.

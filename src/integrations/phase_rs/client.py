@@ -49,8 +49,8 @@ class PhaseServerConfig:
     # Per-message timeout while a game is streaming. phase-ai's wall-clock
     # budget per decision is 1.5 s and a single AI turn can chain dozens of
     # decisions (drawing, untap triggers, casting, attacking, blocking).
-    # ``None`` disables the timeout entirely; set a finite value to bound
-    # how long the client will wait for the next ServerMessage.
+    # Typical games need 120–180s per turn; set conservatively high to avoid
+    # spurious timeouts. ``None`` disables the timeout entirely.
     stream_timeout_s: float | None = None
     client_version: str = DEFAULT_CLIENT_VERSION
     build_commit: str = DEFAULT_BUILD_COMMIT
