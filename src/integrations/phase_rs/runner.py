@@ -233,6 +233,9 @@ async def _play(
                         "chosen_index": idx,
                         "chosen_type": str(chosen.get("type", "")),
                         "legal_action_types": [str(a.get("type", "")) for a in legal_actions],
+                        "chosen_raw": chosen,
+                        "legal_actions_raw": legal_actions,
+                        "waiting_for": latest_state.get("waiting_for"),
                     }
                 )
                 await client.send_action(chosen)
