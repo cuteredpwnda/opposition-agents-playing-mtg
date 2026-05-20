@@ -1,0 +1,2 @@
+picker,ai_difficulty,ai_deck,games,wins,losses,draws,timeouts,win_rate,avg_elapsed_sec,avg_turns,avg_actions
+heuristic,Easy,Red Deck Wins,2,2,0,0,0,1.0,0.7823620500021207,2.0,5.0

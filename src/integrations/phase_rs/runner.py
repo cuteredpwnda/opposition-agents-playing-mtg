@@ -331,6 +331,33 @@ async def _play(
                 # choose. An empty list means the AI seat has priority — keep
                 # looping until phase-server sends us another decision.
                 legal_actions = list(msg.legal_actions)
+                # phase-server does NOT emit ServerMessage::GameOver for normal
+                # rule-based game ends — it only sets state.waiting_for to
+                # GameOver and broadcasts a final StateUpdate. Detect that here
+                # so games actually terminate instead of hanging on recv().
+                waiting_for = msg.state.get("waiting_for") or {}
+                if isinstance(waiting_for, dict) and waiting_for.get("type") == "GameOver":
+                    winner_data = waiting_for.get("data") or {}
+                    winner = winner_data.get("winner") if isinstance(winner_data, dict) else None
+                    log.append(f"game over (from state): winner={winner}")
+                    trace.append(
+                        {
+                            "event": "game_over",
+                            "winner": winner,
+                            "reason": "game_rules",
+                            "turn": int(latest_state.get("turn_number", 0)),
+                        }
+                    )
+                    return GameRunResult(
+                        winner_seat=winner,
+                        reason="game_rules",
+                        our_seat=our_seat,
+                        turns_observed=turns_observed,
+                        actions_sent=actions_sent,
+                        final_state=latest_state,
+                        log=log,
+                        trace=trace,
+                    )
             elif isinstance(msg, GameOver):
                 log.append(f"game over: winner={msg.winner} reason={msg.reason}")
                 trace.append(

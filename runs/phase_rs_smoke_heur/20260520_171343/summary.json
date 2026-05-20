@@ -1,0 +1,33 @@
+{
+  "pickers": [
+    "heuristic"
+  ],
+  "difficulties": [
+    "Easy"
+  ],
+  "ai_decks": [
+    "Red Deck Wins"
+  ],
+  "format": "Standard",
+  "games_per_cell": 2,
+  "autostart": false,
+  "seed": 7,
+  "uri": "ws://127.0.0.1:9374/ws",
+  "stream_timeout": 60.0,
+  "cells": [
+    {
+      "picker": "heuristic",
+      "ai_difficulty": "Easy",
+      "ai_deck": "Red Deck Wins",
+      "games": 2,
+      "wins": 2,
+      "losses": 0,
+      "draws": 0,
+      "timeouts": 0,
+      "win_rate": 1.0,
+      "avg_elapsed_sec": 0.7823620500021207,
+      "avg_turns": 2.0,
+      "avg_actions": 5.0
+    }
+  ]
+}
