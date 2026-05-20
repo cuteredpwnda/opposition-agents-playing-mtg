@@ -22,6 +22,7 @@ import sys
 from pathlib import Path
 
 from src.integrations.phase_rs import (
+    HeuristicActionPicker,
     PhaseServerConfig,
     PreferNonPassPicker,
     RandomActionPicker,
@@ -36,7 +37,9 @@ def _build_picker(name: str, seed: int | None):
         return RandomActionPicker(seed=seed)
     if name in {"prefer-nonpass", "prefer_nonpass"}:
         return PreferNonPassPicker(seed=seed)
-    raise SystemExit(f"unknown picker {name!r}; try: random | prefer-nonpass")
+    if name == "heuristic":
+        return HeuristicActionPicker(seed=seed)
+    raise SystemExit(f"unknown picker {name!r}; try: random | prefer-nonpass | heuristic")
 
 
 def main() -> int:

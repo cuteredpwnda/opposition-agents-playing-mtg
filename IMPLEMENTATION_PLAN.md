@@ -1205,22 +1205,41 @@ at combat / EOT / upkeep), new test file.
       `external/phase-rs/crates/server-core/src/protocol.rs`.
     - `decks.py` — `decklist_to_deck_data` / `load_deck_data` bridge between
       our `Decklist` and phase-server's `DeckData` JSON; `STARTER_DECK_NAMES`.
-    - `agent_bridge.py` — `ActionPicker` protocol + `RandomActionPicker` +
-      `PreferNonPassPicker`. Picks operate on opaque JSON `legal_actions`;
-      no `GameAction` ↔ our `Action` translation yet (intentional, see below).
+    - `agent_bridge.py` — `ActionPicker` protocol +
+      `RandomActionPicker` + `PreferNonPassPicker` +
+      `HeuristicActionPicker` (tier order: `PlayLand` → `CastSpell` →
+      `ActivateAbility` → `DeclareAttackers` → `Pass`; never picks
+      `Concede`). Picks operate on opaque JSON `legal_actions`; no
+      `GameAction` ↔ our `Action` translation yet (intentional, see below).
     - `runner.py` — `run_game` / `run_game_sync` async loop driving one
       Python-controlled seat vs a phase-ai opponent.
-  - `examples/play_phase_rs.py` — CLI demo against a local `phase-server`.
+  - `examples/play_phase_rs.py` — CLI demo against a local `phase-server`
+    (`--picker {random,prefer-nonpass,heuristic}`).
   - `tests/integrations/phase_rs/test_protocol_envelopes.py` — 5 parser tests
     against `external/phase-rs/fixtures/adapter-contract/*.json`. **Passing**.
     Auto-skipped when the submodule isn't checked out.
   - `pyproject.toml` — new `phase_rs` optional-dep group (`websockets>=12`).
+  - `docs/PHASE_RS_INTEGRATION.md` — architecture + AI-difficulty reference
+    + run instructions.
+  - `docs/PHASE_RS_UPSTREAM_INTRO.md` — draft of the upstream introduction
+    discussion / issue we plan to open at phase-rs/phase.
+  - `NOTICE.md`, `DMCA.md`, README disclaimer block — fan-content policy
+    in the spirit of phase-rs's own notice. No bundled WotC assets.
+  - `CONTRIBUTING.md` — humans + AI agents entry point; points at
+    `AGENTS.md` and `.github/copilot-instructions.md`.
 
-  **NOT yet validated**: the client has only been tested against the static
-  fixtures. No live `phase-server` round-trip has been done. Until that
-  smoke test passes, no doc rewrites (README, paper, AGENTS_TECH_REPORT)
-  should claim phase-rs is the engine. The Python engine is still the
-  authoritative substrate for every benchmark in the paper.
+  **Validated end-to-end (May 20, 2026)**: `python examples/play_phase_rs.py
+  --deck "Red Deck Wins" --picker random --seed 7` against a local
+  `cargo serve` finished a full game with exit 0. Handshake, deck creation,
+  state-update streaming, action sending, and `GameOver` parsing all
+  round-trip cleanly.
+
+  **NOT yet validated**: opaque-action heuristic picker against a tournament
+  deck (only smoke-tested in isolation); no `HeuristicAgent` /
+  `WorldModelAgent` / `ActiveInferenceAgent` running on phase-rs (gated on
+  state translator). Until those land no doc rewrites (paper,
+  AGENTS_TECH_REPORT) should claim phase-rs is the *research* engine — it's
+  only the *gameplay* engine for now.
 
   Sub-tasks (do in order):
 

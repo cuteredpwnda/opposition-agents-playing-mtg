@@ -13,6 +13,7 @@ Heavy deps (``websockets``) are imported lazily inside method bodies, so
 
 from src.integrations.phase_rs.agent_bridge import (
     ActionPicker,
+    HeuristicActionPicker,
     PreferNonPassPicker,
     RandomActionPicker,
 )
@@ -42,6 +43,7 @@ __all__ = [
     "GameOver",
     "GameRunResult",
     "GameStarted",
+    "HeuristicActionPicker",
     "PhaseServerClient",
     "PhaseServerConfig",
     "PhaseServerError",

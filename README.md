@@ -39,6 +39,34 @@ A champion-vs-challenger self-play loop with ELO promotion drives improvement. T
 | Run the standard agent benchmark | [Benchmarks](#benchmarks) | `python -m src.training.benchmark_suite` |
 | Train the neural reasoner on collected trajectories | [Training](#training) | `python scripts/train_neural_reasoner.py` |
 | Read the science behind it | [paper/opposition_agents_mtg.tex](paper/opposition_agents_mtg.tex) | `cd paper && latexmk -pdf` |
+| Play a game against the [phase-rs](https://github.com/phase-rs/phase) Rust engine's AI | [docs/PHASE_RS_INTEGRATION.md](docs/PHASE_RS_INTEGRATION.md) | `python examples/play_phase_rs.py --picker heuristic` |
+
+## phase-rs engine (experimental, May 2026)
+
+We are integrating with the excellent [phase-rs/phase][phase] Rust MTG
+engine (30k+ cards, full layers / replacement effects / stack, built-in
+per-difficulty AI opponent) as an alternative rules backend. Our Python
+agents drive a phase-server WebSocket session via the adapter in
+[`src/integrations/phase_rs/`](src/integrations/phase_rs); the Python
+engine in `src/engine/` remains authoritative for the trajectory + JEPA
+training pipeline. See [docs/PHASE_RS_INTEGRATION.md](docs/PHASE_RS_INTEGRATION.md)
+for the architecture, AI-difficulty knobs, and contribution flow.
+
+[phase]: https://github.com/phase-rs/phase
+
+## Non-commercial fan / research project
+
+This is a non-commercial fan / research project built under the spirit of
+the [Wizards of the Coast Fan Content Policy][wotc-fcp]. It is not
+affiliated with, endorsed by, sponsored by, or approved by Wizards of the
+Coast LLC or Hasbro, Inc. This repository does not redistribute MTG card
+images, card art, mana symbol artwork, card-frame graphics, or the
+Comprehensive Rules document — all such assets are downloaded by the user
+at runtime from [Scryfall](https://scryfall.com/) and
+[magic.wizards.com](https://magic.wizards.com). See [NOTICE.md](NOTICE.md)
+and [DMCA.md](DMCA.md) for full details.
+
+[wotc-fcp]: https://company.wizards.com/en/legal/fancontentpolicy
 
 ## Overview
 
