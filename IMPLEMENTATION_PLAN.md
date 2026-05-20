@@ -241,6 +241,20 @@ items stay for traceability.
     (`runs/phase_rs_smoke_2x2_v3/`). Lessons recorded in
     `/memories/repo/phase-rs-quirks.md`.
 
+- [x] **Phase-RS explainability logging upgrade (May 20, 2026)**:
+  * **Incremental sweep outputs** in `scripts/phase_rs_rollout_sweep.py`:
+    `games.jsonl` and `rollouts.jsonl` are now created at run start and
+    appended per completed game (instead of only being written at the end).
+    Long runs can be inspected live without waiting for process exit.
+  * **Live progress file**: new `progress.json` per sweep run with
+    `completed_games`, `total_games`, `percent`, and `last_game` metadata.
+  * **Richer per-event traces** in `src/integrations/phase_rs/runner.py`:
+    every major event now carries a compact `state` snippet (turn/phase,
+    waiting_for_type, active/priority player, stack depth, per-seat life +
+    zone sizes, plus `our_player`). `decision` events also include
+    `chosen_action` payload for replay/explainability and future LLM rationale.
+  * Validated in `runs/phase_rs_smoke_explainability_upgrade_v3/20260520_181012`.
+
 - [x] **Phase-RS hardening pass (May 20, 2026)** — three production-readiness items:
   * **Reconnect-and-resume on stream timeout**: `src/integrations/phase_rs/runner.py`
     added `reconnect_attempts: int = 2` parameter. On `asyncio.TimeoutError`,

@@ -94,28 +94,6 @@ def _our_simultaneous_round_key(
     return None
 
 
-def _simultaneous_round_signature(waiting_for: Any) -> str | None:
-    """Return a stable signature of the current simultaneous-decision round.
-
-    For MulliganDecision / MulliganBottomCards the server keeps a player in
-    the ``pending`` list after they submit, until *both* players decide. We
-    use a hash of ``waiting_for`` (which encodes the pending list and each
-    player's ``mulligan_count``) to detect when the round has advanced. If
-    the signature matches the one stored at submit-time, we have NOT yet
-    received the next round's state and must wait — re-submitting would be
-    rejected by the server (we already chose this round).
-    """
-    if not isinstance(waiting_for, dict):
-        return None
-    wf_type = waiting_for.get("type", "")
-    if wf_type not in {"MulliganDecision", "MulliganBottomCards"}:
-        return None
-    try:
-        return json.dumps(waiting_for, sort_keys=True)
-    except (TypeError, ValueError):
-        return None
-
-
 def _dedup_legal_actions(actions: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Remove duplicate action payloads.
 
@@ -142,6 +120,102 @@ def _dedup_legal_actions(actions: list[dict[str, Any]]) -> list[dict[str, Any]]:
         seen.add(key)
         out.append(a)
     return out
+
+
+def _trace_state_snippet(state: dict[str, Any], our_seat: int) -> dict[str, Any]:
+    """Return a compact, explainability-friendly state snapshot for traces.
+
+    Keep this intentionally small and stable so downstream analytics can
+    reason about why actions were taken without serializing full game state.
+    """
+
+    def _to_int(value: Any) -> int | None:
+        if isinstance(value, bool):
+            return int(value)
+        if isinstance(value, (int, float)):
+            return int(value)
+        return None
+
+    snippet: dict[str, Any] = {
+        "turn": _to_int(state.get("turn_number")),
+        "phase": str(state.get("phase", "Unknown")),
+    }
+
+    waiting_for = state.get("waiting_for")
+    if isinstance(waiting_for, dict):
+        snippet["waiting_for_type"] = str(waiting_for.get("type", ""))
+
+    active_player = _to_int(state.get("active_player"))
+    if active_player is not None:
+        snippet["active_player"] = active_player
+
+    priority_player = _to_int(state.get("priority_player"))
+    if priority_player is not None:
+        snippet["priority_player"] = priority_player
+
+    stack = state.get("stack")
+    if isinstance(stack, list):
+        snippet["stack_depth"] = len(stack)
+
+    players = state.get("players")
+    player_entries: list[tuple[int, dict[str, Any]]] = []
+    if isinstance(players, list):
+        for seat, pdata in enumerate(players):
+            if isinstance(pdata, dict):
+                player_entries.append((seat, pdata))
+    elif isinstance(players, dict):
+        for seat_key, pdata in players.items():
+            if not isinstance(pdata, dict):
+                continue
+            try:
+                seat = int(seat_key)
+            except (TypeError, ValueError):
+                continue
+            player_entries.append((seat, pdata))
+
+    if player_entries:
+        summaries: list[dict[str, Any]] = []
+        for seat, pdata in sorted(player_entries, key=lambda x: x[0]):
+            life = pdata.get("life")
+            if life is None:
+                life = pdata.get("life_total")
+
+            hand_size = pdata.get("hand_size")
+            if hand_size is None and isinstance(pdata.get("hand"), list):
+                hand_size = len(pdata["hand"])
+
+            battlefield_size = pdata.get("battlefield_size")
+            if battlefield_size is None and isinstance(pdata.get("battlefield"), list):
+                battlefield_size = len(pdata["battlefield"])
+
+            graveyard_size = pdata.get("graveyard_size")
+            if graveyard_size is None and isinstance(pdata.get("graveyard"), list):
+                graveyard_size = len(pdata["graveyard"])
+
+            library_size = pdata.get("library_size")
+            if library_size is None and isinstance(pdata.get("library"), list):
+                library_size = len(pdata["library"])
+
+            p_summary: dict[str, Any] = {"seat": seat}
+            for field_name, value in (
+                ("life", life),
+                ("hand_size", hand_size),
+                ("battlefield_size", battlefield_size),
+                ("graveyard_size", graveyard_size),
+                ("library_size", library_size),
+            ):
+                v = _to_int(value)
+                if v is not None:
+                    p_summary[field_name] = v
+            summaries.append(p_summary)
+
+        snippet["players"] = summaries
+        for p in summaries:
+            if p.get("seat") == our_seat:
+                snippet["our_player"] = p
+                break
+
+    return snippet
 
 from src.integrations.phase_rs.agent_bridge import ActionPicker, RandomActionPicker
 from src.integrations.phase_rs.client import (
@@ -317,6 +391,7 @@ async def _play(
                 "turn": int(started.state.get("turn_number", 0)),
                 "phase": str(started.state.get("phase", "Unknown")),
                 "legal_action_types": [str(a.get("type", "")) for a in legal_actions],
+                "state": _trace_state_snippet(started.state, our_seat),
             }
         ]
 
@@ -400,7 +475,14 @@ async def _play(
                         break
                     elif isinstance(extra, ActionRejected):
                         log.append(f"action rejected during drain: {extra.reason}")
-                        trace.append({"event": "action_rejected", "reason": extra.reason, "turn": int(latest_state.get("turn_number", 0))})
+                        trace.append(
+                            {
+                                "event": "action_rejected",
+                                "reason": extra.reason,
+                                "turn": int(latest_state.get("turn_number", 0)),
+                                "state": _trace_state_snippet(latest_state, our_seat),
+                            }
+                        )
                         early_exit_result = GameRunResult(
                             winner_seat=None,
                             reason="action_rejected",
@@ -453,7 +535,9 @@ async def _play(
                             "seat": our_seat,
                             "chosen_index": idx,
                             "chosen_type": str(chosen.get("type", "")),
+                            "chosen_action": chosen,
                             "legal_action_types": [str(a.get("type", "")) for a in legal_actions],
+                            "state": _trace_state_snippet(latest_state, our_seat),
                         }
                     )
                     await client.send_action(chosen)
@@ -512,6 +596,7 @@ async def _play(
                                 "event": "reconnect_success",
                                 "attempt": attempt,
                                 "turn": int(latest_state.get("turn_number", 0)),
+                                "state": _trace_state_snippet(latest_state, our_seat),
                             }
                         )
                         # Note: Full game state recovery is not yet implemented.
@@ -536,6 +621,7 @@ async def _play(
                             "phase": str(latest_state.get("phase", "Unknown")),
                             "timeout_s": stream_timeout_s,
                             "reconnect_attempts": reconnect_attempts,
+                            "state": _trace_state_snippet(latest_state, our_seat),
                         }
                     )
                     return GameRunResult(
@@ -572,6 +658,7 @@ async def _play(
                             "winner": winner,
                             "reason": "game_rules",
                             "turn": int(latest_state.get("turn_number", 0)),
+                            "state": _trace_state_snippet(latest_state, our_seat),
                         }
                     )
                     return GameRunResult(
@@ -592,6 +679,7 @@ async def _play(
                         "winner": msg.winner,
                         "reason": msg.reason,
                         "turn": int(latest_state.get("turn_number", 0)),
+                        "state": _trace_state_snippet(latest_state, our_seat),
                     }
                 )
                 return GameRunResult(
@@ -611,6 +699,7 @@ async def _play(
                         "event": "action_rejected",
                         "reason": msg.reason,
                         "turn": int(latest_state.get("turn_number", 0)),
+                        "state": _trace_state_snippet(latest_state, our_seat),
                     }
                 )
                 return GameRunResult(

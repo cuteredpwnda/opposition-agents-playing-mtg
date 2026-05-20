@@ -93,9 +93,23 @@ def run(args: argparse.Namespace) -> int:
     out_dir = Path(args.output_dir) / datetime.now().strftime("%Y%m%d_%H%M%S")
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    rollouts_path = out_dir / "rollouts.jsonl"
+    games_path = out_dir / "games.jsonl"
+    progress_path = out_dir / "progress.json"
+    # Create files up front so long runs expose artifacts immediately.
+    rollouts_path.write_text("", encoding="utf-8")
+    games_path.write_text("", encoding="utf-8")
+
     all_rows: list[RolloutRow] = []
     cell_summary: list[dict[str, object]] = []
     max_retries = args.max_retries if hasattr(args, "max_retries") else 2
+    total_games = (
+        len(args.pickers)
+        * len(args.difficulties)
+        * len(args.ai_decks)
+        * args.games_per_cell
+    )
+    completed_games = 0
 
     for picker_name in args.pickers:
         for ai_difficulty in args.difficulties:
@@ -161,6 +175,12 @@ def run(args: argparse.Namespace) -> int:
                         elapsed_sec=elapsed,
                     )
                     all_rows.append(row)
+                    row_dict = asdict(row)
+                    with rollouts_path.open("a", encoding="utf-8") as f:
+                        f.write(json.dumps(row_dict) + "\n")
+                    # Keep games.jsonl as an alias for downstream adapters.
+                    with games_path.open("a", encoding="utf-8") as f:
+                        f.write(json.dumps(row_dict) + "\n")
 
                     if result.trace:
                         trace_dir = out_dir / "traces"
@@ -175,6 +195,23 @@ def run(args: argparse.Namespace) -> int:
                     elapsed_total += elapsed
                     turns_total += result.turns_observed
                     actions_total += result.actions_sent
+                    completed_games += 1
+                    progress_path.write_text(
+                        json.dumps(
+                            {
+                                "completed_games": completed_games,
+                                "total_games": total_games,
+                                "percent": round(
+                                    (completed_games / total_games) * 100.0, 2
+                                )
+                                if total_games
+                                else 0.0,
+                                "last_game": row_dict,
+                            },
+                            indent=2,
+                        ),
+                        encoding="utf-8",
+                    )
 
                     print(
                         f"[{picker_name}/{ai_difficulty}/{ai_deck}] "
@@ -200,7 +237,7 @@ def run(args: argparse.Namespace) -> int:
                     }
                 )
 
-    with (out_dir / "rollouts.jsonl").open("w", encoding="utf-8") as f:
+    with rollouts_path.open("w", encoding="utf-8") as f:
         for row in all_rows:
             f.write(json.dumps(asdict(row)) + "\n")
 
@@ -227,7 +264,7 @@ def run(args: argparse.Namespace) -> int:
 
     # Also write a games.jsonl alias so the KG enrichment adapter can consume
     # the sweep output the same way it consumes the collector output.
-    (out_dir / "games.jsonl").write_text(
+    games_path.write_text(
         "\n".join(json.dumps(asdict(r)) for r in all_rows) + ("\n" if all_rows else ""),
         encoding="utf-8",
     )
