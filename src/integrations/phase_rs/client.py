@@ -44,7 +44,14 @@ class PhaseServerConfig:
     # phase-server's default port is 9374 (see Cli in phase-server/src/main.rs).
     uri: str = "ws://127.0.0.1:9374/ws"
     headers: dict[str, str] = field(default_factory=dict)
+    # Short timeout for control-plane traffic (handshake, CreateGame ack).
     request_timeout_s: float = 15.0
+    # Per-message timeout while a game is streaming. phase-ai's wall-clock
+    # budget per decision is 1.5 s and a single AI turn can chain dozens of
+    # decisions (drawing, untap triggers, casting, attacking, blocking).
+    # ``None`` disables the timeout entirely; set a finite value to bound
+    # how long the client will wait for the next ServerMessage.
+    stream_timeout_s: float | None = None
     client_version: str = DEFAULT_CLIENT_VERSION
     build_commit: str = DEFAULT_BUILD_COMMIT
 
@@ -234,17 +241,30 @@ class PhaseServerClient:
         await self._ws.send(json.dumps(envelope))
         logger.debug("phase-rs: sent %s", msg_type)
 
-    async def _recv_raw(self) -> dict[str, Any]:
+    async def _recv_raw(self, *, timeout: float | None = -1.0) -> dict[str, Any]:
         if self._ws is None:
             raise RuntimeError("PhaseServerClient is not connected")
-        raw = await asyncio.wait_for(self._ws.recv(), timeout=self.config.request_timeout_s)
+        # ``timeout=-1.0`` is the sentinel for "use the config default";
+        # ``None`` means no timeout (block forever). Callers in the streaming
+        # loop pass ``self.config.stream_timeout_s`` directly.
+        if timeout == -1.0:
+            timeout = self.config.request_timeout_s
+        if timeout is None:
+            raw = await self._ws.recv()
+        else:
+            raw = await asyncio.wait_for(self._ws.recv(), timeout=timeout)
         if isinstance(raw, (bytes, bytearray)):
             raw = bytes(raw).decode("utf-8")
         return json.loads(raw)
 
-    async def recv(self) -> Any:
-        """Receive and decode the next ``ServerMessage``."""
-        return parse_server_message(await self._recv_raw())
+    async def recv(self, *, timeout: float | None = -1.0) -> Any:
+        """Receive and decode the next ``ServerMessage``.
+
+        ``timeout`` defaults to ``config.request_timeout_s``; pass ``None``
+        to block indefinitely (used by the streaming game loop where AI
+        thinking can pause server traffic for several seconds).
+        """
+        return parse_server_message(await self._recv_raw(timeout=timeout))
 
     async def expect(self, msg_type: str, *, max_skip: int = 8) -> Any:
         """Wait for a message of the given type, skipping unrelated traffic
@@ -310,18 +330,26 @@ class PhaseServerClient:
         ``Hard``, ``VeryHard`` (see ``AiDifficulty`` in
         ``phase-ai/src/config.rs``).
         """
-        # Per CreateGameWithSettings in server-core/src/protocol.rs
-        # (rename_all = "camelCase"). Optional fields omitted match the
-        # React client's defaults for a 1v1 vs AI.
+        # Per ``ClientMessage::CreateGameWithSettings`` in
+        # ``external/phase-rs/crates/server-core/src/protocol.rs`` — fields
+        # are snake_case (no ``rename_all`` attribute on the enum). Optional
+        # fields with ``#[serde(default)]`` (``match_config``,
+        # ``format_config``, ``ai_seats``, ``room_name``, ``host_peer_id``,
+        # ``draft_metadata``) may be omitted; we omit them and let the
+        # server pick defaults.
         payload: dict[str, Any] = {
             "deck": deck,
-            "displayName": display_name,
+            "display_name": display_name,
             "public": False,
             "password": None,
-            "timerSeconds": None,
-            "playerCount": 2,
-            "aiSeats": [
+            "timer_seconds": None,
+            "player_count": 2,
+            "ai_seats": [
                 {
+                    # ``AiSeatRequest`` itself carries
+                    # ``#[serde(rename_all = "camelCase")]`` — these fields
+                    # are camelCase even though their parent envelope is
+                    # snake_case.
                     "seatIndex": 1,
                     "difficulty": ai_difficulty,
                     "deckName": ai_deck_name,

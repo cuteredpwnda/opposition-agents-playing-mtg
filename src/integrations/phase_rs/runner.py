@@ -117,8 +117,10 @@ async def run_game(
                 legal_actions = []  # wait for next StateUpdate
 
             # Wait for the next state. Could be StateUpdate or GameOver, plus
-            # incidental traffic (events, timer ticks).
-            msg = await client.recv()
+            # incidental traffic (events, timer ticks). Use the streaming
+            # timeout (``None`` by default) so AI thinking pauses don't
+            # trigger spurious TimeoutErrors.
+            msg = await client.recv(timeout=client.config.stream_timeout_s)
             if isinstance(msg, StateUpdate):
                 if msg.state.get("turn_number", 0) != latest_state.get("turn_number", 0):
                     turns_observed += 1

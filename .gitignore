@@ -38,6 +38,9 @@ data/scryfall/
 
 # Large embeddings / dataset directories
 data/embeddings/
+
+# Local-only draft of the phase-rs upstream introduction (do not commit)
+docs/PHASE_RS_UPSTREAM_INTRO.md
 data/datasets/
 
 # Graphify generated artifacts (regenerable via /graphify)
