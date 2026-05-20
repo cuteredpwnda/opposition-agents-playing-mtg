@@ -1,0 +1,8 @@
+{"picker": "random", "ai_difficulty": "VeryEasy", "game_index": 1, "seed": 7, "winner_seat": null, "our_seat": 0, "result": "draw", "reason": "action_rejected", "turns": 1, "actions": 3, "elapsed_sec": 9.393818699994881}
+{"picker": "random", "ai_difficulty": "VeryEasy", "game_index": 2, "seed": 8, "winner_seat": null, "our_seat": 0, "result": "draw", "reason": "action_rejected", "turns": 1, "actions": 2, "elapsed_sec": 9.87815390000469}
+{"picker": "random", "ai_difficulty": "Easy", "game_index": 1, "seed": 7, "winner_seat": 1, "our_seat": 0, "result": "loss", "reason": "game_rules", "turns": 14, "actions": 118, "elapsed_sec": 37.6566171999948}
+{"picker": "random", "ai_difficulty": "Easy", "game_index": 2, "seed": 8, "winner_seat": null, "our_seat": 0, "result": "draw", "reason": "action_rejected", "turns": 1, "actions": 2, "elapsed_sec": 10.171632300000056}
+{"picker": "heuristic", "ai_difficulty": "VeryEasy", "game_index": 1, "seed": 7, "winner_seat": null, "our_seat": 0, "result": "draw", "reason": "action_rejected", "turns": 1, "actions": 3, "elapsed_sec": 10.423408200003905}
+{"picker": "heuristic", "ai_difficulty": "VeryEasy", "game_index": 2, "seed": 8, "winner_seat": 1, "our_seat": 0, "result": "loss", "reason": "game_rules", "turns": 28, "actions": 252, "elapsed_sec": 65.04685639999661}
+{"picker": "heuristic", "ai_difficulty": "Easy", "game_index": 1, "seed": 7, "winner_seat": 1, "our_seat": 0, "result": "loss", "reason": "game_rules", "turns": 12, "actions": 111, "elapsed_sec": 34.2879718999975}
+{"picker": "heuristic", "ai_difficulty": "Easy", "game_index": 2, "seed": 8, "winner_seat": 1, "our_seat": 0, "result": "loss", "reason": "game_rules", "turns": 10, "actions": 91, "elapsed_sec": 30.871333800001594}

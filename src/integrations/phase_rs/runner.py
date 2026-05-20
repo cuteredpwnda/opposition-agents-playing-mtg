@@ -12,9 +12,136 @@ just chooses one ``legal_actions`` index per turn.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from dataclasses import dataclass, field
 from typing import Any
+
+
+def _is_our_turn_to_act(
+    waiting_for: Any, our_seat: int, legal_actions: list[dict[str, Any]]
+) -> bool:
+    """Return True if our seat is genuinely the actor for the current state.
+
+    The server sends ``legal_actions`` as the *union* across every pending
+    player for simultaneous-decision states (MulliganDecision,
+    MulliganBottomCards). A non-empty list does not on its own mean we are
+    expected to act — the AI seat may still be the only pending player.
+
+    Check ``waiting_for.pending`` for our seat. For non-simultaneous states
+    (the common case) we trust that a non-empty ``legal_actions`` implies it
+    is our turn (the server only routes legal actions to the active player).
+    """
+    if not legal_actions:
+        return False
+    if not isinstance(waiting_for, dict):
+        return True
+    wf_type = waiting_for.get("type", "")
+    if wf_type not in {"MulliganDecision", "MulliganBottomCards"}:
+        return True
+    data = waiting_for.get("data") or {}
+    pending = data.get("pending") or []
+    for entry in pending:
+        # `pending` entries are MulliganDecisionEntry { player: PlayerId(u8), ... }
+        # PlayerId serializes transparently as a u8.
+        if isinstance(entry, dict):
+            p = entry.get("player")
+        else:
+            p = entry
+        if isinstance(p, dict):
+            p = p.get("0") if "0" in p else None
+        if p == our_seat:
+            return True
+    return False
+
+
+def _our_simultaneous_round_key(
+    waiting_for: Any, our_seat: int
+) -> tuple[str, int] | None:
+    """Return a (waiting_for_type, our_mulligan_count) key identifying the
+    *current* simultaneous-decision round for our seat.
+
+    The server keeps a player in ``pending`` after they submit (until both
+    decide). Within one round the ``waiting_for`` JSON can mutate (e.g. the
+    other player's ``chosen`` field flips) without the round actually
+    advancing. The only stable per-round identifier from our seat's POV is
+    our entry's ``mulligan_count`` (increments per mulligan round) combined
+    with the waiting_for type (MulliganDecision vs MulliganBottomCards).
+
+    Returns ``None`` if waiting_for is not a simultaneous type or our seat
+    is not in pending.
+    """
+    if not isinstance(waiting_for, dict):
+        return None
+    wf_type = waiting_for.get("type", "")
+    if wf_type not in {"MulliganDecision", "MulliganBottomCards"}:
+        return None
+    data = waiting_for.get("data") or {}
+    for entry in data.get("pending") or []:
+        if not isinstance(entry, dict):
+            continue
+        p = entry.get("player")
+        if isinstance(p, dict):
+            p = p.get("0")
+        if p != our_seat:
+            continue
+        mc = entry.get("mulligan_count", 0)
+        try:
+            mc = int(mc)
+        except (TypeError, ValueError):
+            mc = 0
+        return (wf_type, mc)
+    return None
+
+
+def _simultaneous_round_signature(waiting_for: Any) -> str | None:
+    """Return a stable signature of the current simultaneous-decision round.
+
+    For MulliganDecision / MulliganBottomCards the server keeps a player in
+    the ``pending`` list after they submit, until *both* players decide. We
+    use a hash of ``waiting_for`` (which encodes the pending list and each
+    player's ``mulligan_count``) to detect when the round has advanced. If
+    the signature matches the one stored at submit-time, we have NOT yet
+    received the next round's state and must wait — re-submitting would be
+    rejected by the server (we already chose this round).
+    """
+    if not isinstance(waiting_for, dict):
+        return None
+    wf_type = waiting_for.get("type", "")
+    if wf_type not in {"MulliganDecision", "MulliganBottomCards"}:
+        return None
+    try:
+        return json.dumps(waiting_for, sort_keys=True)
+    except (TypeError, ValueError):
+        return None
+
+
+def _dedup_legal_actions(actions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Remove duplicate action payloads.
+
+    For simultaneous-decision waiting_for variants (MulliganDecision,
+    MulliganBottomCards), the engine's ``legal_actions_full`` emits one set
+    of candidates per pending player, with the per-player metadata stripped
+    when serialized to JSON. The resulting list looks like
+    ``[Keep, Mulligan, Keep, Mulligan]`` with no way for the client to know
+    which entry belongs to which player. Since the server resolves the actor
+    from the WebSocket token (not the action payload), the duplicates are
+    semantically identical from our seat's perspective — picking the second
+    ``Keep`` would actually apply Keep to *us*, but if we've already kept,
+    the server rejects the action.
+
+    Dedup by stable JSON repr so the picker can only choose among distinct
+    payloads.
+    """
+    seen: set[str] = set()
+    out: list[dict[str, Any]] = []
+    for a in actions:
+        key = json.dumps(a, sort_keys=True)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(a)
+    return out
 
 from src.integrations.phase_rs.agent_bridge import ActionPicker, RandomActionPicker
 from src.integrations.phase_rs.client import (
@@ -182,7 +309,7 @@ async def _play(
         log.append(f"game started: our_seat={our_seat} opp={started.opponent_name!r}")
 
         latest_state: dict[str, Any] = started.state
-        legal_actions: list[dict[str, Any]] = list(started.legal_actions)
+        legal_actions: list[dict[str, Any]] = _dedup_legal_actions(list(started.legal_actions))
         trace: list[dict[str, Any]] = [
             {
                 "event": "game_started",
@@ -195,52 +322,148 @@ async def _play(
 
         actions_sent = 0
         turns_observed = 1
+        # For simultaneous-decision rounds (mulligan), record the per-seat
+        # round key at submit-time so we don't re-submit before the round
+        # advances. See _our_simultaneous_round_key.
+        submitted_round_key: tuple[str, int] | None = None
 
         while True:
             # If it's our turn to act (the server only sends legal_actions
             # when we have priority / a decision), send one.
-            if legal_actions:
-                if actions_sent >= max_actions:
-                    log.append(f"hit action cap ({max_actions}); conceding")
-                    await client.concede()
-                    return GameRunResult(
-                        winner_seat=None,
-                        reason="action_cap",
-                        our_seat=our_seat,
-                        turns_observed=turns_observed,
-                        actions_sent=actions_sent,
-                        final_state=latest_state,
-                        log=log,
-                        trace=trace,
-                    )
-                if hasattr(picker, "pick_async"):
-                    idx = await picker.pick_async(legal_actions, latest_state, our_seat)  # type: ignore[attr-defined]
+            # For simultaneous mulligan states the server broadcasts the
+            # *union* of all pending players' actions, so check pending too.
+            # Skip if we already submitted in this simultaneous round and
+            # the round hasn't advanced yet (our pending entry persists
+            # until both players decide; intra-round waiting_for mutations
+            # — e.g. the other seat's chosen flipping — must NOT trigger a
+            # re-submit).
+            current_round_key = _our_simultaneous_round_key(
+                latest_state.get("waiting_for"), our_seat
+            )
+            already_submitted = (
+                submitted_round_key is not None
+                and current_round_key == submitted_round_key
+            )
+            if already_submitted:
+                legal_actions = []
+            if legal_actions and _is_our_turn_to_act(
+                latest_state.get("waiting_for"), our_seat, legal_actions
+            ):
+                # Drain any queued StateUpdates from the server before acting.
+                # phase-server schedules AI-follow-up broadcasts with 100ms
+                # delays after GameStarted and after each player action. If we
+                # act on the first StateUpdate we see (e.g., GameStarted with
+                # AI still pending), the server may apply our action against a
+                # newer state and reject downstream actions because the broadcast
+                # we acted on was stale. Drain with a short grace window so
+                # the picker always sees the latest state.
+                drain_deadline = asyncio.get_event_loop().time() + 0.15
+                early_exit_result: GameRunResult | None = None
+                while asyncio.get_event_loop().time() < drain_deadline:
+                    try:
+                        extra = await client.recv(timeout=0.02)
+                    except (asyncio.TimeoutError, ConnectionResetError, ConnectionError, ConnectionClosedError, OSError):
+                        break
+                    if isinstance(extra, StateUpdate):
+                        if extra.state.get("turn_number", 0) != latest_state.get("turn_number", 0):
+                            turns_observed += 1
+                        latest_state = extra.state
+                        legal_actions = _dedup_legal_actions(list(extra.legal_actions))
+                        wf = extra.state.get("waiting_for") or {}
+                        if isinstance(wf, dict) and wf.get("type") == "GameOver":
+                            winner_data = wf.get("data") or {}
+                            winner = winner_data.get("winner") if isinstance(winner_data, dict) else None
+                            log.append(f"game over (from state, drain): winner={winner}")
+                            early_exit_result = GameRunResult(
+                                winner_seat=winner,
+                                reason="game_rules",
+                                our_seat=our_seat,
+                                turns_observed=turns_observed,
+                                actions_sent=actions_sent,
+                                final_state=latest_state,
+                                log=log,
+                                trace=trace,
+                            )
+                            break
+                    elif isinstance(extra, GameOver):
+                        log.append(f"game over (drain): winner={extra.winner}")
+                        early_exit_result = GameRunResult(
+                            winner_seat=extra.winner,
+                            reason="game_over",
+                            our_seat=our_seat,
+                            turns_observed=turns_observed,
+                            actions_sent=actions_sent,
+                            final_state=latest_state,
+                            log=log,
+                            trace=trace,
+                        )
+                        break
+                    elif isinstance(extra, ActionRejected):
+                        log.append(f"action rejected during drain: {extra.reason}")
+                        trace.append({"event": "action_rejected", "reason": extra.reason, "turn": int(latest_state.get("turn_number", 0))})
+                        early_exit_result = GameRunResult(
+                            winner_seat=None,
+                            reason="action_rejected",
+                            our_seat=our_seat,
+                            turns_observed=turns_observed,
+                            actions_sent=actions_sent,
+                            final_state=latest_state,
+                            log=log,
+                            trace=trace,
+                        )
+                        break
+                if early_exit_result is not None:
+                    return early_exit_result
+                # After drain, re-check that it's still our turn.
+                if not (legal_actions and _is_our_turn_to_act(
+                    latest_state.get("waiting_for"), our_seat, legal_actions
+                )):
+                    # AI is now acting (or game ended) — fall through to recv().
+                    pass
                 else:
-                    idx = picker.pick(legal_actions, latest_state, our_seat)
-                if not 0 <= idx < len(legal_actions):
-                    raise ValueError(
-                        f"picker {picker.name} returned index {idx} "
-                        f"out of range [0, {len(legal_actions)})"
+                    if actions_sent >= max_actions:
+                        log.append(f"hit action cap ({max_actions}); conceding")
+                        await client.concede()
+                        return GameRunResult(
+                            winner_seat=None,
+                            reason="action_cap",
+                            our_seat=our_seat,
+                            turns_observed=turns_observed,
+                            actions_sent=actions_sent,
+                            final_state=latest_state,
+                            log=log,
+                            trace=trace,
+                        )
+                    if hasattr(picker, "pick_async"):
+                        idx = await picker.pick_async(legal_actions, latest_state, our_seat)  # type: ignore[attr-defined]
+                    else:
+                        idx = picker.pick(legal_actions, latest_state, our_seat)
+                    if not 0 <= idx < len(legal_actions):
+                        raise ValueError(
+                            f"picker {picker.name} returned index {idx} "
+                            f"out of range [0, {len(legal_actions)})"
+                        )
+                    chosen = legal_actions[idx]
+                    logger.debug("phase-rs: seat %d -> %s", our_seat, chosen.get("type"))
+                    trace.append(
+                        {
+                            "event": "decision",
+                            "turn": int(latest_state.get("turn_number", 0)),
+                            "phase": str(latest_state.get("phase", "Unknown")),
+                            "seat": our_seat,
+                            "chosen_index": idx,
+                            "chosen_type": str(chosen.get("type", "")),
+                            "legal_action_types": [str(a.get("type", "")) for a in legal_actions],
+                        }
                     )
-                chosen = legal_actions[idx]
-                logger.debug("phase-rs: seat %d -> %s", our_seat, chosen.get("type"))
-                trace.append(
-                    {
-                        "event": "decision",
-                        "turn": int(latest_state.get("turn_number", 0)),
-                        "phase": str(latest_state.get("phase", "Unknown")),
-                        "seat": our_seat,
-                        "chosen_index": idx,
-                        "chosen_type": str(chosen.get("type", "")),
-                        "legal_action_types": [str(a.get("type", "")) for a in legal_actions],
-                        "chosen_raw": chosen,
-                        "legal_actions_raw": legal_actions,
-                        "waiting_for": latest_state.get("waiting_for"),
-                    }
-                )
-                await client.send_action(chosen)
-                actions_sent += 1
-                legal_actions = []  # wait for next StateUpdate
+                    await client.send_action(chosen)
+                    actions_sent += 1
+                    # Record submit-time round key so we don't re-submit
+                    # before the simultaneous round advances.
+                    submitted_round_key = _our_simultaneous_round_key(
+                        latest_state.get("waiting_for"), our_seat
+                    )
+                    legal_actions = []  # wait for next StateUpdate
 
             # Wait for the next state. Could be StateUpdate or GameOver, plus
             # incidental traffic (events, timer ticks). Use the streaming
@@ -333,7 +556,7 @@ async def _play(
                 # legal_actions arrives whenever it is *our* seat's turn to
                 # choose. An empty list means the AI seat has priority — keep
                 # looping until phase-server sends us another decision.
-                legal_actions = list(msg.legal_actions)
+                legal_actions = _dedup_legal_actions(list(msg.legal_actions))
                 # phase-server does NOT emit ServerMessage::GameOver for normal
                 # rule-based game ends — it only sets state.waiting_for to
                 # GameOver and broadcasts a final StateUpdate. Detect that here
