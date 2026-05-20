@@ -4,11 +4,14 @@ Prevents multiple Python processes from simultaneously starting their own
 phase-rs server instances, which would cause port contention.
 """
 
-import fcntl
 import os
 import sys
 from pathlib import Path
 from typing import Optional
+
+# fcntl is Unix-only
+if not sys.platform.startswith("win"):
+    import fcntl
 
 LOCK_FILE = Path(".phase-rs-server.lock")
 
@@ -38,7 +41,7 @@ def acquire_server_lock(timeout: float = 30.0) -> Optional[int]:
         # Unix: use fcntl (atomic, more robust)
         try:
             fd = os.open(str(LOCK_FILE), os.O_CREAT | os.O_WRONLY)
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)  # type: ignore
             os.write(fd, f"{os.getpid()}\n".encode())
             return fd
         except (IOError, BlockingIOError):
@@ -54,7 +57,7 @@ def release_server_lock(lock_fd: Optional[int]) -> None:
             os.close(lock_fd)
             LOCK_FILE.unlink(missing_ok=True)
         else:
-            fcntl.flock(lock_fd, fcntl.LOCK_UN)
+            fcntl.flock(lock_fd, fcntl.LOCK_UN)  # type: ignore
             os.close(lock_fd)
             LOCK_FILE.unlink(missing_ok=True)
     except Exception:
