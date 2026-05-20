@@ -211,6 +211,36 @@ items stay for traceability.
       build output path) and verified HTML generation via
       `.\.venv\Scripts\python.exe -m sphinx -b html docs\sphinx docs\sphinx\_build\html`.
 
+- [x] **Phase-RS mulligan race fix + card-data generation (May 20, 2026)** —
+  unblocked end-to-end games:
+  * **card-data.json generated**: Ran new
+    `external/phase-rs/target/release/oracle-gen.exe` to produce
+    `external/phase-rs/data/card-data.json` (84 MB, 29,749 / 34,003 cards =
+    87.5% coverage). Server auto-loads it on next start; all bundled starter
+    decks now resolve to real cards instead of mutually decking out turn 2.
+  * **Simultaneous-mulligan race condition fixed** in
+    `src/integrations/phase_rs/runner.py`. Symptoms: every game ending at
+    turn 1 with `action_rejected: Illegal action: MulliganDecision`. Root cause
+    was three compounding quirks: (a) `legal_actions` is the union across all
+    pending players (duplicates `[Keep, Mull, Keep, Mull]`); (b) the server
+    keeps a player in `pending` after they submit, until the round resolves;
+    (c) `phase-server` staggers AI follow-up broadcasts with
+    `tokio::time::sleep(100ms)` so clients receive stale `GameStarted` before
+    fresh state. Fix combines four pieces:
+    - `_dedup_legal_actions`: JSON-key dedup of duplicate action payloads.
+    - `_is_our_turn_to_act`: for simultaneous WF types, verify our seat is in
+      `waiting_for.pending` (non-empty `legal_actions` alone is not enough).
+    - 150 ms drain loop before the picker runs (20 ms recv timeout per iteration)
+      to absorb queued StateUpdate / GameOver / ActionRejected messages.
+    - `_our_simultaneous_round_key` = `(waiting_for.type, our_entry.mulligan_count)`
+      stored at submit-time; gate skips while the key matches (the WF JSON
+      mutates intra-round when the other seat's `chosen` flips, so a whole-WF
+      signature is unreliable).
+    Validated with 8/8 games across `random`/`heuristic` × `VeryEasy`/`Easy`:
+    0 false draws, 0 `action_rejected`, real win/loss outcomes
+    (`runs/phase_rs_smoke_2x2_v3/`). Lessons recorded in
+    `/memories/repo/phase-rs-quirks.md`.
+
 - [x] **Phase-RS hardening pass (May 20, 2026)** — three production-readiness items:
   * **Reconnect-and-resume on stream timeout**: `src/integrations/phase_rs/runner.py`
     added `reconnect_attempts: int = 2` parameter. On `asyncio.TimeoutError`,
