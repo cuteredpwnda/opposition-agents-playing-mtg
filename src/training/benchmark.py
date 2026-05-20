@@ -6,7 +6,7 @@ import asyncio
 import logging
 from typing import Callable, Dict, List, Any
 
-from src.orchestrator.game_runner import GameRunner, GameConfig
+from src.orchestrator_legacy.game_runner import GameRunner, GameConfig
 from src.training.deck_utils import create_mock_deck
 from src.agents.random_agent import RandomAgent
 

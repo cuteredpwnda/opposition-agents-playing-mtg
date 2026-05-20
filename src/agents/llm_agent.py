@@ -13,7 +13,7 @@ import httpx
 
 from src.agents.base_agent import MTGAgent
 from src.agents.random_agent import RandomAgent
-from src.engine.game_state import Action, GameState, ActionType
+from src.engine_legacy.game_state import Action, GameState, ActionType
 
 
 OLLAMA_BASE_URL = "http://localhost:11434"
@@ -165,7 +165,7 @@ class OllamaAgent(MTGAgent):
         self, game_state: GameState, legal_actions: list[Action]
     ) -> str:
         """Build a concise game state summary for Ollama."""
-        from src.engine.game_state import Zone
+        from src.engine_legacy.game_state import Zone
         
         # Find me and opponent
         me = next((p for p in game_state.players if p.player_id == self.player_id), None)

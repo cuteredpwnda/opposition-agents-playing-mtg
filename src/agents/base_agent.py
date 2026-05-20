@@ -11,7 +11,7 @@ import abc
 from dataclasses import dataclass, field
 from enum import Enum
 
-from src.engine.game_state import Action, GameState
+from src.engine_legacy.game_state import Action, GameState
 
 
 class AgentStrategy(str, Enum):

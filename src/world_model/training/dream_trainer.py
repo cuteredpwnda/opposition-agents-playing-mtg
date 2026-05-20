@@ -167,7 +167,7 @@ class DreamTrainer:
             logger.info("--- Phase 4: Collect new data (self-play integration) ---")
             try:
                 from ..data_sources.self_play_collector import SelfPlayCollector
-                from src.engine.game_simulator import GameSimulator
+                from src.engine_legacy.game_simulator import GameSimulator
                 from src.agents.world_model_agent import WorldModelAgent
                 from src.world_model.game_tokenizer import GameTokenizer
                 from src.world_model.card_embeddings import CardEmbeddingModel

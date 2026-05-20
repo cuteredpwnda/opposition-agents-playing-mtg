@@ -10,7 +10,7 @@ from src.agents.random_agent import RandomAgent
 from src.agents.active_inference import ActiveInferenceModule
 from src.agents.opponent_model import OpponentModel
 from src.knowledge.knowledge_graph import MTGKnowledgeGraph
-from src.engine.game_state import GameState, Action, ActionType
+from src.engine_legacy.game_state import GameState, Action, ActionType
 
 logger = logging.getLogger(__name__)
 

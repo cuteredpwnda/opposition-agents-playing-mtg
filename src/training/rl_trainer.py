@@ -474,7 +474,7 @@ class RLTrainer:
         self, num_games: int, collect: bool
     ) -> list[dict[str, Any]]:
         """Run a batch of games between agents from the pool."""
-        from src.orchestrator.game_runner import GameRunner, GameConfig
+        from src.orchestrator_legacy.game_runner import GameRunner, GameConfig
         from src.world_model.data_sources.self_play_collector import SelfPlayCollector
         from src.training.rewards import RewardFunction
         from src.training.experience_buffer import Experience
@@ -576,7 +576,7 @@ class RLTrainer:
         scheduled with :func:`asyncio.gather` (bounded by a semaphore) so that
         large self-play epochs can saturate available cores.
         """
-        from src.orchestrator.game_runner import GameRunner, GameConfig
+        from src.orchestrator_legacy.game_runner import GameRunner, GameConfig
         from src.world_model.data_sources.self_play_collector import SelfPlayCollector
         from src.training.rewards import RewardFunction
         from src.training.experience_buffer import Experience

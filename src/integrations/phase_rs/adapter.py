@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from src.engine.game_state import (
+from src.engine_legacy.game_state import (
     Action,
     ActionType,
     CardInstance,

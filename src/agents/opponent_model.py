@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from collections import Counter
 from typing import Any
 
-from src.engine.game_state import Action, GameState
+from src.engine_legacy.game_state import Action, GameState
 from src.knowledge.knowledge_graph import MTGKnowledgeGraph
 
 

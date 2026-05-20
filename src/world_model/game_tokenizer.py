@@ -13,7 +13,7 @@ from typing import Any
 
 import numpy as np
 
-from src.engine.game_state import (
+from src.engine_legacy.game_state import (
     Action,
     ActionType,
     CardInstance,

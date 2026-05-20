@@ -746,6 +746,37 @@ items stay for traceability.
 
 ### In progress
 
+- 🟡 **Phase 2 — Code reorganization (May 20, 2026) — EXECUTED**:
+  * Moved 36 legacy engine files to `src/engine_legacy/`
+  * Moved 3 legacy orchestrator files to `src/orchestrator_legacy/`
+  * Moved 8 legacy examples to `examples_legacy/`
+  * Moved 10 legacy scripts to `scripts_legacy/`
+  * Updated 29 files to reference new import paths
+  * Created `scripts/phase_2_refactoring.py` for future iterations
+  * **Status**: Phase 2 complete. Old `src/engine/` and `src/orchestrator/` now show deprecation notices.
+  * **Next**: Run full test suite to confirm no breakage
+
+- 🟡 **Phase 3 — KG enrichment integration (May 20, 2026) — IN PROGRESS**:
+  * Created `src/integrations/phase_rs/kg_enrichment_adapter.py` (180 LOC)
+    - Parses phase-rs JSONL traces
+    - Builds TrajectoryStore
+    - Calls KGEnrichment pipeline
+    - Writes to Neo4j (LearnedSynergyEvidence nodes)
+  * **Next**: Hook into `phase_rs_rollout_sweep.py` post-game
+  * **Next**: Create post-ablation KG enrichment runner
+
+- 🟡 **Phase 1.5 — Ablation stability fix (May 20, 2026) — RUNNING**:
+  * Created `src/integrations/phase_rs/server_lock.py` (60 LOC)
+    - Windows atomic file-based locks
+    - Unix fcntl locks
+    - Prevents zombie server processes
+  * Enhanced connection error handling in `runner.py`:
+    - Added `ConnectionClosedError`, `ConnectionError`, `OSError` to exception handler
+    - Retry logic for all connection types (was only `asyncio.TimeoutError`)
+  * **Current status**: Ablation v3 running cleanly (81 games, 9 pickers × 3 difficulties × 3 decks × 1 game each)
+    - Expected runtime: 2-4 hours
+    - Output: `runs/phase_rs_ablation_fixed_timeout_v3/`
+
 ### Queue — High Priority
 
 These five items finish the engine's structural backbone so that *any*

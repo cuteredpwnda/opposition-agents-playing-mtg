@@ -33,7 +33,7 @@ from typing import Any
 from src.agents import make_agent
 from src.integrations.decklist_loader import DecklistLoader
 from src.integrations.offline_card_db import get_default_db
-from src.orchestrator.game_runner import GameConfig, GameRunner
+from src.orchestrator_legacy.game_runner import GameConfig, GameRunner
 
 logger = logging.getLogger(__name__)
 
@@ -282,7 +282,7 @@ class DeckEvaluator:
         for card in state.cards:
             if card.owner_id != test_player_id:
                 continue
-            from src.engine.game_state import Zone
+            from src.engine_legacy.game_state import Zone
             if card.zone in (Zone.LIBRARY,):
                 continue  # never interacted with
             seen.add(card.name)

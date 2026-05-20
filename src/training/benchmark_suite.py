@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable, Iterable, Mapping
 
 from src.agents.base_agent import MTGAgent
-from src.orchestrator.game_runner import GameConfig, GameResult, GameRunner
+from src.orchestrator_legacy.game_runner import GameConfig, GameResult, GameRunner
 from src.training.archetype_decks import ARCHETYPES, list_archetypes
 
 logger = logging.getLogger(__name__)

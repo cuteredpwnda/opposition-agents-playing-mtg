@@ -186,7 +186,7 @@ class SelfPlayCollector:
 
         Uses on_state/on_action hooks where possible, and returns Trajectory.
         """
-        from src.engine.game_simulator import GameResult
+        from src.engine_legacy.game_simulator import GameResult
         from ..trajectory import Trajectory, Transition
 
         # Reset collector for a fresh game

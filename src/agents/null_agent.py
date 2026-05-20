@@ -9,7 +9,7 @@ legal action).
 from __future__ import annotations
 
 from src.agents.base_agent import MTGAgent
-from src.engine.game_state import Action, ActionType, GameState
+from src.engine_legacy.game_state import Action, ActionType, GameState
 
 
 class NullAgent(MTGAgent):

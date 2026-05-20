@@ -47,8 +47,8 @@ import statistics
 from dataclasses import dataclass, field
 from typing import Any
 
-from src.engine.card_database import CardDatabase
-from src.orchestrator.game_runner import GameConfig, GameRunner
+from src.engine_legacy.card_database import CardDatabase
+from src.orchestrator_legacy.game_runner import GameConfig, GameRunner
 
 logger = logging.getLogger(__name__)
 
@@ -302,9 +302,9 @@ class GoldfishRunner:
         def _on_turn_end(state: "GameState") -> None:  # type: ignore[name-defined]  # noqa: F821
             """Snapshot watcher data for the active player's turn."""
             try:
-                from src.engine.game_state import Zone
-                from src.engine.keywords import effective_power
-                from src.engine.watchers import (
+                from src.engine_legacy.game_state import Zone
+                from src.engine_legacy.keywords import effective_power
+                from src.engine_legacy.watchers import (
                     LandPlayedThisTurnWatcher,
                     SpellsCastThisTurnWatcher,
                     get_watcher_registry,

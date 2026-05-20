@@ -7,7 +7,7 @@ Reference: Section 12.2 of PLAN.md.
 
 from __future__ import annotations
 
-from src.engine.game_state import GameState, Zone
+from src.engine_legacy.game_state import GameState, Zone
 
 
 class RewardFunction:
