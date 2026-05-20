@@ -1184,6 +1184,82 @@ at combat / EOT / upkeep), new test file.
 
 ### Queue — Medium Priority
 
+- **phase-rs engine adapter (in progress, May 2026, branch `feat/phase-rs-engine`)** — use
+  [phase-rs/phase](https://github.com/phase-rs/phase) as the **target primary
+  rules backend**. Python engine in `src/engine/` stays alive during the
+  transition purely as a differential-test substrate, then gets deprecated.
+  Decision recorded after reviewing their feature set (layers, replacement
+  effects, 34k+ cards from MTGJSON, per-card AI heuristics, multiplayer,
+  Tauri/PWA UI). All integration work lives on `feat/phase-rs-engine`; main
+  stays buildable.
+
+  **Landed on branch**:
+
+  - Submodule `external/phase-rs` (shallow clone, MIT/Apache-2.0).
+  - `src/integrations/phase_rs/`:
+    - `client.py` — protocol-v6 WebSocket client (`PhaseServerConfig`,
+      `PhaseServerClient`, typed `ServerHello` / `GameCreated` / `GameStarted`
+      / `StateUpdate` / `GameOver` / `ActionRejected` dataclasses,
+      `parse_server_message`, handshake, `create_game_with_ai`, `send_action`,
+      `concede`, `ping`, `stream`). Schema sourced from
+      `external/phase-rs/crates/server-core/src/protocol.rs`.
+    - `decks.py` — `decklist_to_deck_data` / `load_deck_data` bridge between
+      our `Decklist` and phase-server's `DeckData` JSON; `STARTER_DECK_NAMES`.
+    - `agent_bridge.py` — `ActionPicker` protocol + `RandomActionPicker` +
+      `PreferNonPassPicker`. Picks operate on opaque JSON `legal_actions`;
+      no `GameAction` ↔ our `Action` translation yet (intentional, see below).
+    - `runner.py` — `run_game` / `run_game_sync` async loop driving one
+      Python-controlled seat vs a phase-ai opponent.
+  - `examples/play_phase_rs.py` — CLI demo against a local `phase-server`.
+  - `tests/integrations/phase_rs/test_protocol_envelopes.py` — 5 parser tests
+    against `external/phase-rs/fixtures/adapter-contract/*.json`. **Passing**.
+    Auto-skipped when the submodule isn't checked out.
+  - `pyproject.toml` — new `phase_rs` optional-dep group (`websockets>=12`).
+
+  **NOT yet validated**: the client has only been tested against the static
+  fixtures. No live `phase-server` round-trip has been done. Until that
+  smoke test passes, no doc rewrites (README, paper, AGENTS_TECH_REPORT)
+  should claim phase-rs is the engine. The Python engine is still the
+  authoritative substrate for every benchmark in the paper.
+
+  Sub-tasks (do in order):
+
+  1. **Live smoke test** — spin up `cargo serve` from the submodule (or use
+     the public preview), run `examples/play_phase_rs.py --picker random`,
+     and confirm a `RandomActionPicker` finishes a game. Fix whatever shape
+     bugs surface. **Gating step for everything below.**
+  2. **State translator** — `src/integrations/phase_rs/adapter.py`:
+     map phase-rs's snapshot JSON to a read-only view that mirrors the
+     fields our `Agent.decide_action` callers read from `GameState`. Action
+     mapping is the inverse: our `Action` → phase-rs's tagged-union dict.
+     Unblocks `HeuristicAgent` / `WorldModelAgent` against phase-rs.
+  3. **Differential conformance harness** — replay a recorded trace from
+     `runs/edh_pod/pod_game_NNN.jsonl` through both engines, diff final
+     state, log divergences. This is our *only* sync mechanism between
+     engines (user choice: "differential conformance tests only" — no
+     mirroring CR citations, no porting upstream mechanics back).
+  4. **Runner integration** — `--engine phase_rs` flag in
+     `examples/play_edh_pod.py` and `src/orchestrator/game_runner.py`.
+  5. **Doc rewrite (gated on 1–4 working)** — update `README.md`,
+     `docs/AGENTS_TECH_REPORT.md`, and the paper LaTeX in `paper/` to
+     describe the new engine layering. Add a "deprecated" note to
+     `src/engine/`'s top-level docstring. Do not delete Python engine
+     code until the trajectory pipeline and JEPA training have been
+     re-validated end-to-end against phase-rs.
+
+  **Two contribution tracks running in parallel** (no Rust toolchain
+  required on our side):
+
+  - **Cards** — pick unimplemented cards from our pod decks
+    (`data/decks/`) that appear in phase-rs's published coverage feed
+    (`https://pub-fc5b5c2c6e774356ae3e730bb0326394.r2.dev/staging/coverage-data.json`)
+    and follow their LLM-contributor flow at
+    `https://raw.githubusercontent.com/phase-rs/phase/main/docs/AI-CONTRIBUTOR.md`.
+    Each card = one upstream PR; track URLs here as `- [x] PR #N — <card>`.
+  - **Data** — open an upstream issue offering our curated combo data
+    (`data/combos_merged.json`, `data/combos_edhrec.json`) and commander
+    decklists; only proceed with a PR if they confirm scope fit.
+
 - **Regenerate `data/trajectories/` with B2-aware self-play** — the current
       80 trajectories pre-date the collector fix and only carry `card_name`
       (no `metadata.visible_cards`). The dataset has a fallback to a single
