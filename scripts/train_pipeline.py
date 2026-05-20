@@ -542,24 +542,48 @@ async def stage_4_1_phase_rs_traces(
         logger.error("Phase-RS collection failed: %s", e)
         return TrajectoryStore(storage_dir="data/trajectories")
 
-    # Post-process: convert JSONL traces into TrajectoryStore format
-    # TODO: Map decision events into (s,a,r,s') tuples for JEPA training
+    # Post-process: convert JSONL traces into TrajectoryStore via the shared
+    # phase-rs KG enrichment adapter (which builds proper Trajectory objects).
     logger.info("Post-processing phase-rs traces into TrajectoryStore format...")
 
     store = TrajectoryStore(storage_dir="data/trajectories")
-    trace_files = list(traces_dir.glob("traces/*.jsonl"))
-    logger.info("Found %d trace files", len(trace_files))
 
-    for trace_file in trace_files[:min(num_games, 999)]:
-        try:
-            with open(trace_file, "r", encoding="utf-8") as f:
-                events = [json.loads(line) for line in f if line.strip()]
-            # TODO: Reconstruct trajectories from events
-            logger.debug("Parsed %d events from %s", len(events), trace_file.name)
-        except Exception as e:
-            logger.warning("Could not parse %s: %s", trace_file, e)
+    # The collector writes each run to a timestamped subdir under traces_dir.
+    run_dirs = [d for d in traces_dir.iterdir() if d.is_dir()]
+    run_dirs.sort()
+    if not run_dirs:
+        logger.warning("No collector run subdirs under %s", traces_dir)
+        return store
 
-    logger.info("Phase-RS trace collection complete")
+    try:
+        from src.integrations.phase_rs.kg_enrichment_adapter import (
+            _build_trajectory,
+            _load_our_deck_cards,
+        )
+    except Exception as exc:
+        logger.warning("Could not import KG enrichment adapter helpers: %s", exc)
+        return store
+
+    our_deck_cards = _load_our_deck_cards(None, None)
+    for run_dir in run_dirs:
+        manifest = run_dir / "games.jsonl"
+        if not manifest.exists():
+            continue
+        with manifest.open("r", encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    row = json.loads(line)
+                    traj = _build_trajectory(row, our_deck_cards)
+                    store.add(traj)
+                except Exception as exc:
+                    logger.debug("Skipping trajectory row in %s: %s", manifest, exc)
+
+    logger.info(
+        "Phase-RS trace collection complete: %d trajectories built", len(store)
+    )
     return store
 
 

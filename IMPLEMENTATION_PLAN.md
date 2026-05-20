@@ -776,19 +776,32 @@ items stay for traceability.
   * **Result**: Clean separation between phase-rs-first (active) and legacy (for testing)
   * **Documentation**: Created `REPO_STATE_AUDIT.md` (340 LOC) + `SESSION_COMPLETE_MAY20.md`
 
-- 🟡 **Phase 3 — KG enrichment integration (May 20, 2026) — IN PROGRESS**:
-  * **Created** `src/integrations/phase_rs/kg_enrichment_adapter.py` (180 LOC)
-    - `async enrich_from_phase_rs_traces(trace_dir, kg_uri, kg_user, kg_password, dry_run=False)`
-    - Parses phase-rs JSONL traces → TrajectoryStore → KGEnrichment → Neo4j
-    - CLI entry point with argparse
-    - Return type: `KGEnrichmentReport(traces_processed, games_analyzed, synergies_proposed/written, combos_proposed, card_stats_updated, errors[])`
-  * **Status**: Adapter created + tested; ready to hook into `phase_rs_rollout_sweep.py`
-  * **Next tasks**:
-    - Modify `scripts/phase_rs_rollout_sweep.py` to call `kg_enrichment_adapter.enrich_from_phase_rs_traces()` post-ablation
-    - Integrate real phase-rs trace JSONL parsing (currently stub)
-    - Verify Neo4j writes: check LearnedSynergyEvidence nodes populated
-    - End-to-end test: ablation → traces → KG writes → verify
-  * **Expected timeline**: 2 hours (Phase 4 in next session)
+- ✅ **Phase 3 — KG enrichment integration (May 20, 2026) — DONE**:
+  * **`src/integrations/phase_rs/kg_enrichment_adapter.py`** (~240 LOC, rewritten)
+    - `async enrich_from_phase_rs_traces(trace_dir, kg_uri, kg_user, kg_password, dry_run, our_deck, our_deck_file, config_overrides)`
+    - Real trajectory parsing: reads `rollouts.jsonl` / `games.jsonl`, builds
+      one `Trajectory` per game with `Transition.card_name` set for each card
+      in the agent's deck plus a `deck:<AI deck name>` synthetic token.
+    - Normalises `traj.winner` so seat 0 == "us" (matches `KGEnrichment`'s
+      convention). Auto-falls back to dry-run if Neo4j is unreachable.
+    - CLI: `python -m src.integrations.phase_rs.kg_enrichment_adapter <trace_dir> --dry-run --our-deck-file <path>`
+  * **`scripts/phase_rs_rollout_sweep.py`** — post-sweep hook
+    - New flags: `--kg-enrich`, `--kg-dry-run`, `--kg-uri`, `--kg-user`, `--kg-password`
+    - After sweep completes, runs the adapter and writes
+      `kg_enrichment_report.json` next to `summary.json`.
+    - Sweep also now emits a `games.jsonl` (alias of `rollouts.jsonl`) so the
+      adapter has a consistent manifest filename.
+  * **`scripts/train_pipeline.py`** stage 4.1 — replaced TODO stub
+    - `stage_4_1_phase_rs_traces` now builds real `TrajectoryStore` objects
+      via the shared adapter helpers (`_build_trajectory`, `_load_our_deck_cards`).
+    - Stage 4.5 KG enrichment then consumes the populated store.
+  * **Validation**: 31 KG / trajectory / phase-rs tests pass; adapter
+    dry-run verified against `runs/phase_rs_training_traces/20260520_153604`
+    (1 game manifest → 1 trajectory built, pipeline completed cleanly).
+  * **Files touched**:
+    - `src/integrations/phase_rs/kg_enrichment_adapter.py`
+    - `scripts/phase_rs_rollout_sweep.py`
+    - `scripts/train_pipeline.py`
 
 ### Queue — High Priority
 

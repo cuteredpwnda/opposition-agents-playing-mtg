@@ -225,9 +225,61 @@ def run(args: argparse.Namespace) -> int:
     }
     (out_dir / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
 
+    # Also write a games.jsonl alias so the KG enrichment adapter can consume
+    # the sweep output the same way it consumes the collector output.
+    (out_dir / "games.jsonl").write_text(
+        "\n".join(json.dumps(asdict(r)) for r in all_rows) + ("\n" if all_rows else ""),
+        encoding="utf-8",
+    )
+
     print("\n=== phase-rs rollout sweep complete ===")
     print(json.dumps(summary, indent=2))
     print(f"output: {out_dir}")
+
+    # Optional post-sweep KG enrichment.
+    if getattr(args, "kg_enrich", False):
+        try:
+            import asyncio
+
+            from src.integrations.phase_rs.kg_enrichment_adapter import (
+                enrich_from_phase_rs_traces,
+            )
+
+            print("\n=== running KG enrichment (dry_run=%s) ===" % args.kg_dry_run)
+            kg_report = asyncio.run(
+                enrich_from_phase_rs_traces(
+                    trace_dir=out_dir,
+                    kg_connection_uri=args.kg_uri,
+                    kg_user=args.kg_user,
+                    kg_password=args.kg_password,
+                    dry_run=args.kg_dry_run,
+                    our_deck_file=args.our_deck_file,
+                )
+            )
+            (out_dir / "kg_enrichment_report.json").write_text(
+                json.dumps(
+                    {
+                        "traces_processed": kg_report.traces_processed,
+                        "games_analyzed": kg_report.games_analyzed,
+                        "synergies_proposed": kg_report.synergies_proposed,
+                        "synergies_written": kg_report.synergies_written,
+                        "combos_proposed": kg_report.combos_proposed,
+                        "card_stats_updated": kg_report.card_stats_updated,
+                        "errors": kg_report.errors,
+                    },
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
+            print(
+                f"KG enrichment: {kg_report.synergies_proposed} synergies "
+                f"({kg_report.synergies_written} written), "
+                f"{kg_report.combos_proposed} combos, "
+                f"{kg_report.card_stats_updated} card stats"
+            )
+        except Exception as exc:  # pragma: no cover — best-effort hook
+            print(f"[warn] KG enrichment failed: {exc}")
+
     return 0
 
 
@@ -267,6 +319,20 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--output-dir", default="runs/phase_rs_rollout_sweep")
     p.add_argument("--ollama-model", default="gemma4:e2b")
     p.add_argument("--ollama-url", default="http://localhost:11434")
+    # KG enrichment options (opt-in; no Neo4j required for --kg-dry-run).
+    p.add_argument(
+        "--kg-enrich",
+        action="store_true",
+        help="After the sweep, run KG enrichment on the collected trajectories.",
+    )
+    p.add_argument(
+        "--kg-dry-run",
+        action="store_true",
+        help="Run KG enrichment analysis without writing to Neo4j.",
+    )
+    p.add_argument("--kg-uri", default="neo4j://localhost:7687")
+    p.add_argument("--kg-user", default="neo4j")
+    p.add_argument("--kg-password", default="password")
     return p.parse_args()
 
 
