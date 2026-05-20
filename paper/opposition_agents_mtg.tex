@@ -94,7 +94,7 @@
 
 \begin{abstract}
 \noindent
-\emph{Magic: The Gathering} (MTG) is, by several measures, the most combinatorially complex commercial card game ever published: more than 28{,}000 unique cards, a 260-page rule book, partial observability over 50--90 hidden cards, an unbounded action space, a turn-based stack with priority, and a state space conservatively estimated above $10^{800}$. We present \textsc{Opposition Agents Playing MTG}, an open-source research framework that combines (i) a from-scratch implementation of the Comprehensive Rules game engine, (ii) a Neo4j property-graph database holding a knowledge graph (KG) backed by an OWL~2 (Web Ontology Language, version 2) ontology of cards, mechanics, archetypes and combos, (iii) a four-component world model in the Vision--Memory--Controller (V+M+C) tradition of \citet{ha2018world} extended with a Joint-Embedding Predictive Architecture (JEPA) head in the spirit of \citet{lecun2022path}, and (iv) Active-Inference Large-Language-Model (LLM) agents that fuse symbolic graph queries, latent imagination and free-energy-minimising action selection. The framework treats one seat of an MTG game as a Partially Observable Markov Decision Process (POMDP) embedded inside an $n$-player Markov game, and we derive each agent as an explicit approximation to that POMDP. We describe the system end-to-end, justify the design choices against the structure of the game, and report on a champion-vs-challenger self-play promotion loop with Elo (Elo, 1978) rating tracking. The code, ontology, and this report are released under the Massachusetts Institute of Technology (MIT) licence.
+\emph{Magic: The Gathering} (MTG) is, by several measures, the most combinatorially complex commercial card game ever published: more than 28{,}000 unique cards, a 260-page rule book, partial observability over 50--90 hidden cards, an unbounded action space, a turn-based stack with priority, and a state space conservatively estimated above $10^{800}$. We present \textsc{Opposition Agents Playing MTG}, an open-source research framework that combines (i) the Rust-native \texttt{phase-rs} Comprehensive-Rules engine as the runtime game backend, (ii) a Neo4j property-graph database holding a knowledge graph (KG) backed by an OWL~2 (Web Ontology Language, version 2) ontology of cards, mechanics, archetypes and combos, (iii) a four-component world model in the Vision--Memory--Controller (V+M+C) tradition of \citet{ha2018world} extended with a Joint-Embedding Predictive Architecture (JEPA) head in the spirit of \citet{lecun2022path}, and (iv) Active-Inference Large-Language-Model (LLM) agents that fuse symbolic graph queries, latent imagination and free-energy-minimising action selection. The framework treats one seat of an MTG game as a Partially Observable Markov Decision Process (POMDP) embedded inside an $n$-player Markov game, and we derive each agent as an explicit approximation to that POMDP. We describe the system end-to-end, justify the design choices against the structure of the game, and report on a champion-vs-challenger self-play promotion loop with Elo (Elo, 1978) rating tracking. The code, ontology, and this report are released under the Massachusetts Institute of Technology (MIT) licence.
 \end{abstract}
 
 \vspace{0.5em}
@@ -232,19 +232,34 @@ Training combines all three signals.  The replay buffer $\mathcal{D}$ is collect
 \label{sec:arch}
 
 \subsection{Game engine}
-The engine implements the Comprehensive Rules subset relevant for two-player Standard plus the structural extensions for multiplayer Commander. Two parallel orchestrators sit on top of the same dataclasses: a synchronous \texttt{GameSimulator} (\texttt{src/engine/game\_simulator.py}) used in tournaments and tests, and an asynchronous \texttt{GameRunner} (\texttt{src/orchestrator/game\_runner.py}) used in self-play data collection. Both implement the same end-of-game rules. Core modules:
+The runtime engine is now \texttt{phase-rs} (Rust), accessed over the
+protocol-v6 WebSocket interface via
+\texttt{src/integrations/phase\_rs/}.
+Our Python side is intentionally adapter-only at execution time:
+\texttt{client.py} handles protocol envelopes,
+\texttt{runner.py} drives game loops,
+\texttt{adapter.py} maps legal actions/snapshots into our policy API,
+and \texttt{server\_process.py} manages local server lifecycle for
+training scripts.
+
+Core integration modules:
 \begin{itemize}[leftmargin=1.2em, itemsep=1pt]
-  \item \texttt{game\_state}: immutable-by-convention dataclasses for \texttt{GameState}, \texttt{PlayerState} (carrying \texttt{max\_hand\_size} and \texttt{mulligans\_taken}), and \texttt{CardInstance};
-  \item \texttt{zones}, \texttt{stack}, \texttt{phases}, \texttt{priority\_loop}: APNAP priority and the seven-step turn structure;
-  \item \texttt{rules\_engine}: legal-action generation given current priority and phase;
-  \item \texttt{state\_based\_actions} (CR~704), \texttt{triggered\_abilities} (CR~603), \texttt{replacement\_effects} (CR~614), \texttt{continuous\_effects} (CR~613 layer system);
-  \item \texttt{combat}, \texttt{mana}, \texttt{keywords}, \texttt{abilities}: per-mechanic logic;
-  \item \textbf{London mulligan} at game setup: draw 7, optionally re-mulligan up to a configurable cap, then bottom cards equal to the number of mulligans taken (CR~103.5);
-  \item \textbf{Cleanup-phase discard} down to \texttt{PlayerState.max\_hand\_size} (default 7), which had been a long-standing gap in earlier engine snapshots (CR~514);
-  \item \textbf{Deterministic empty-library loss}: drawing from an empty library ends the game with that player losing (CR~104.3c / 704.5b), in both the sync simulator and the async runner;
-  \item \textbf{Deterministic timeout tie-breaker}: instead of auto-draw on hitting the configured turn limit, the leader on the lexicographic tuple (life total, permanents in play, hand size, library size) wins; only true ties are recorded as draws.
+  \item \texttt{client.py}: protocol handshake, message parsing, and typed
+    message dataclasses for \texttt{GameStarted}, \texttt{StateUpdate},
+    and \texttt{GameOver};
+  \item \texttt{runner.py}: end-to-end game loop for a Python-controlled seat,
+    including structured per-decision JSONL traces;
+  \item \texttt{adapter.py}: practical \texttt{GameAction} $\leftrightarrow$
+    \texttt{Action} bridge and snapshot projection for native Python
+    policies;
+  \item \texttt{agent\_bridge.py}: random/heuristic/LLM pickers plus
+    adapter-backed native-agent picker support;
+  \item \texttt{server\_process.py}: managed local \texttt{phase-server}
+    process startup/shutdown for reproducible training/evaluation runs.
 \end{itemize}
-The engine is pure-Python, deterministic given an RNG seed, and has no LLM dependency, which makes it the ground truth that all agents play against.
+The old Python engine remains in-repository as legacy compatibility code,
+but new experiments and reported benchmarks use \texttt{phase-rs} as the
+authoritative runtime transition system.
 
 \Cref{tab:engine-pointers} maps each Comprehensive-Rules concept to the exact module that implements it; readers reproducing the system can use it as a reading order through the codebase.
 

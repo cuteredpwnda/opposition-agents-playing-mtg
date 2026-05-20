@@ -1,0 +1,10 @@
+{
+  "games": 1,
+  "picker": "agent:heuristic",
+  "ai_difficulty": "VeryEasy",
+  "ai_deck": "Red Deck Wins",
+  "seed": 7,
+  "uri": "ws://127.0.0.1:9374/ws",
+  "stream_timeout": 30.0,
+  "output_dir": "runs\\phase_rs_training_traces\\20260520_153604"
+}

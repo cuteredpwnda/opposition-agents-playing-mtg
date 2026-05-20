@@ -22,7 +22,9 @@ import sys
 from pathlib import Path
 
 from src.integrations.phase_rs import (
+    AgentActionPicker,
     HeuristicActionPicker,
+    OllamaActionPicker,
     PhaseServerConfig,
     PreferNonPassPicker,
     RandomActionPicker,
@@ -30,16 +32,35 @@ from src.integrations.phase_rs import (
     load_deck_data,
     run_game_sync,
 )
+from src.agents import make_agent
 
 
-def _build_picker(name: str, seed: int | None):
+def _build_picker(
+    name: str,
+    seed: int | None,
+    *,
+    ollama_model: str,
+    ollama_url: str,
+):
     if name == "random":
         return RandomActionPicker(seed=seed)
     if name in {"prefer-nonpass", "prefer_nonpass"}:
         return PreferNonPassPicker(seed=seed)
     if name == "heuristic":
         return HeuristicActionPicker(seed=seed)
-    raise SystemExit(f"unknown picker {name!r}; try: random | prefer-nonpass | heuristic")
+    if name == "ollama":
+        return OllamaActionPicker(seed=seed, model=ollama_model, base_url=ollama_url)
+    if name.startswith("agent:"):
+        agent_name = name.split(":", 1)[1].strip()
+        if not agent_name:
+            raise SystemExit("agent picker requires a name, e.g. agent:heuristic")
+        agent = make_agent(agent_name, player_id="seat0", seed=seed)
+        return AgentActionPicker(agent=agent, name=f"phase_rs_agent:{agent_name}")
+    raise SystemExit(
+        "unknown picker "
+        f"{name!r}; try: random | prefer-nonpass | heuristic | ollama"
+        f" | agent:<name>"
+    )
 
 
 def main() -> int:
@@ -56,8 +77,20 @@ def main() -> int:
     )
     parser.add_argument("--our-deck-file", default=None, help="Path to our deck (.txt)")
     parser.add_argument("--picker", default="prefer-nonpass")
+    parser.add_argument("--ollama-model", default="gemma4:e2b")
+    parser.add_argument("--ollama-url", default="http://localhost:11434")
     parser.add_argument("--ai-difficulty", default="Medium")
     parser.add_argument("--uri", default="ws://127.0.0.1:9374/ws")
+    parser.add_argument(
+        "--autostart",
+        action="store_true",
+        help=(
+            "Spawn a local phase-server subprocess for the duration of this "
+            "run (uses external/phase-rs/target/release/phase-server when "
+            "available; falls back to `cargo run`). Adopts an already-"
+            "running instance on the same port without killing it."
+        ),
+    )
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--max-actions", type=int, default=2000)
     parser.add_argument("--verbose", action="store_true")
@@ -90,9 +123,16 @@ def main() -> int:
         our_deck = {"main_deck": [], "sideboard": [], "commander": []}
         ai_deck_name = args.deck
 
-    picker = _build_picker(args.picker, args.seed)
+    picker = _build_picker(
+        args.picker,
+        args.seed,
+        ollama_model=args.ollama_model,
+        ollama_url=args.ollama_url,
+    )
     cfg = PhaseServerConfig(uri=args.uri)
 
+    if args.autostart:
+        print("autostarting phase-server (or adopting existing instance) ...")
     print(f"connecting to {cfg.uri} ...")
     result = run_game_sync(
         deck=our_deck,
@@ -101,6 +141,7 @@ def main() -> int:
         ai_difficulty=args.ai_difficulty,
         ai_deck_name=ai_deck_name,
         max_actions=args.max_actions,
+        autostart_server=args.autostart,
     )
 
     print("\n--- game log ---")

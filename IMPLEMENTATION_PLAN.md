@@ -1,37 +1,21 @@
 # Implementation Plan — Single Source of Truth
 
 > **opposition-agents-playing-mtg**
-> Last updated: 2026-04-29
+> Last updated: 2026-05-20
 
 This document is the **single source of truth** for what has been implemented,
 what is in progress, and what remains. It supersedes the phase descriptions in
 `PLAN.md`, `ARCHITECTURE.md`, and the presentation slides for tracking purposes
 — those documents retain their value as design rationale and research context.
 
-## Status Snapshot — May 2026
+## Status Snapshot — May 2026 (Updated May 20)
 
-Full two-player games of Magic now run end-to-end through both the synchronous
-`GameSimulator` and the async `GameRunner`. Recent engine hardening:
+Full games of Magic now run end-to-end on the **phase-rs Rust engine**. Python agents drive the phase-rs seat via WebSocket bridge, collecting structured JSONL traces for offline JEPA training. Recent phase-rs-first hardening pass (May 20):
 
-- **End-to-end gameplay**: lands, mana, casting, stack resolution, attacks,
-  blocks, damage, life loss, elimination, and game termination all wired
-  through the simulator main loop.
-- **Mulligans (London)**: opening hands draw 7, optionally mulligan up to a
-  configured cap, then bottom cards equal to mulligans taken. Configurable via
-  `setup_game(mulligan_enabled=..., max_mulligans=...)` and `GameConfig`.
-- **Cleanup discard to max hand size**: `PlayerState.max_hand_size` (default 7)
-  is enforced at cleanup; both engine paths discard down deterministically.
-- **Empty-library loss (CR 104.3c / 704.5b)**: drawing from an empty library
-  immediately ends the game with that player losing.
-- **Timeout tie-breakers**: max-turn timeouts no longer auto-DRAW. The leader
-  (life → battlefield → hand → library) wins; only true ties remain DRAW.
-- **Crash-hardening**: result logging and tournament recording now use stable
-  agent IDs so eliminated players being removed from `players` doesn't IndexError.
-
-Full test suite for the simulator + tournament passes (70 tests). The primary
-remaining work shifts from raw rules-engine plumbing to **agent intelligence**
-(strategy-aware mulligans, smarter heuristics, learned policies) and **format
-coverage** (Commander, multiplayer, exotic keywords).
+- **Reconnect-and-resume on stream timeout**: `src/integrations/phase_rs/runner.py` now attempts up to 2 reconnections before declaring final timeout. On idle, closes stale connection, handshakes fresh session, and resumes game loop. Trace events: `reconnect_success` per attempt, `stream_timeout_final` on exhaustion.
+- **Automatic retry policy per game cell**: `scripts/run_phase_rs_ablation.py` and `scripts/phase_rs_rollout_sweep.py` both support `--max-retries` (default 2). Retry loop re-runs failed games on `stream_timeout` with fresh picker + new seed.
+- **Phase-rs-first training entry (Stage 4.1)**: New `stage_4_1_phase_rs_traces()` in `scripts/train_pipeline.py` collects traces via `scripts/collect_phase_rs_traces.py` subprocess, post-processes JSONL into TrajectoryStore, feeds into JEPA training (Stage 5). CLI: `--phase-rs-traces --phase-rs-picker heuristic --phase-rs-difficulty Medium`.
+- **Comprehensive documentation refresh**: Updated README, DEVELOPMENT.md, AGENTS.md, docs/HOW_IT_ALL_WORKS.md to reflect phase-rs-first: all examples now use phase-rs, Python engine noted as legacy-only, trace collection and training pipeline documented end-to-end.
 
 ---
 
@@ -225,6 +209,38 @@ items stay for traceability.
       `docs/sphinx/` (`conf.py`, toctree pages, API references, requirements,
       build output path) and verified HTML generation via
       `.\.venv\Scripts\python.exe -m sphinx -b html docs\sphinx docs\sphinx\_build\html`.
+
+- [x] **Phase-RS hardening pass (May 20, 2026)** — three production-readiness items:
+  * **Reconnect-and-resume on stream timeout**: `src/integrations/phase_rs/runner.py`
+    added `reconnect_attempts: int = 2` parameter. On `asyncio.TimeoutError`,
+    attempts up to N fresh handshakes before declaring `stream_timeout_final`.
+    Trace events: `reconnect_success` (per attempt), `stream_timeout_final`
+    (ultimate failure). Prevents ablation/training jobs from hanging on stale
+    WebSocket sessions.
+  * **Automatic retry policy per game cell**: `scripts/run_phase_rs_ablation.py`
+    and `scripts/phase_rs_rollout_sweep.py` now support `--max-retries` (default 2).
+    Retry loop re-runs failed games on `stream_timeout` with fresh picker + new seed.
+    Console output shows retry attempts in real-time: `[retry 1/2] cell ...`.
+  * **Phase-rs-first training entry (Stage 4.1)**: New `stage_4_1_phase_rs_traces()`
+    in `scripts/train_pipeline.py` collects traces from phase-rs games via
+    `scripts/collect_phase_rs_traces.py` subprocess, post-processes JSONL into
+    TrajectoryStore, feeds into JEPA training. CLI: `python scripts/train_pipeline.py
+    --phase-rs-traces --num-games 64 --phase-rs-picker heuristic --phase-rs-difficulty Medium`.
+    Wired into run_pipeline orchestrator with new args: `--phase-rs-traces`,
+    `--phase-rs-picker` (default="heuristic"), `--phase-rs-difficulty`.
+
+- [x] **Comprehensive documentation refresh for phase-rs-first (May 20, 2026)**:
+  * **README.md**: Updated headline ("phase-rs is now the authoritative runtime"),
+    status snapshot, expanded phase-rs section, updated "What you can do" table
+    (all examples now phase-rs), updated TL;DR and Overview sections.
+  * **DEVELOPMENT.md**: Updated status snapshot, added new "Phase-RS Runtime Setup"
+    section with submodule init, server startup, trace collection, and phase-rs-first
+    JEPA training examples.
+  * **AGENTS.md**: Updated intro (now "agents that play on phase-rs"), added protocol
+    section with MTGAgent + async support, updated "Running games" examples and
+    output formats, updated debugging + determinism sections for phase-rs.
+  * **docs/HOW_IT_ALL_WORKS.md**: Updated intro to reflect phase-rs as authoritative
+    runtime, bridge and trace collection at top, training pipeline phase-rs-first.
 
 - [x] **Experiment harnesses** — two new entrypoints honour the
       "always write a log file, never pipe live output" rule:
@@ -1186,8 +1202,9 @@ at combat / EOT / upkeep), new test file.
 
 - **phase-rs engine adapter (in progress, May 2026, branch `feat/phase-rs-engine`)** — use
   [phase-rs/phase](https://github.com/phase-rs/phase) as the **target primary
-  rules backend**. Python engine in `src/engine/` stays alive during the
-  transition purely as a differential-test substrate, then gets deprecated.
+  rules backend**. **Decision update (May 2026): phase-rs is now the only
+  runtime engine target for new training/evaluation work.** The Python engine
+  remains only as legacy compatibility code while bridge migration completes.
   Decision recorded after reviewing their feature set (layers, replacement
   effects, 34k+ cards from MTGJSON, per-card AI heuristics, multiplayer,
   Tauri/PWA UI). All integration work lives on `feat/phase-rs-engine`; main
@@ -1212,11 +1229,27 @@ at combat / EOT / upkeep), new test file.
       `Concede`). Picks operate on opaque JSON `legal_actions`; no
       `GameAction` ↔ our `Action` translation yet (intentional, see below).
     - `runner.py` — `run_game` / `run_game_sync` async loop driving one
-      Python-controlled seat vs a phase-ai opponent.
+      Python-controlled seat vs a phase-ai opponent. Supports
+      `autostart_server=True` to spawn/adopt local phase-server.
+    - `server_process.py` — managed local phase-server lifecycle helper
+      (`PhaseServerProcess`) with startup health probe + clean teardown.
+    - `state_view.py` — typed read-only projection (`PhaseRsStateView`) of
+      phase-rs snapshots for downstream policy code.
   - `examples/play_phase_rs.py` — CLI demo against a local `phase-server`
-    (`--picker {random,prefer-nonpass,heuristic}`).
+    (`--picker {random,prefer-nonpass,heuristic,ollama}` + `--autostart`).
+  - `scripts/run_phase_rs_ablation.py` — batched benchmark runner for
+    policy-vs-phase-ai experiments, writes `summary.json` + `games.jsonl`
+    (now includes `reason_counts` so stream/idle failures are explicit).
+  - `scripts/phase_rs_rollout_sweep.py` — episode-rollout sweep runner
+    (`picker x difficulty x deck`) for Rust-engine Monte Carlo evaluation;
+    writes `rollouts.jsonl`, `summary.csv`, `summary.json`.
+  - `scripts/collect_phase_rs_traces.py` — training dataset collector that
+    writes per-game metadata (`games.jsonl`) and flattened event streams
+    (`trace_events.jsonl`) from phase-rs runs.
   - `tests/integrations/phase_rs/test_protocol_envelopes.py` — 5 parser tests
     against `external/phase-rs/fixtures/adapter-contract/*.json`. **Passing**.
+  - `tests/integrations/phase_rs/test_state_view.py` +
+    `test_server_process.py` — typed state-view and lifecycle smoke tests.
     Auto-skipped when the submodule isn't checked out.
   - `pyproject.toml` — new `phase_rs` optional-dep group (`websockets>=12`).
   - `docs/PHASE_RS_INTEGRATION.md` — architecture + AI-difficulty reference
@@ -1232,7 +1265,13 @@ at combat / EOT / upkeep), new test file.
   --deck "Red Deck Wins" --picker random --seed 7` against a local
   `cargo serve` finished a full game with exit 0. Handshake, deck creation,
   state-update streaming, action sending, and `GameOver` parsing all
-  round-trip cleanly.
+  round-trip cleanly. `tests/integrations/phase_rs` now passes with
+  10 tests (protocol + state view + server lifecycle).
+
+  **Runtime guard added**: phase-rs streaming now has a bounded idle timeout
+  path (`reason=stream_timeout`) instead of waiting forever in `asyncio.recv`.
+  This prevents ablation/training jobs from hanging indefinitely if a server
+  session goes silent.
 
   **NOT yet validated**: opaque-action heuristic picker against a tournament
   deck (only smoke-tested in isolation); no `HeuristicAgent` /
@@ -1247,16 +1286,16 @@ at combat / EOT / upkeep), new test file.
      the public preview), run `examples/play_phase_rs.py --picker random`,
      and confirm a `RandomActionPicker` finishes a game. Fix whatever shape
      bugs surface. **Gating step for everything below.**
-  2. **State translator** — `src/integrations/phase_rs/adapter.py`:
+    2. **State translator** — `src/integrations/phase_rs/adapter.py`:
      map phase-rs's snapshot JSON to a read-only view that mirrors the
      fields our `Agent.decide_action` callers read from `GameState`. Action
      mapping is the inverse: our `Action` → phase-rs's tagged-union dict.
      Unblocks `HeuristicAgent` / `WorldModelAgent` against phase-rs.
-  3. **Differential conformance harness** — replay a recorded trace from
-     `runs/edh_pod/pod_game_NNN.jsonl` through both engines, diff final
-     state, log divergences. This is our *only* sync mechanism between
-     engines (user choice: "differential conformance tests only" — no
-     mirroring CR citations, no porting upstream mechanics back).
+      (Partially unblocked by landed `PhaseRsStateView`; full action mapping
+      still missing.)
+    3. **Bridge completeness + rollout reliability** — extend action/state
+      translation coverage for rare variants and reduce `stream_timeout`
+      incidence in long sessions (server/session diagnostics + resilience).
   4. **Runner integration** — `--engine phase_rs` flag in
      `examples/play_edh_pod.py` and `src/orchestrator/game_runner.py`.
   5. **Doc rewrite (gated on 1–4 working)** — update `README.md`,
@@ -1309,6 +1348,37 @@ at combat / EOT / upkeep), new test file.
 - **Deck-Builder Agent — G6 combo-flowchart bias + G7 KG feedback** —
   optional second objective (maximise kill-chain length) and write-back of
   winning synergy evidence to Neo4j.  Defer until G4/G5 are validated.
+
+- **Phase-RS Ablation Baseline (May 20, 2026, READY TO START)** — now that
+  reconnect/retry hardening + phase-rs training pipeline are complete, run
+  comprehensive ablation suite on phase-rs to establish baseline results:
+  
+  **Recommended sweep** (Cartesian product):
+  
+  ```powershell
+  python scripts/phase_rs_rollout_sweep.py `
+    --pickers random prefer-nonpass heuristic ollama agent:heuristic agent:world_model agent:active_inference `
+    --difficulties VeryEasy Easy Medium Hard VeryHard `
+    --ai-decks "Red Deck Wins" "Azorius Control" "Golgari Midrange" `
+    --games-per-cell 10 `
+    --autostart `
+    --output-dir runs/phase_rs_ablation_baseline_may20
+  ```
+  
+  **Expected outputs**:
+  - `rollouts.jsonl` — per-game action sequences + outcomes
+  - `summary.csv` — aggregate stats (picker × difficulty × deck)
+  - `summary.json` — config + results metadata
+  - `traces/<picker>_<difficulty>_<deck>_NNNN.jsonl` — decision-level traces
+  
+  **Traceability**: Keep old results (they remain valid baseline); compare new
+  results to document any regression. If retry/reconnect logic improves win rates
+  by >5% on long games, document that as a hardening win.
+  
+  **Post-ablation**:
+  - Collect training traces: `python scripts/collect_phase_rs_traces.py --games 64 --picker agent:heuristic --autostart`
+  - Train JEPA: `python scripts/train_pipeline.py --phase-rs-traces --num-games 64 --jepa-epochs 40`
+  - Re-evaluate trained agents: `python scripts/phase_rs_rollout_sweep.py --pickers agent:world_model --games-per-cell 5`
 
 ### Queue — Low Priority / Polish
 

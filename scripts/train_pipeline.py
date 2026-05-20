@@ -492,7 +492,78 @@ async def stage_7_eval_game(world_model: "WorldModel | None" = None) -> None:
         logger.error("Evaluation game failed: %s", e)
 
 
-# â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—
+async def stage_4_1_phase_rs_traces(
+    num_games: int = 64,
+    picker_name: str = "heuristic",
+    ai_difficulty: str = "Medium",
+) -> "TrajectoryStore":
+    """Collect training traces from phase-rs engine + native MTGAgent picker.
+    
+    Phase-rs-first approach: Rust engine is authoritative runtime,
+    collect structured JSONL traces for offline policy learning.
+    """
+    logger.info(
+        "=== Stage 4.1: Phase-RS Trace Collection ===\n"
+        "  games=%d, picker=%s, ai_difficulty=%s",
+        num_games, picker_name, ai_difficulty,
+    )
+
+    import json
+    import subprocess
+    from pathlib import Path
+
+    from src.world_model.trajectory import TrajectoryStore
+
+    # Call collect_phase_rs_traces.py
+    traces_dir = Path("runs/train_pipeline_traces") / f"{picker_name}_{ai_difficulty}"
+    traces_dir.mkdir(parents=True, exist_ok=True)
+
+    cmd = [
+        sys.executable, "scripts/collect_phase_rs_traces.py",
+        "--games", str(num_games),
+        "--picker", f"agent:{picker_name}" if not picker_name.startswith("agent:") else picker_name,
+        "--ai-difficulty", ai_difficulty,
+        "--autostart",
+        "--output-dir", str(traces_dir),
+    ]
+    logger.info("Running phase-rs collector: %s", " ".join(cmd))
+
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+        if result.returncode != 0:
+            logger.warning("Phase-RS collector exited with code %d:\n%s",
+                          result.returncode, result.stderr)
+        else:
+            logger.info("Phase-RS trace collection succeeded")
+    except subprocess.TimeoutExpired:
+        logger.error("Phase-RS collection timed out after 600s")
+        return TrajectoryStore(storage_dir="data/trajectories")
+    except Exception as e:
+        logger.error("Phase-RS collection failed: %s", e)
+        return TrajectoryStore(storage_dir="data/trajectories")
+
+    # Post-process: convert JSONL traces into TrajectoryStore format
+    # TODO: Map decision events into (s,a,r,s') tuples for JEPA training
+    logger.info("Post-processing phase-rs traces into TrajectoryStore format...")
+
+    store = TrajectoryStore(storage_dir="data/trajectories")
+    trace_files = list(traces_dir.glob("traces/*.jsonl"))
+    logger.info("Found %d trace files", len(trace_files))
+
+    for trace_file in trace_files[:min(num_games, 999)]:
+        try:
+            with open(trace_file, "r", encoding="utf-8") as f:
+                events = [json.loads(line) for line in f if line.strip()]
+            # TODO: Reconstruct trajectories from events
+            logger.debug("Parsed %d events from %s", len(events), trace_file.name)
+        except Exception as e:
+            logger.warning("Could not parse %s: %s", trace_file, e)
+
+    logger.info("Phase-RS trace collection complete")
+    return store
+
+
+
 # â•‘  Main Orchestrator                                                â•‘
 # â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
@@ -528,7 +599,15 @@ async def run_pipeline(args: argparse.Namespace) -> None:
 
     # --- Stage 4 ---
     if _in_range(4):
-        if args.iterative_training:
+        # Phase-RS traces (stage 4.1 NEW)
+        if args.phase_rs_traces:
+            logger.info("Running phase-rs-first trace collection (stage 4.1)...")
+            store = await stage_4_1_phase_rs_traces(
+                num_games=args.num_games,
+                picker_name=args.phase_rs_picker,
+                ai_difficulty=args.phase_rs_difficulty,
+            )
+        elif args.iterative_training:
             store = await stage_4_iterative_self_play(
                 num_iterations=args.iterative_iters,
                 games_per_iteration=args.iterative_games_per_iter,
@@ -708,6 +787,15 @@ def main() -> None:
                         help="Evaluation games per iteration for iterative self-play")
     parser.add_argument("--checkpoint-dir", type=str, default="checkpoints/rl",
                         help="Checkpoint directory for RLTrainer during iterative training")
+
+    # Phase-RS trace collection (NEW: stage 4.1)
+    parser.add_argument("--phase-rs-traces", action="store_true",
+                        help="Enable phase-rs-first trace collection (stage 4.1) before JEPA training")
+    parser.add_argument("--phase-rs-picker", type=str, default="heuristic",
+                        help="Picker for phase-rs runs: random | heuristic | agent:<name>")
+    parser.add_argument("--phase-rs-difficulty", type=str, default="Medium",
+                        choices=["VeryEasy", "Easy", "Medium", "Hard", "VeryHard"],
+                        help="AI difficulty for phase-rs training games")
 
     # JEPA training
     parser.add_argument("--jepa-beta", type=float, default=1.0,

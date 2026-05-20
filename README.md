@@ -5,14 +5,9 @@
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
 [![Status: Experimental](https://img.shields.io/badge/status-experimental-orange.svg)](#known-limitations)
 
-A research framework that combines **knowledge-graph-grounded JEPA world models**, **active-inference LLM agents**, and a from-scratch **Magic: The Gathering** game engine to study reasoning under uncertainty in the most combinatorially complex commercial card game.
+A research framework that combines **knowledge-graph-grounded JEPA world models**, **active-inference LLM agents**, and the **phase-rs Rust MTG engine** to study reasoning under uncertainty in the most combinatorially complex commercial card game.
 
-> **Status (May 2026):** Full two-player games are playable end-to-end. The
-> engine now implements the London mulligan, cleanup-phase discard to a
-> `max_hand_size` of 7, deterministic loss on drawing from an empty library
-> (CR 104.3c), and a life → board → hand → library tie-breaker for
-> max-turn timeouts. Try `python examples/demo_game_simple.py` for a quick
-> match. Roadmap and current focus are in [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md).
+> **Status (May 2026):** The **phase-rs engine is now the authoritative runtime** for new training/evaluation work. Python agents play end-to-end games via WebSocket bridge (adapter.py), generating structured JSONL traces for offline policy learning. Training pipeline is phase-rs-first: collect traces → JEPA → dream training → evaluation. See [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) and [docs/PHASE_RS_INTEGRATION.md](docs/PHASE_RS_INTEGRATION.md) for current status.
 
 > If you use this project in academic work, please cite the [tech report](paper/opposition_agents_mtg.tex) (see [Citation](#citation)).
 
@@ -20,11 +15,12 @@ A research framework that combines **knowledge-graph-grounded JEPA world models*
 
 We treat **Magic: The Gathering** — the most combinatorially complex commercial card game (≥10⁸⁰⁰ states, ~28k unique cards, partial observability, unbounded action space) — as a testbed for **neuro-symbolic reasoning under uncertainty**. The framework couples four ideas that are usually studied in isolation:
 
-1. **A from-scratch Comprehensive-Rules engine** (state-based actions, stack/priority, triggers, replacement effects) so we control every observation we hand to an agent.
+1. **Phase-rs Rust engine as primary runtime** (state-based actions, stack/priority, triggers, replacement effects) — full Comprehensive Rules implementation with 30k+ cards. Python agents drive the phase-rs seat via WebSocket bridge, ensuring we control observations handed to agents.
 2. **A Neo4j knowledge graph** built from an OWL 2 ontology of cards/keywords/archetypes/combos, queried by agents for symbolic strategic reasoning (combo detection, archetype inference, GraphRAG context).
-3. **A V+M+C+JEPA world model** — a Set-Transformer + VAE state encoder, an MDN-LSTM dynamics model, a controller, and a JEPA latent predictor — trained on self-play trajectories for imagination-based planning.
-4. **Active-Inference LLM agents** that fuse symbolic graph queries, latent rollouts, and free-energy-minimising action selection, with a per-opponent belief module that does **exact** library/hand inference when decklists are public.
-5. **A collective graph-memory loop** where many agents contribute append-only evidence (from self-play traces and outcomes) into a shared knowledge layer, so strategic knowledge accumulates across games rather than being reset per run.
+3. **Structured JSONL trace collection from phase-rs games** — decision events, legal actions, game outcomes — fed into offline JEPA training for world models.
+4. **A V+M+C+JEPA world model** — a Set-Transformer + VAE state encoder, an MDN-LSTM dynamics model, a controller, and a JEPA latent predictor — trained on self-play trajectories for imagination-based planning.
+5. **Active-Inference LLM agents** that fuse symbolic graph queries, latent rollouts, and free-energy-minimising action selection, with a per-opponent belief module that does **exact** library/hand inference when decklists are public.
+6. **A collective graph-memory loop** where many agents contribute append-only evidence (from self-play traces and outcomes) into a shared knowledge layer, so strategic knowledge accumulates across games rather than being reset per run.
 
 A champion-vs-challenger self-play loop with ELO promotion drives improvement. The full pipeline is described in the [tech report](paper/opposition_agents_mtg.tex) ([build instructions](paper/README.md)).
 
@@ -32,25 +28,32 @@ A champion-vs-challenger self-play loop with ELO promotion drives improvement. T
 
 | You want to… | Read | Run |
 |---|---|---|
-| Play a game with random/heuristic agents | [docs/HOW_IT_ALL_WORKS.md](docs/HOW_IT_ALL_WORKS.md) | `python examples/demo_game_simple.py` |
-| Play a game with LLM agents (Ollama) | [docs/OLLAMA_SETUP.md](docs/OLLAMA_SETUP.md) | `python examples/demo_phi_agents.py` |
+| Play a game with random/heuristic agents on phase-rs | [docs/PHASE_RS_INTEGRATION.md](docs/PHASE_RS_INTEGRATION.md) | `python examples/play_edh_pod.py --max-turns 6 --model none` |
+| Play a game with LLM agents on phase-rs | [docs/PHASE_RS_INTEGRATION.md](docs/PHASE_RS_INTEGRATION.md) | `python examples/play_edh_pod.py --max-turns 12 --model ollama:llama3` |
+| Collect training traces from phase-rs | [docs/PHASE_RS_INTEGRATION.md](docs/PHASE_RS_INTEGRATION.md) | `python scripts/collect_phase_rs_traces.py --games 16 --picker agent:heuristic` |
+| Run ablation suite against phase-rs AI | [docs/PHASE_RS_INTEGRATION.md](docs/PHASE_RS_INTEGRATION.md) | `python scripts/run_phase_rs_ablation.py --games 10 --picker agent:heuristic --autostart` |
+| Train JEPA on phase-rs traces (phase-rs-first) | [docs/PHASE_RS_INTEGRATION.md](docs/PHASE_RS_INTEGRATION.md) | `python scripts/train_pipeline.py --phase-rs-traces --num-games 64` |
 | Inspect the world-model design | [docs/WORLD_MODEL_DESIGN.md](docs/WORLD_MODEL_DESIGN.md) | `pytest tests/test_world_model_pytest.py` |
 | Track a real Commander opponent's hand exactly | [docs/OPPONENT_MODELING_WITH_DECKLIST.md](docs/OPPONENT_MODELING_WITH_DECKLIST.md) | see snippet below |
-| Run the standard agent benchmark | [Benchmarks](#benchmarks) | `python -m src.training.benchmark_suite` |
-| Train the neural reasoner on collected trajectories | [Training](#training) | `python scripts/train_neural_reasoner.py` |
 | Read the science behind it | [paper/opposition_agents_mtg.tex](paper/opposition_agents_mtg.tex) | `cd paper && latexmk -pdf` |
-| Play a game against the [phase-rs](https://github.com/phase-rs/phase) Rust engine's AI | [docs/PHASE_RS_INTEGRATION.md](docs/PHASE_RS_INTEGRATION.md) | `python examples/play_phase_rs.py --picker heuristic` |
 
-## phase-rs engine (experimental, May 2026)
+## phase-rs engine (primary runtime, May 2026)
 
-We are integrating with the excellent [phase-rs/phase][phase] Rust MTG
-engine (30k+ cards, full layers / replacement effects / stack, built-in
-per-difficulty AI opponent) as an alternative rules backend. Our Python
-agents drive a phase-server WebSocket session via the adapter in
-[`src/integrations/phase_rs/`](src/integrations/phase_rs); the Python
-engine in `src/engine/` remains authoritative for the trajectory + JEPA
-training pipeline. See [docs/PHASE_RS_INTEGRATION.md](docs/PHASE_RS_INTEGRATION.md)
-for the architecture, AI-difficulty knobs, and contribution flow.
+**Phase-rs is now the authoritative runtime engine for all training and evaluation work.** We integrate with the [phase-rs/phase][phase] Rust MTG engine (30k+ cards, full layers/replacement/stack, built-in difficulty-scaled AI) via a WebSocket bridge in [`src/integrations/phase_rs/`](src/integrations/phase_rs). Python agents drive the phase-rs seat by:
+
+1. **Translating** legal actions from phase-rs wire format → internal `Action` objects (adapter.py)
+2. **Picking** actions using native MTGAgent implementations (RandomAgent, HeuristicAgent, LLMAgent, WorldModelAgent, etc.)
+3. **Collecting** structured JSONL traces for offline JEPA training
+
+**Training pipeline (phase-rs-first):**
+- `scripts/collect_phase_rs_traces.py` — Run games on phase-rs, emit decision events
+- `scripts/train_pipeline.py --phase-rs-traces` — Stage 4.1 new: collect traces → post-process → feed into JEPA training
+- `scripts/run_phase_rs_ablation.py` — Batch evaluation with automatic retry on transient failures
+- `scripts/phase_rs_rollout_sweep.py` — Cartesian sweep (picker × difficulty × deck)
+
+See [docs/PHASE_RS_INTEGRATION.md](docs/PHASE_RS_INTEGRATION.md) for detailed setup, protocol reference, and contribution flow.
+
+**Legacy Python engine:** The engine in `src/engine/` remains for back-compat and special cases (custom rulesets), but is no longer the training target.
 
 [phase]: https://github.com/phase-rs/phase
 
@@ -70,15 +73,26 @@ and [DMCA.md](DMCA.md) for full details.
 
 ## Overview
 
-This project builds an agentic framework where multiple AI agents compete in Magic: The Gathering games, using:
+This project builds an agentic framework where multiple AI agents compete in Magic: The Gathering games on the phase-rs Rust engine, using:
 
-- **Game Engine**: Full Comprehensive Rules (CR) implementation with state-based actions, triggers, and replacement effects
-- **Knowledge Graph**: Neo4j + n10s (OWL ontology import) + APOC (graph algorithms) for card knowledge, combo detection, and strategic reasoning
-- **Collective Intelligence Layer**: append-only learned evidence nodes from multiple agents/runs (`LearnedSynergyEvidence`, `LearnedCardOutcome`, `KGExtensionEvent`) to build shared strategic memory
-- **Agent Architecture**: LangChain-based LLM agents, random agents, neural reasoning modules, and active inference for decision-making under uncertainty
-- **Training**: AlphaZero-style self-play plus V+M+C world model dream training, JEPA (LeWM) latent prediction, reward shaping, and transfer learning (Standard $\to$ Commander)
+- **Game Runtime**: phase-rs (Rust) — full Comprehensive Rules with 30k+ cards, all layers/replacement/stack mechanics. Python agents drive the session via WebSocket bridge in `src/integrations/phase_rs/`.
+- **Bridge Architecture**: 
+  - `client.py` — WebSocket protocol (v6+)
+  - `adapter.py` — GameAction ↔ Action translation
+  - `agent_bridge.py` — AsyncActionPicker for native MTGAgent
+  - `runner.py` — Trace collection + reconnect/resume logic
+- **Trace Collection**: Structured JSONL (decision events, legal actions, game outcomes) → TrajectoryStore → JEPA training
+- **Knowledge Graph**: Neo4j + n10s (OWL ontology import) + APOC for card knowledge, combo detection, strategic reasoning
+- **Collective Intelligence Layer**: Append-only learned evidence from self-play (`LearnedSynergyEvidence`, `LearnedCardOutcome`, `KGExtensionEvent`)
+- **Agent Architecture**: Native MTGAgent protocol (RandomAgent, HeuristicAgent, LLMAgent, WorldModelAgent, ActiveInferenceAgent, LLMFusionAgent, HierarchicalAgent)
+- **Training (phase-rs-first)**: 
+  1. Collect traces from phase-rs games (Stage 4.1: `scripts/collect_phase_rs_traces.py`)
+  2. Post-process into TrajectoryStore
+  3. Train JEPA world model on traces (Stage 5: `scripts/train_pipeline.py`)
+  4. Dream training for planning (Stage 6)
+  5. Evaluate trained agents back on phase-rs
 - **Knowledge Graph**: Neo4j card/combo/archetype ontology + GraphSAGE embeddings + RAG query strategies
-- **JEPA Integration**: Dual-input state+KG JEPA predictor (2-loss MSE+KL), surprise scoring, and hybrid MDN-LSTM + JEPA planning
+- **JEPA Integration**: Dual-input state+KG JEPA predictor (2-loss MSE+KL), surprise scoring, hybrid MDN-LSTM + JEPA planning
 - **Integration**: Scryfall API for card data, Commander Spellbook combos, rules vectorstore judge, Ollama LLM for agent reasoning
 
 ## Documentation

@@ -77,14 +77,15 @@ state (opponent hands and library order).  Concretely:
   \item $\mathcal{S}$: full \texttt{GameState} including all players' zones, the
         stack, mana pools, life totals, and bookkeeping flags.  Conservatively
         $|\mathcal{S}| > 10^{800}$.
-  \item $\mathcal{O}$: controlled-perspective filter from
-        \texttt{src/engine/zones.py}; only the active player's hand,
-        library top, and revealed permanents are visible.
-  \item $\mathcal{A}$: legal \texttt{Action} list assembled by
-        \texttt{src/engine/priority\_loop.py}, typically
+  \item $\mathcal{O}$: seat-filtered snapshot emitted by phase-rs
+        \texttt{StateUpdate}, then projected into our policy view by
+        \texttt{src/integrations/phase\_rs/adapter.py}.
+  \item $\mathcal{A}$: legal action list from phase-rs wire messages,
+        mapped into internal \texttt{Action} values by the same adapter,
+        typically
         $|\mathcal{A}| \in [1, 60]$.
-  \item $T$: the rules engine itself --- deterministic given the random
-        seed and the active player's choices.
+  \item $T$: phase-rs runtime transition system (Rust engine), deterministic
+        given the random seed and chosen actions.
   \item $R$: terminal $\pm 1$ on win/loss; agents may shape via $\Delta$life,
         $\Delta$cards, $\Delta$tempo when training a value head.
 \end{itemize}
@@ -129,10 +130,10 @@ class MTGAgent(Protocol):
     ) -> Action: ...
 \end{lstlisting}
 %
-Agents must \emph{never} mutate \texttt{game\_state}; only the rules engine in
-\texttt{src/engine/} is allowed to.  An agent that returns an action not in
+Agents must \emph{never} mutate \texttt{game\_state}; only the engine is
+allowed to.  An agent that returns an action not in
 \texttt{legal\_actions} is treated as a forfeit by
-\texttt{src/orchestrator/priority\_loop.py}.
+the phase-rs integration runner.
 
 Determinism: any RNG owned by an agent must be a \texttt{random.Random}
 instance constructed from the seed passed by the runner.  This

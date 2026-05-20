@@ -323,12 +323,17 @@ class PhaseServerClient:
         display_name: str = "OppositionAgent",
         ai_difficulty: str = "Medium",
         ai_deck_name: str | None = None,
+        format_name: str | None = None,
     ) -> GameCreated:
         """Create a 2-player game with one AI opponent on seat 1.
 
         ``ai_difficulty`` is one of ``VeryEasy``, ``Easy``, ``Medium``,
         ``Hard``, ``VeryHard`` (see ``AiDifficulty`` in
         ``phase-ai/src/config.rs``).
+        
+        ``format_name`` is one of ``Standard``, ``Pioneer``, ``Modern``,
+        ``Legacy``, ``Vintage``, ``Commander``, ``Brawl``, ``HistoricBrawl``,
+        etc. Defaults to ``Standard`` if not specified.
         """
         # Per ``ClientMessage::CreateGameWithSettings`` in
         # ``external/phase-rs/crates/server-core/src/protocol.rs`` — fields
@@ -356,6 +361,11 @@ class PhaseServerClient:
                 }
             ],
         }
+        # Add format_config if specified (e.g., for Commander games)
+        if format_name:
+            payload["format_config"] = {
+                "format": format_name,
+            }
         await self._send("CreateGameWithSettings", payload)
         created = await self.expect("GameCreated")
         assert isinstance(created, GameCreated)

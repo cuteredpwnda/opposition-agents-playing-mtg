@@ -16,12 +16,32 @@ from src.integrations.decklist_loader import Decklist, DecklistLoader
 
 # Names hard-coded in crates/engine/src/starter_decks.rs. Kept here so a
 # missing card database (Decklist file path) isn't a blocker for the demo.
+#
+# Phase-RS starter decks (built-in):
 STARTER_DECK_NAMES: tuple[str, ...] = (
+    # Standard (built-in phase-rs starters)
     "Red Deck Wins",
     "White Weenie",
     "Blue Control",
     "Green Stompy",
     "Azorius Flyers",
+    # Extended Standard (from MTGGoldfish, playable in phase-rs)
+    "Golgari Midrange",
+    "Gruul Aggro",
+    "Mono Red Aggro",
+    "Boros Convoke",
+    "Esper Pixie",
+    # Pioneer
+    "Izzet Murktide",
+    "Mono Blue Tempo",
+    # Modern
+    "Grixis Murktide",
+    "Rhinos",
+    # Commander (legal 1v1 and multiplayer)
+    "Atraxa Praetors",
+    "Krenko Goblins",
+    "Urza Artifacts",
+    "Meren Midrange",
 )
 
 

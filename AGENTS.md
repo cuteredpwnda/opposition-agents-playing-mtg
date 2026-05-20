@@ -1,29 +1,33 @@
 # AGENTS.md — Agent Zoo
 
-This document is the entry point for **agents that play Magic** in this
-repository, both for humans onboarding and for AI coding tools.
-
-For *engineering* conventions (file layout, plan-file workflow, test
-commands) see `.github/copilot-instructions.md`. For deep design see
+This document describes agents that play Magic in this repository on the
+**phase-rs Rust engine runtime** via the WebSocket bridge. For engineering
+conventions see `.github/copilot-instructions.md`; for deep design see
 `IMPLEMENTATION_PLAN.md` (single source of truth) and `PLAN.md`.
 
 ## The contract every agent satisfies
 
-```python
-class Agent(Protocol):
-    name: str
+All agents implement the `MTGAgent` protocol:
 
-    def decide_action(
+```python
+class MTGAgent(Protocol):
+    name: str
+    
+    async def decide_action(
         self,
         game_state: GameState,
         legal_actions: list[Action],
     ) -> Action: ...
 ```
 
-That's the whole interface. An agent receives a (controlled-perspective
-filtered) `GameState` and a list of currently legal `Action` values, and
-must return exactly one of them. Agents are **free of side effects** on
-the game state — only the rules engine mutates it.
+Agents receive a (controlled-perspective filtered) `GameState` and a list of
+legal `Action` values, then return exactly one. They are **free of side
+effects** on game state — only the rules engine (phase-rs) mutates it.
+
+When used with phase-rs, the bridge in `src/integrations/phase_rs/adapter.py`
+translates between phase-rs wire format and internal `Action` objects. Agents
+can be sync (`decide_action`) or async (`decide_action_async`); the runner
+detects and handles both.
 
 ## The lineup
 
@@ -51,28 +55,35 @@ memory: the knowledge graph extension layer.
 This yields cumulative cross-agent learning while preserving rules-engine
 determinism and immutable source card data.
 
-## Running games — the easy way
+## Running games — the easy way (phase-rs-first)
 
-The fastest way to watch agents play is the EDH pod sim:
+**All agents now run on phase-rs (Rust engine)** via the WebSocket bridge. The fastest way to watch agents play:
 
 ```powershell
-# 4-player pod with the bundled commander decks, fully deterministic
+# 4-player Commander pod on phase-rs (deterministic)
 .\.venv\Scripts\python.exe examples\play_edh_pod.py --max-turns 6 --seed 7 --model none
 
-# Same thing but with an Ollama-hosted LLM in seat 0
+# Same with Ollama LLM in seat 0
 .\.venv\Scripts\python.exe examples\play_edh_pod.py --max-turns 12 --seed 7 --model ollama:llama3
+
+# Collect training traces
+.\.venv\Scripts\python.exe scripts\collect_phase_rs_traces.py --games 16 --picker agent:heuristic --autostart
+
+# Run ablation suite
+.\.venv\Scripts\python.exe scripts\run_phase_rs_ablation.py --games 10 --picker agent:heuristic --autostart
+
+# Cartesian sweep (picker x difficulty x deck)
+.\.venv\Scripts\python.exe scripts\phase_rs_rollout_sweep.py --pickers random agent:heuristic --difficulties VeryEasy Medium --games-per-cell 3 --autostart
 ```
 
 Output:
 
-- Per-turn human-readable log → `runs/edh_pod/pod_game_NNN.log`
-- JSONL action trace (when enabled) → `runs/edh_pod/pod_game_NNN.jsonl`
+- Per-game human-readable log → `runs/edh_pod/pod_game_NNN.log` (phase-rs-first only)
+- Structured JSONL traces → `runs/<script>/<date>_<time>/traces/game_NNNN.jsonl`
+  - Decision events: turn, phase, legal_action_types, chosen_index, chosen_type
+  - Outcomes: winner, reason (normal_play | stream_timeout | action_rejected | etc.)
 
-For a 1v1 quick smoke test:
-
-```powershell
-.\.venv\Scripts\python.exe examples\demo_game_simple.py
-```
+Legacy note: `python examples/demo_game_simple.py` still works on the Python engine for compatibility, but is not the training target.
 
 ## Adding a new agent
 
@@ -98,16 +109,15 @@ For a 1v1 quick smoke test:
   `PASS_PRIORITY` and `CONCEDE`; check whether triggered abilities went
   on the stack but no resolution path is firing.
 - **It plays but never attacks** — combat phase legal actions come from
-  `src/engine/combat.py`'s `legal_attackers`. Confirm summoning sickness
-  / haste / tap state on the creatures in question.
-- **Rules questions** — point the judge at `data/rules/latest.txt`
-  (download with `python scripts/fetch_rules.py`) and ask via
-  `src/judge/`.
+  phase-rs's combat engine. Confirm the creature state (haste, summoning sickness, tapped) via the phase-rs state snapshot.
+- **Rules questions** — consult phase-rs's comprehensive rules implementation
+  (30k+ cards, all layers/replacement/stack) or point the judge at `data/rules/latest.txt`
+  (download with `python scripts/fetch_rules.py`) for text-based lookups.
 
 ## Determinism
 
 All agents that take a seed **must** use it for any RNG they own. The
 runner threads a single seed through `random.Random(seed).randint(...)`
 draws so a given `(seed, decklists, agent-types)` triple replays
-identically. If your agent calls `random.random()` without a seeded
+identically on phase-rs. If your agent calls `random.random()` without a seeded
 `Random` instance you have introduced a bug.
