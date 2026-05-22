@@ -1,0 +1,18 @@
+{
+  "completed_games": 329,
+  "total_games": 1000,
+  "percent": 32.9,
+  "last_game": {
+    "picker": "heuristic",
+    "ai_difficulty": "Easy",
+    "game_index": 9,
+    "seed": 15,
+    "winner_seat": 1,
+    "our_seat": 0,
+    "result": "loss",
+    "reason": "game_rules",
+    "turns": 15,
+    "actions": 156,
+    "elapsed_sec": 35.67683290000423
+  }
+}
