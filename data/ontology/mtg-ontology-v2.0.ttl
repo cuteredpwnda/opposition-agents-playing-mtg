@@ -1,0 +1,1173 @@
+@prefix mtg:     <http://purl.org/mtg/ontology#> .
+@prefix mtgd:    <http://purl.org/mtg/ontology/decision#> .
+@prefix owl:     <http://www.w3.org/2002/07/owl#> .
+@prefix rdf:     <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:    <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:     <http://www.w3.org/2001/XMLSchema#> .
+@prefix skos:    <http://www.w3.org/2004/02/skos/core#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix prov:    <http://www.w3.org/ns/prov#> .
+@prefix time:    <http://www.w3.org/2006/time#> .
+@prefix dul:     <http://www.ontologydesignpatterns.org/ont/dul/DUL.owl#> .
+
+# =============================================================================
+# Magic: The Gathering Ontology v2.0 — OWL 2 DL, DOLCE-aligned
+# =============================================================================
+#
+# What changed relative to v1.2
+# -----------------------------
+# v1.0–v1.2 were a flat, largely untyped vocabulary: `owl:Class` declarations
+# with `rdfs:label`, a handful of `rdfs:domain`/`rdfs:range` assertions, and
+# instances typed directly against classes that were themselves used as
+# individuals (a punning pattern that pushed the artefact out of OWL 2 DL).
+#
+# v2.0 rebuilds the TBox on three commitments:
+#
+#   1. **DOLCE-UltraLite alignment.** Every top-level MTG class is placed
+#      under a DUL category. This is not decoration: it forces the
+#      endurant/perdurant distinction that MTG actually needs. A creature is
+#      an Object; "attacking" is not a property of that Object but a Role it
+#      is classified by inside a combat Situation. v1.x encoded this as a
+#      boolean flag, which cannot express *when* or *relative to what* the
+#      creature attacks, and cannot be queried across turns.
+#
+#   2. **OWL 2 DL discipline.** Punning is removed, cardinality restrictions
+#      are qualified, keys are declared with `owl:hasKey`, and the OWL 2
+#      constructs that carry real modelling weight here — property chains,
+#      asymmetry, irreflexivity, disjoint unions — are used where the domain
+#      genuinely licenses them.
+#
+#   3. **Curated / induced separation.** Every axiom carries an
+#      `mtg:epistemicStatus`. Hand-curated schema is `"curated"`; anything
+#      written back by self-play trace mining is `"induced"` and lives as a
+#      reified, PROV-O-attributed evidence node rather than as a direct
+#      assertion. Deterministic facts and learned regularities are therefore
+#      never confused, and the learned layer is append-only and auditable.
+#
+# Per-axiom provenance follows the MASEO convention: `mtg:rationale` records
+# *why* an axiom exists and `mtg:derivedFromCQ` links it to the competency
+# question that motivated it (see `data/competency_questions.yaml`).
+#
+# Offline validation: `python scripts/validate_ontology.py --no-imports`
+# =============================================================================
+
+<http://purl.org/mtg/ontology/2.0> a owl:Ontology ;
+    owl:versionIRI <http://purl.org/mtg/ontology/2.0> ;
+    dcterms:title "Magic: The Gathering Ontology"@en ;
+    dcterms:description """An OWL 2 DL ontology of Magic: The Gathering cards,
+        game mechanics, turn structure, strategic knowledge, and agent
+        decision-making, aligned to DOLCE-UltraLite. Separates curated schema
+        from induced (self-play-learned) evidence with PROV-O provenance."""@en ;
+    dcterms:creator "opposition-agents-playing-mtg" ;
+    dcterms:license <https://opensource.org/licenses/MIT> ;
+    dcterms:modified "2026-09-17"^^xsd:date ;
+    owl:versionInfo "2.0.0" ;
+    owl:priorVersion <http://purl.org/mtg/ontology/v1.2> ;
+    owl:imports <http://www.ontologydesignpatterns.org/ont/dul/DUL.owl> ,
+                <http://www.w3.org/ns/prov-o#> ,
+                <http://www.w3.org/2004/02/skos/core> ,
+                <http://www.w3.org/2006/time#> ;
+    rdfs:comment "OWL 2 DL profile. Validated with scripts/validate_ontology.py."@en .
+
+# =============================================================================
+# 0. Annotation vocabulary — provenance and epistemic status
+# =============================================================================
+
+mtg:rationale a owl:AnnotationProperty ;
+    rdfs:label "rationale"@en ;
+    rdfs:comment "Why this axiom exists. Append-only; never rewritten in place."@en .
+
+mtg:derivedFromCQ a owl:AnnotationProperty ;
+    rdfs:label "derived from competency question"@en ;
+    rdfs:comment "Identifier of the competency question this axiom was introduced to answer."@en .
+
+mtg:epistemicStatus a owl:AnnotationProperty ;
+    rdfs:label "epistemic status"@en ;
+    rdfs:comment """One of "curated" (hand-authored or derived from the
+        Comprehensive Rules / Scryfall oracle data), "induced" (mined from
+        self-play traces), or "proposed" (agent-generated, awaiting human
+        review). Consumers that require deterministic ground truth filter to
+        "curated"."""@en .
+
+mtg:crRule a owl:AnnotationProperty ;
+    rdfs:label "Comprehensive Rules section"@en ;
+    rdfs:comment "CR section number that grounds this term, e.g. \"702.9\"."@en .
+
+mtg:implementationStatus a owl:AnnotationProperty ;
+    rdfs:label "implementation status"@en ;
+    rdfs:comment "Engine coverage: implemented | partial | planned | not_planned."@en .
+
+# =============================================================================
+# 1. DOLCE alignment backbone
+# =============================================================================
+#
+# The alignment is asserted here rather than inside each section so a reader
+# can see the whole endurant/perdurant/quality/abstract commitment in one
+# place, and so a reasoner can be run against this block alone.
+
+### --- Endurants (things that are wholly present at each moment) -----------
+
+mtg:CardDesign a owl:Class ;
+    rdfs:subClassOf dul:InformationObject ;
+    rdfs:label "Card Design"@en ;
+    rdfs:comment """The abstract card as a piece of rules text — "Lightning
+        Bolt" as designed, independent of any printing or any game. This is
+        what Scryfall's oracle entry denotes."""@en ;
+    mtg:rationale "v1.x conflated the card design, the physical printing, and the in-game object under one Card class, which made it impossible to state that two printings share oracle text or that a token has no design." ;
+    mtg:derivedFromCQ "CQ-CARD-01" ;
+    mtg:epistemicStatus "curated" .
+
+mtg:CardPrinting a owl:Class ;
+    rdfs:subClassOf dul:InformationRealization ;
+    rdfs:label "Card Printing"@en ;
+    rdfs:comment "A concrete printing of a card design in a given set, with its own collector number, artwork and frame."@en ;
+    mtg:rationale "DUL Information Realization pattern: the printing realizes the design." ;
+    mtg:derivedFromCQ "CQ-CARD-02" ;
+    mtg:epistemicStatus "curated" .
+
+mtg:GameObject a owl:Class ;
+    rdfs:subClassOf dul:Object ;
+    rdfs:label "Game Object"@en ;
+    rdfs:comment """An object existing in a game: a permanent on the
+        battlefield, a card in a zone, a spell on the stack, a token, or a
+        copy. Distinct from its design — a game object may have no design
+        (a token) or a design it does not currently match (a face-down
+        creature, a copy effect)."""@en ;
+    mtg:crRule "109" ;
+    mtg:derivedFromCQ "CQ-CARD-03" ;
+    mtg:epistemicStatus "curated" .
+
+mtg:Player a owl:Class ;
+    rdfs:subClassOf dul:Agent ;
+    rdfs:label "Player"@en ;
+    mtg:crRule "102" ;
+    mtg:epistemicStatus "curated" .
+
+mtg:Zone a owl:Class ;
+    rdfs:subClassOf dul:Place ;
+    rdfs:label "Zone"@en ;
+    rdfs:comment "A place where game objects can exist (CR 400)."@en ;
+    mtg:crRule "400" ;
+    mtg:epistemicStatus "curated" .
+
+### --- Perdurants (things that unfold in time) ----------------------------
+
+mtg:Game a owl:Class ;
+    rdfs:subClassOf dul:Event ;
+    rdfs:label "Game"@en ;
+    mtg:crRule "100" ;
+    mtg:epistemicStatus "curated" .
+
+mtg:Turn a owl:Class ;
+    rdfs:subClassOf dul:Event ;
+    rdfs:label "Turn"@en ;
+    mtg:crRule "500" ;
+    mtg:epistemicStatus "curated" .
+
+mtg:Phase a owl:Class ;
+    rdfs:subClassOf dul:Event ;
+    rdfs:label "Phase"@en ;
+    mtg:crRule "500.1" ;
+    mtg:epistemicStatus "curated" .
+
+mtg:Step a owl:Class ;
+    rdfs:subClassOf dul:Event ;
+    rdfs:label "Step"@en ;
+    mtg:crRule "500.1" ;
+    mtg:epistemicStatus "curated" .
+
+mtg:GameEvent a owl:Class ;
+    rdfs:subClassOf dul:Event ;
+    rdfs:label "Game Event"@en ;
+    rdfs:comment "An occurrence the rules can react to: entering the battlefield, dying, dealing damage, a spell being cast."@en ;
+    mtg:rationale "Triggered abilities are defined over events; without a first-class Event class the trigger condition has nothing to quantify over." ;
+    mtg:derivedFromCQ "CQ-MECH-08" ;
+    mtg:epistemicStatus "curated" .
+
+mtg:GameAction a owl:Class ;
+    rdfs:subClassOf dul:Action ;
+    rdfs:label "Game Action"@en ;
+    rdfs:comment "An event with at least one player as its agent: casting, activating, attacking, blocking, passing priority."@en ;
+    mtg:crRule "116" ;
+    mtg:epistemicStatus "curated" .
+
+mtg:GameSituation a owl:Class ;
+    rdfs:subClassOf dul:Situation ;
+    rdfs:label "Game Situation"@en ;
+    rdfs:comment """A state of affairs in a game that roles are relative to —
+        a combat, a priority window, a resolution. Role assignments
+        (attacker, blocker, target) hold *in* a situation, never absolutely."""@en ;
+    mtg:rationale "Role/Situation is the DOLCE pattern that lets the same creature be an attacker in one combat and a blocker in the next without contradictory assertions." ;
+    mtg:derivedFromCQ "CQ-MECH-11" ;
+    mtg:epistemicStatus "curated" .
+
+### --- Qualities and their value spaces -----------------------------------
+
+mtg:GameQuality a owl:Class ;
+    rdfs:subClassOf dul:Quality ;
+    rdfs:label "Game Quality"@en ;
+    rdfs:comment "A quality inhering in a game object or design: power, toughness, mana value, loyalty, colour."@en ;
+    mtg:epistemicStatus "curated" .
+
+mtg:Power a owl:Class ;
+    rdfs:subClassOf mtg:GameQuality ;
+    rdfs:label "Power"@en ;
+    mtg:crRule "208" ;
+    mtg:epistemicStatus "curated" .
+
+mtg:Toughness a owl:Class ;
+    rdfs:subClassOf mtg:GameQuality ;
+    rdfs:label "Toughness"@en ;
+    mtg:crRule "208" ;
+    mtg:epistemicStatus "curated" .
+
+mtg:ManaValue a owl:Class ;
+    rdfs:subClassOf mtg:GameQuality ;
+    rdfs:label "Mana Value"@en ;
+    mtg:crRule "202.3" ;
+    mtg:epistemicStatus "curated" .
+
+mtg:ColourQuality a owl:Class ;
+    rdfs:subClassOf mtg:GameQuality ;
+    rdfs:label "Colour Quality"@en ;
+    mtg:crRule "105" ;
+    mtg:epistemicStatus "curated" .
+
+mtg:ValueRegion a owl:Class ;
+    rdfs:subClassOf dul:Region ;
+    rdfs:label "Value Region"@en ;
+    rdfs:comment """The value a quality takes. Separating quality from region
+        is what lets power be `*` or `X` — a region that is not a number —
+        without breaking the datatype range."""@en ;
+    mtg:rationale "v1.x typed power as xsd:string precisely because characteristic-defining values are not integers; the DOLCE quality/region split expresses that properly instead of degrading the datatype." ;
+    mtg:derivedFromCQ "CQ-CARD-04" ;
+    mtg:epistemicStatus "curated" .
+
+mtg:Colour a owl:Class ;
+    rdfs:subClassOf mtg:ValueRegion ;
+    rdfs:label "Colour"@en ;
+    owl:equivalentClass [
+        a owl:Class ;
+        owl:oneOf ( mtg:White mtg:Blue mtg:Black mtg:Red mtg:Green )
+    ] ;
+    mtg:crRule "105.1" ;
+    mtg:epistemicStatus "curated" .
+
+mtg:White a mtg:Colour ; rdfs:label "White"@en ; skos:notation "W" .
+mtg:Blue  a mtg:Colour ; rdfs:label "Blue"@en  ; skos:notation "U" .
+mtg:Black a mtg:Colour ; rdfs:label "Black"@en ; skos:notation "B" .
+mtg:Red   a mtg:Colour ; rdfs:label "Red"@en   ; skos:notation "R" .
+mtg:Green a mtg:Colour ; rdfs:label "Green"@en ; skos:notation "G" .
+
+[] a owl:AllDifferent ;
+    owl:distinctMembers ( mtg:White mtg:Blue mtg:Black mtg:Red mtg:Green ) .
+
+### --- Abstracts: descriptions, concepts, roles, plans ---------------------
+
+mtg:ComprehensiveRule a owl:Class ;
+    rdfs:subClassOf dul:Description ;
+    rdfs:label "Comprehensive Rule"@en ;
+    rdfs:comment "A numbered section of the Magic Comprehensive Rules, treated as the normative description that grounds a term."@en ;
+    mtg:rationale "Makes 'which rule licenses this modelling choice?' a graph query rather than a comment." ;
+    mtg:derivedFromCQ "CQ-RULE-01" ;
+    mtg:epistemicStatus "curated" .
+
+mtg:Ability a owl:Class ;
+    rdfs:subClassOf dul:Description ;
+    rdfs:label "Ability"@en ;
+    rdfs:comment "A rules description carried by a card design or game object, defining tasks its controller may or must perform."@en ;
+    mtg:crRule "113" ;
+    mtg:epistemicStatus "curated" .
+
+mtg:Keyword a owl:Class ;
+    rdfs:subClassOf dul:Concept ;
+    rdfs:label "Keyword Ability"@en ;
+    rdfs:comment "A named ability concept (CR 702) that classifies card designs and abilities."@en ;
+    mtg:crRule "702" ;
+    mtg:epistemicStatus "curated" .
+
+mtg:CardType a owl:Class ;
+    rdfs:subClassOf dul:Concept ;
+    rdfs:label "Card Type"@en ;
+    rdfs:comment """A type concept that *classifies* card designs and game
+        objects. Modelled as a Concept, not as a class, because types change
+        during a game (an animated land) — a subsumption axiom cannot be
+        retracted, a classification can."""@en ;
+    mtg:rationale "v1.x used CardType both as a class and as individuals, which is OWL 2 DL punning and defeated the reasoner; classification via dul:isClassifiedBy is the correct pattern and is also the truthful one." ;
+    mtg:derivedFromCQ "CQ-CARD-05" ;
+    mtg:crRule "205.2" ;
+    mtg:epistemicStatus "curated" .
+
+mtg:GameRole a owl:Class ;
+    rdfs:subClassOf dul:Role ;
+    rdfs:label "Game Role"@en ;
+    rdfs:comment "A role a game object or player plays within a situation: attacker, blocker, target, controller, owner, commander."@en ;
+    mtg:crRule "506.3" ;
+    mtg:derivedFromCQ "CQ-MECH-11" ;
+    mtg:epistemicStatus "curated" .
+
+mtg:Strategy a owl:Class ;
+    rdfs:subClassOf dul:Plan ;
+    rdfs:label "Strategy"@en ;
+    rdfs:comment "A macro-level plan: aggro, midrange, control, combo, tempo, stax."@en ;
+    mtg:epistemicStatus "curated" .
+
+mtg:Archetype a owl:Class ;
+    rdfs:subClassOf dul:Description ;
+    rdfs:label "Archetype"@en ;
+    rdfs:comment "A recognised deck description that satisfies a strategy and is typically realised by a characteristic card set."@en ;
+    mtg:epistemicStatus "curated" .
+
+mtg:Combo a owl:Class ;
+    rdfs:subClassOf dul:Plan ;
+    rdfs:label "Combo"@en ;
+    rdfs:comment """A plan whose execution over two or more card designs
+        produces a characteristic outcome. Modelling a combo as a Plan rather
+        than a bag of cards is what lets setup requirements, ordering, and the
+        produced outcome be stated."""@en ;
+    mtg:rationale "A combo prescribes tasks; dul:Plan is the DOLCE category for descriptions that define tasks." ;
+    mtg:derivedFromCQ "CQ-COMBO-02" ;
+    mtg:epistemicStatus "curated" .
+
+mtg:Outcome a owl:Class ;
+    rdfs:subClassOf dul:Concept ;
+    rdfs:label "Outcome"@en ;
+    rdfs:comment "A concept classifying the situations a combo produces: infinite mana, arbitrarily large damage, instant win."@en ;
+    mtg:derivedFromCQ "CQ-COMBO-03" ;
+    mtg:epistemicStatus "curated" .
+
+mtg:Format a owl:Class ;
+    rdfs:subClassOf dul:Description ;
+    rdfs:label "Format"@en ;
+    rdfs:comment "A normative description constraining which card designs are legal and how a game is set up."@en ;
+    mtg:crRule "100.2" ;
+    mtg:epistemicStatus "curated" .
+
+mtg:Deck a owl:Class ;
+    rdfs:subClassOf dul:Collection ;
+    rdfs:label "Deck"@en ;
+    mtg:crRule "100.2" ;
+    mtg:epistemicStatus "curated" .
+
+# The DOLCE partition, restated over our own top classes so a reasoner can
+# detect a mis-parented term locally without materialising all of DUL.
+[] a owl:AllDisjointClasses ;
+    owl:members ( mtg:GameObject mtg:GameEvent mtg:GameQuality mtg:ValueRegion ) ;
+    rdfs:comment "Endurant / perdurant / quality / region are mutually exclusive in DOLCE."@en .
+
+# =============================================================================
+# 2. Card taxonomy
+# =============================================================================
+
+mtg:Permanent a owl:Class ;
+    rdfs:subClassOf mtg:GameObject ;
+    rdfs:label "Permanent"@en ;
+    rdfs:comment "A game object on the battlefield."@en ;
+    owl:equivalentClass [
+        a owl:Restriction ;
+        owl:onProperty mtg:inZone ;
+        owl:hasValue mtg:Battlefield
+    ] ;
+    mtg:crRule "110" ;
+    mtg:rationale "Defined class: being a permanent just is being on the battlefield, so it should be inferred rather than asserted." ;
+    mtg:epistemicStatus "curated" .
+
+mtg:Spell a owl:Class ;
+    rdfs:subClassOf mtg:GameObject ;
+    rdfs:label "Spell"@en ;
+    owl:equivalentClass [
+        a owl:Restriction ;
+        owl:onProperty mtg:inZone ;
+        owl:hasValue mtg:Stack
+    ] ;
+    mtg:crRule "111" ;
+    mtg:epistemicStatus "curated" .
+
+mtg:Token a owl:Class ;
+    rdfs:subClassOf mtg:GameObject ,
+        [ a owl:Restriction ;
+          owl:onProperty mtg:realizes ;
+          owl:maxQualifiedCardinality "0"^^xsd:nonNegativeInteger ;
+          owl:onClass mtg:CardDesign ] ;
+    rdfs:label "Token"@en ;
+    rdfs:comment "A game object with no card design behind it."@en ;
+    mtg:crRule "111.1" ;
+    mtg:rationale "The max-0 restriction is the formal statement of 'a token is not a card', which v1.x could only say in a comment." ;
+    mtg:epistemicStatus "curated" .
+
+### Card type concepts (individuals of mtg:CardType — no punning).
+### The complete list of 15 per CR 205.2a; the generator re-asserts these
+### from the rules text so a future card type cannot be silently missed.
+
+mtg:Artifact     a mtg:CardType ; rdfs:label "Artifact"@en ;     mtg:crRule "301" .
+mtg:Battle       a mtg:CardType ; rdfs:label "Battle"@en ;       mtg:crRule "310" .
+mtg:Conspiracy   a mtg:CardType ; rdfs:label "Conspiracy"@en ;   mtg:crRule "312" .
+mtg:Creature     a mtg:CardType ; rdfs:label "Creature"@en ;     mtg:crRule "302" .
+mtg:Dungeon      a mtg:CardType ; rdfs:label "Dungeon"@en ;      mtg:crRule "309" .
+mtg:Enchantment  a mtg:CardType ; rdfs:label "Enchantment"@en ;  mtg:crRule "303" .
+mtg:Instant      a mtg:CardType ; rdfs:label "Instant"@en ;      mtg:crRule "304" .
+mtg:Kindred      a mtg:CardType ; rdfs:label "Kindred"@en ;      mtg:crRule "308" .
+mtg:Land         a mtg:CardType ; rdfs:label "Land"@en ;         mtg:crRule "305" .
+mtg:Phenomenon   a mtg:CardType ; rdfs:label "Phenomenon"@en ;   mtg:crRule "314" .
+mtg:Plane        a mtg:CardType ; rdfs:label "Plane"@en ;        mtg:crRule "313" .
+mtg:Planeswalker a mtg:CardType ; rdfs:label "Planeswalker"@en ; mtg:crRule "306" .
+mtg:Scheme       a mtg:CardType ; rdfs:label "Scheme"@en ;       mtg:crRule "315" .
+mtg:Sorcery      a mtg:CardType ; rdfs:label "Sorcery"@en ;      mtg:crRule "307" .
+mtg:Vanguard     a mtg:CardType ; rdfs:label "Vanguard"@en ;     mtg:crRule "311" .
+
+[] a owl:AllDifferent ;
+    owl:distinctMembers ( mtg:Artifact mtg:Battle mtg:Conspiracy mtg:Creature
+                          mtg:Dungeon mtg:Enchantment mtg:Instant mtg:Kindred
+                          mtg:Land mtg:Phenomenon mtg:Plane mtg:Planeswalker
+                          mtg:Scheme mtg:Sorcery mtg:Vanguard ) .
+
+### Zones (individuals — a zone is a place, not a kind of place)
+
+mtg:Library     a mtg:Zone ; rdfs:label "Library"@en ;      mtg:crRule "401" .
+mtg:Hand        a mtg:Zone ; rdfs:label "Hand"@en ;         mtg:crRule "402" .
+mtg:Battlefield a mtg:Zone ; rdfs:label "Battlefield"@en ;  mtg:crRule "403" .
+mtg:Graveyard   a mtg:Zone ; rdfs:label "Graveyard"@en ;    mtg:crRule "404" .
+mtg:StackZone   a mtg:Zone ; rdfs:label "Stack"@en ;        mtg:crRule "405" .
+mtg:Stack       owl:sameAs mtg:StackZone .
+mtg:Exile       a mtg:Zone ; rdfs:label "Exile"@en ;        mtg:crRule "406" .
+mtg:CommandZone a mtg:Zone ; rdfs:label "Command Zone"@en ; mtg:crRule "408" .
+
+[] a owl:AllDifferent ;
+    owl:distinctMembers ( mtg:Library mtg:Hand mtg:Battlefield mtg:Graveyard
+                          mtg:StackZone mtg:Exile mtg:CommandZone ) .
+
+# =============================================================================
+# 2b. Subtypes  (CR 205.3)
+# =============================================================================
+#
+# Card types and subtypes are different things, and conflating them is the
+# single most common modelling error in card-game schemas. Vehicle and
+# Spacecraft are *artifact* subtypes; Planet is a *land* subtype; Mount is a
+# *creature* subtype. None of them are card types.
+#
+# The individuals are not listed here — there are ~550 of them and they are
+# generated from the rules text by scripts/build_ontology_from_cr.py into
+# mtg-cr-derived.ttl. This section declares only the families they populate.
+
+mtg:Subtype a owl:Class ;
+    rdfs:subClassOf dul:Concept ;
+    rdfs:label "Subtype"@en ;
+    rdfs:comment "A subtype concept classifying card designs and game objects, correlated to a card type (CR 205.3c)."@en ;
+    mtg:crRule "205.3" ;
+    mtg:rationale "v1.x had no subtype machinery at all, so Vehicle, Equipment, Aura, Saga and every creature type were simply unrepresentable." ;
+    mtg:derivedFromCQ "CQ-CARD-08" ;
+    mtg:epistemicStatus "curated" .
+
+mtg:Supertype a owl:Class ;
+    rdfs:subClassOf dul:Concept ;
+    rdfs:label "Supertype"@en ;
+    rdfs:comment "Basic, Legendary, Ongoing, Snow, World (CR 205.4a). Printed before the card types."@en ;
+    mtg:crRule "205.4a" ;
+    mtg:derivedFromCQ "CQ-CARD-08" ;
+    mtg:epistemicStatus "curated" .
+
+mtg:hasSupertype a owl:ObjectProperty ;
+    rdfs:subPropertyOf dul:isClassifiedBy ;
+    rdfs:domain [ a owl:Class ; owl:unionOf ( mtg:CardDesign mtg:GameObject ) ] ;
+    rdfs:range mtg:Supertype ;
+    rdfs:label "has supertype"@en ;
+    mtg:crRule "205.4a" ;
+    mtg:epistemicStatus "curated" .
+
+mtg:ArtifactType a owl:Class ;
+    rdfs:subClassOf mtg:Subtype ; rdfs:label "Artifact Type"@en ;
+    mtg:crRule "205.3g" ; mtg:epistemicStatus "curated" .
+mtg:EnchantmentType a owl:Class ;
+    rdfs:subClassOf mtg:Subtype ; rdfs:label "Enchantment Type"@en ;
+    mtg:crRule "205.3h" ; mtg:epistemicStatus "curated" .
+mtg:LandType a owl:Class ;
+    rdfs:subClassOf mtg:Subtype ; rdfs:label "Land Type"@en ;
+    mtg:crRule "205.3i" ; mtg:epistemicStatus "curated" .
+mtg:BasicLandType a owl:Class ;
+    rdfs:subClassOf mtg:LandType ; rdfs:label "Basic Land Type"@en ;
+    rdfs:comment "Forest, Island, Mountain, Plains, Swamp (CR 305.6)."@en ;
+    mtg:crRule "305.6" ; mtg:epistemicStatus "curated" .
+mtg:PlaneswalkerType a owl:Class ;
+    rdfs:subClassOf mtg:Subtype ; rdfs:label "Planeswalker Type"@en ;
+    mtg:crRule "205.3j" ; mtg:epistemicStatus "curated" .
+mtg:SpellType a owl:Class ;
+    rdfs:subClassOf mtg:Subtype ; rdfs:label "Spell Type"@en ;
+    rdfs:comment "Shared between instants and sorceries (CR 205.3k)."@en ;
+    mtg:crRule "205.3k" ; mtg:epistemicStatus "curated" .
+mtg:CreatureType a owl:Class ;
+    rdfs:subClassOf mtg:Subtype ; rdfs:label "Creature Type"@en ;
+    rdfs:comment "Shared between creatures and kindreds (CR 205.3m)."@en ;
+    mtg:crRule "205.3m" ; mtg:epistemicStatus "curated" .
+mtg:PlanarType a owl:Class ;
+    rdfs:subClassOf mtg:Subtype ; rdfs:label "Planar Type"@en ;
+    mtg:crRule "205.3n" ; mtg:epistemicStatus "curated" .
+mtg:DungeonType a owl:Class ;
+    rdfs:subClassOf mtg:Subtype ; rdfs:label "Dungeon Type"@en ;
+    mtg:crRule "205.3p" ; mtg:epistemicStatus "curated" .
+mtg:BattleType a owl:Class ;
+    rdfs:subClassOf mtg:Subtype ; rdfs:label "Battle Type"@en ;
+    mtg:crRule "205.3q" ; mtg:epistemicStatus "curated" .
+
+# NOTE: the subtype families are deliberately NOT asserted pairwise disjoint.
+# The rules reuse words across families — "Spacecraft" is both an artifact type
+# (CR 205.3g) and a planar type (CR 205.3n) — so a disjointness axiom here
+# would make the generated ABox inconsistent. The generator reports every such
+# reuse rather than hiding it.
+
+mtg:hasSubtype a owl:ObjectProperty ;
+    rdfs:subPropertyOf dul:isClassifiedBy ;
+    rdfs:domain [ a owl:Class ; owl:unionOf ( mtg:CardDesign mtg:GameObject ) ] ;
+    rdfs:range mtg:Subtype ;
+    rdfs:label "has subtype"@en ;
+    mtg:crRule "205.3a" ;
+    mtg:derivedFromCQ "CQ-CARD-08" ;
+    mtg:epistemicStatus "curated" .
+
+# CR 205.3c/205.3d: a subtype is correlated to its card type, and an object
+# cannot gain a subtype that does not correspond to one of its types. Stated as
+# subclass axioms between restrictions — carrying an artifact subtype entails
+# being an artifact. This is the constraint the engine most often gets wrong,
+# and it is checkable rather than merely documented.
+
+[ a owl:Restriction ; owl:onProperty mtg:hasSubtype ; owl:someValuesFrom mtg:ArtifactType ]
+    rdfs:subClassOf [ a owl:Restriction ; owl:onProperty mtg:hasCardType ; owl:hasValue mtg:Artifact ] .
+
+[ a owl:Restriction ; owl:onProperty mtg:hasSubtype ; owl:someValuesFrom mtg:EnchantmentType ]
+    rdfs:subClassOf [ a owl:Restriction ; owl:onProperty mtg:hasCardType ; owl:hasValue mtg:Enchantment ] .
+
+[ a owl:Restriction ; owl:onProperty mtg:hasSubtype ; owl:someValuesFrom mtg:LandType ]
+    rdfs:subClassOf [ a owl:Restriction ; owl:onProperty mtg:hasCardType ; owl:hasValue mtg:Land ] .
+
+[ a owl:Restriction ; owl:onProperty mtg:hasSubtype ; owl:someValuesFrom mtg:PlaneswalkerType ]
+    rdfs:subClassOf [ a owl:Restriction ; owl:onProperty mtg:hasCardType ; owl:hasValue mtg:Planeswalker ] .
+
+[ a owl:Restriction ; owl:onProperty mtg:hasSubtype ; owl:someValuesFrom mtg:BattleType ]
+    rdfs:subClassOf [ a owl:Restriction ; owl:onProperty mtg:hasCardType ; owl:hasValue mtg:Battle ] .
+
+[ a owl:Restriction ; owl:onProperty mtg:hasSubtype ; owl:someValuesFrom mtg:DungeonType ]
+    rdfs:subClassOf [ a owl:Restriction ; owl:onProperty mtg:hasCardType ; owl:hasValue mtg:Dungeon ] .
+
+[ a owl:Restriction ; owl:onProperty mtg:hasSubtype ; owl:someValuesFrom mtg:PlanarType ]
+    rdfs:subClassOf [ a owl:Restriction ; owl:onProperty mtg:hasCardType ; owl:hasValue mtg:Plane ] .
+
+# Spell and creature types span two card types each, so the consequent is a
+# union rather than a single value (CR 205.3k, 205.3m).
+[ a owl:Restriction ; owl:onProperty mtg:hasSubtype ; owl:someValuesFrom mtg:SpellType ]
+    rdfs:subClassOf [ a owl:Class ; owl:unionOf (
+        [ a owl:Restriction ; owl:onProperty mtg:hasCardType ; owl:hasValue mtg:Instant ]
+        [ a owl:Restriction ; owl:onProperty mtg:hasCardType ; owl:hasValue mtg:Sorcery ]
+    ) ] .
+
+[ a owl:Restriction ; owl:onProperty mtg:hasSubtype ; owl:someValuesFrom mtg:CreatureType ]
+    rdfs:subClassOf [ a owl:Class ; owl:unionOf (
+        [ a owl:Restriction ; owl:onProperty mtg:hasCardType ; owl:hasValue mtg:Creature ]
+        [ a owl:Restriction ; owl:onProperty mtg:hasCardType ; owl:hasValue mtg:Kindred ]
+    ) ] .
+
+# =============================================================================
+# 2c. Keyword actions and keyword counters
+# =============================================================================
+
+mtg:KeywordAction a owl:Class ;
+    rdfs:subClassOf dul:Concept ;
+    rdfs:label "Keyword Action"@en ;
+    rdfs:comment "A named game action defined by CR 701 (attach, exile, scry, mill, ...) that classifies game actions."@en ;
+    mtg:crRule "701" ;
+    mtg:derivedFromCQ "CQ-MECH-13" ;
+    mtg:epistemicStatus "curated" .
+
+mtg:KeywordCounter a owl:Class ;
+    rdfs:subClassOf mtg:Keyword ;
+    rdfs:label "Keyword Counter"@en ;
+    rdfs:comment "A keyword that can exist as a counter on a permanent, granting that keyword (CR 122.1b)."@en ;
+    mtg:crRule "122.1b" ;
+    mtg:epistemicStatus "curated" .
+
+mtg:performsKeywordAction a owl:ObjectProperty ;
+    rdfs:subPropertyOf dul:isClassifiedBy ;
+    rdfs:domain mtg:GameAction ;
+    rdfs:range mtg:KeywordAction ;
+    rdfs:label "performs keyword action"@en ;
+    mtg:derivedFromCQ "CQ-MECH-13" ;
+    mtg:epistemicStatus "curated" .
+
+# =============================================================================
+# 2d. Comprehensive Rules structure
+# =============================================================================
+
+mtg:ruleNumber a owl:DatatypeProperty , owl:FunctionalProperty ;
+    rdfs:domain mtg:ComprehensiveRule ; rdfs:range xsd:string ;
+    rdfs:label "rule number"@en ;
+    mtg:derivedFromCQ "CQ-RULE-02" ; mtg:epistemicStatus "curated" .
+
+mtg:ruleText a owl:DatatypeProperty , owl:FunctionalProperty ;
+    rdfs:domain mtg:ComprehensiveRule ; rdfs:range xsd:string ;
+    rdfs:label "rule text"@en ;
+    mtg:derivedFromCQ "CQ-RULE-02" ; mtg:epistemicStatus "curated" .
+
+mtg:ruleSection a owl:DatatypeProperty , owl:FunctionalProperty ;
+    rdfs:domain mtg:ComprehensiveRule ; rdfs:range xsd:integer ;
+    rdfs:label "rule section"@en ;
+    rdfs:comment "Top-level CR section 1-9 (Game Concepts ... Casual Variants)."@en ;
+    mtg:epistemicStatus "curated" .
+
+mtg:subRuleOf a owl:ObjectProperty , owl:TransitiveProperty ;
+    rdfs:subPropertyOf dul:isPartOf ;
+    rdfs:domain mtg:ComprehensiveRule ; rdfs:range mtg:ComprehensiveRule ;
+    rdfs:label "sub-rule of"@en ;
+    rdfs:comment "Transitive: 205.3m is a sub-rule of 205.3, which is a sub-rule of 205.1."@en ;
+    mtg:derivedFromCQ "CQ-RULE-02" ; mtg:epistemicStatus "curated" .
+
+# =============================================================================
+# 3. Object properties
+# =============================================================================
+
+### --- Information realisation ---------------------------------------------
+
+mtg:realizes a owl:ObjectProperty ;
+    rdfs:subPropertyOf dul:realizes ;
+    rdfs:domain [ a owl:Class ; owl:unionOf ( mtg:CardPrinting mtg:GameObject ) ] ;
+    rdfs:range mtg:CardDesign ;
+    owl:inverseOf mtg:isRealizedBy ;
+    rdfs:label "realizes"@en ;
+    mtg:derivedFromCQ "CQ-CARD-02" ;
+    mtg:epistemicStatus "curated" .
+
+mtg:isRealizedBy a owl:ObjectProperty ;
+    rdfs:subPropertyOf dul:isRealizedBy ;
+    rdfs:label "is realized by"@en ;
+    mtg:epistemicStatus "curated" .
+
+### --- Location and control -----------------------------------------------
+
+mtg:inZone a owl:ObjectProperty , owl:FunctionalProperty ;
+    rdfs:subPropertyOf dul:hasLocation ;
+    rdfs:domain mtg:GameObject ;
+    rdfs:range mtg:Zone ;
+    rdfs:label "in zone"@en ;
+    rdfs:comment "Functional: CR 400.5 — an object exists in exactly one zone."@en ;
+    mtg:crRule "400.5" ;
+    mtg:derivedFromCQ "CQ-MECH-03" ;
+    mtg:epistemicStatus "curated" .
+
+mtg:ownedBy a owl:ObjectProperty , owl:FunctionalProperty ;
+    rdfs:domain mtg:GameObject ;
+    rdfs:range mtg:Player ;
+    rdfs:label "owned by"@en ;
+    mtg:crRule "108.3" ;
+    mtg:epistemicStatus "curated" .
+
+mtg:controlledBy a owl:ObjectProperty ;
+    rdfs:domain mtg:GameObject ;
+    rdfs:range mtg:Player ;
+    rdfs:label "controlled by"@en ;
+    rdfs:comment """Not functional and not temporally absolute: control changes.
+        Durable statements about control are made through a
+        mtg:ControllerRole classification inside a mtg:GameSituation."""@en ;
+    mtg:crRule "108.4" ;
+    mtg:epistemicStatus "curated" .
+
+### --- Classification (types, keywords, roles) -----------------------------
+
+mtg:hasCardType a owl:ObjectProperty ;
+    rdfs:subPropertyOf dul:isClassifiedBy ;
+    rdfs:domain [ a owl:Class ; owl:unionOf ( mtg:CardDesign mtg:GameObject ) ] ;
+    rdfs:range mtg:CardType ;
+    rdfs:label "has card type"@en ;
+    mtg:crRule "205" ;
+    mtg:derivedFromCQ "CQ-CARD-05" ;
+    mtg:epistemicStatus "curated" .
+
+mtg:hasKeyword a owl:ObjectProperty ;
+    rdfs:subPropertyOf dul:isClassifiedBy ;
+    rdfs:domain [ a owl:Class ; owl:unionOf ( mtg:CardDesign mtg:GameObject mtg:Ability ) ] ;
+    rdfs:range mtg:Keyword ;
+    rdfs:label "has keyword"@en ;
+    mtg:crRule "702" ;
+    mtg:derivedFromCQ "CQ-CARD-06" ;
+    mtg:epistemicStatus "curated" .
+
+mtg:playsRole a owl:ObjectProperty ;
+    rdfs:subPropertyOf dul:isClassifiedBy ;
+    rdfs:domain [ a owl:Class ; owl:unionOf ( mtg:GameObject mtg:Player ) ] ;
+    rdfs:range mtg:GameRole ;
+    rdfs:label "plays role"@en ;
+    mtg:derivedFromCQ "CQ-MECH-11" ;
+    mtg:epistemicStatus "curated" .
+
+mtg:roleInSituation a owl:ObjectProperty ;
+    rdfs:domain mtg:GameRole ;
+    rdfs:range mtg:GameSituation ;
+    rdfs:label "role in situation"@en ;
+    rdfs:comment "Anchors a role assignment to the situation it holds in."@en ;
+    mtg:epistemicStatus "curated" .
+
+# OWL 2 property chain: an object is *involved in* a situation whenever it
+# plays a role anchored to that situation. This is what makes
+# "which creatures were attackers in combat C?" a one-hop query.
+mtg:involvedIn a owl:ObjectProperty ;
+    rdfs:subPropertyOf dul:isParticipantIn ;
+    owl:propertyChainAxiom ( mtg:playsRole mtg:roleInSituation ) ;
+    rdfs:label "involved in"@en ;
+    mtg:rationale "Property chain replaces the boolean is_attacking flag of v1.x with a queryable, situation-relative relation." ;
+    mtg:derivedFromCQ "CQ-MECH-11" ;
+    mtg:epistemicStatus "curated" .
+
+### Role individuals
+
+mtg:AttackerRole  a mtg:GameRole ; rdfs:label "Attacker"@en ;  mtg:crRule "506.3" .
+mtg:BlockerRole   a mtg:GameRole ; rdfs:label "Blocker"@en ;   mtg:crRule "506.4" .
+mtg:TargetRole    a mtg:GameRole ; rdfs:label "Target"@en ;    mtg:crRule "115" .
+mtg:ControllerRole a mtg:GameRole ; rdfs:label "Controller"@en ; mtg:crRule "108.4" .
+mtg:CommanderRole a mtg:GameRole ; rdfs:label "Commander"@en ; mtg:crRule "903.3" .
+mtg:MonarchRole   a mtg:GameRole ; rdfs:label "Monarch"@en ;   mtg:crRule "720" .
+
+### --- Turn structure -----------------------------------------------------
+
+mtg:precedes a owl:ObjectProperty , owl:TransitiveProperty , owl:AsymmetricProperty , owl:IrreflexiveProperty ;
+    rdfs:subPropertyOf dul:precedes ;
+    rdfs:domain dul:Event ;
+    rdfs:range dul:Event ;
+    rdfs:label "precedes"@en ;
+    rdfs:comment "Transitive, asymmetric, irreflexive — the ordering of steps, phases and turns."@en ;
+    mtg:derivedFromCQ "CQ-MECH-01" ;
+    mtg:epistemicStatus "curated" .
+
+mtg:hasSubEvent a owl:ObjectProperty , owl:TransitiveProperty ;
+    rdfs:subPropertyOf dul:hasPart ;
+    rdfs:domain dul:Event ;
+    rdfs:range dul:Event ;
+    rdfs:label "has sub-event"@en ;
+    rdfs:comment "Game ⊐ Turn ⊐ Phase ⊐ Step ⊐ GameEvent."@en ;
+    mtg:epistemicStatus "curated" .
+
+mtg:Turn rdfs:subClassOf [
+    a owl:Restriction ;
+    owl:onProperty mtg:hasSubEvent ;
+    owl:someValuesFrom mtg:Phase
+] .
+
+### --- Abilities and triggers ---------------------------------------------
+
+mtg:hasAbility a owl:ObjectProperty ;
+    rdfs:subPropertyOf dul:isDescribedBy ;
+    rdfs:domain [ a owl:Class ; owl:unionOf ( mtg:CardDesign mtg:GameObject ) ] ;
+    rdfs:range mtg:Ability ;
+    rdfs:label "has ability"@en ;
+    mtg:epistemicStatus "curated" .
+
+mtg:triggersOn a owl:ObjectProperty ;
+    rdfs:domain mtg:TriggeredAbility ;
+    rdfs:range mtg:GameEvent ;
+    rdfs:label "triggers on"@en ;
+    mtg:crRule "603.2" ;
+    mtg:derivedFromCQ "CQ-MECH-08" ;
+    mtg:epistemicStatus "curated" .
+
+mtg:ActivatedAbility a owl:Class ; rdfs:subClassOf mtg:Ability ; rdfs:label "Activated Ability"@en ; mtg:crRule "602" ; mtg:epistemicStatus "curated" .
+mtg:TriggeredAbility a owl:Class ; rdfs:subClassOf mtg:Ability ; rdfs:label "Triggered Ability"@en ; mtg:crRule "603" ; mtg:epistemicStatus "curated" .
+mtg:StaticAbility    a owl:Class ; rdfs:subClassOf mtg:Ability ; rdfs:label "Static Ability"@en ;    mtg:crRule "604" ; mtg:epistemicStatus "curated" .
+mtg:SpellAbility     a owl:Class ; rdfs:subClassOf mtg:Ability ; rdfs:label "Spell Ability"@en ;     mtg:crRule "113.3a" ; mtg:epistemicStatus "curated" .
+
+mtg:Ability owl:disjointUnionOf ( mtg:ActivatedAbility mtg:TriggeredAbility
+                                  mtg:StaticAbility mtg:SpellAbility ) ;
+    mtg:rationale "CR 113.3 partitions abilities into exactly these four kinds; a disjoint union states that partition rather than merely listing subclasses." ;
+    mtg:crRule "113.3" ;
+    mtg:epistemicStatus "curated" .
+
+mtg:ReplacementEffect a owl:Class ;
+    rdfs:subClassOf mtg:StaticAbility ;
+    rdfs:label "Replacement Effect"@en ;
+    mtg:crRule "614" ;
+    mtg:epistemicStatus "curated" .
+
+### --- Strategic layer ----------------------------------------------------
+
+mtg:hasPiece a owl:ObjectProperty ;
+    rdfs:subPropertyOf dul:hasPart ;
+    rdfs:domain mtg:Combo ;
+    rdfs:range mtg:CardDesign ;
+    owl:inverseOf mtg:partOfCombo ;
+    rdfs:label "has piece"@en ;
+    mtg:derivedFromCQ "CQ-COMBO-02" ;
+    mtg:epistemicStatus "curated" .
+
+mtg:partOfCombo a owl:ObjectProperty ;
+    rdfs:label "part of combo"@en ;
+    mtg:epistemicStatus "curated" .
+
+mtg:Combo rdfs:subClassOf [
+    a owl:Restriction ;
+    owl:onProperty mtg:hasPiece ;
+    owl:minQualifiedCardinality "2"^^xsd:nonNegativeInteger ;
+    owl:onClass mtg:CardDesign
+] ;
+    mtg:rationale "A one-card 'combo' is just a card; the qualified min-2 cardinality is the definitional constraint and was previously only a SHACL shape." ;
+    mtg:derivedFromCQ "CQ-COMBO-02" .
+
+mtg:producesOutcome a owl:ObjectProperty ;
+    rdfs:subPropertyOf dul:defines ;
+    rdfs:domain mtg:Combo ;
+    rdfs:range mtg:Outcome ;
+    rdfs:label "produces outcome"@en ;
+    mtg:derivedFromCQ "CQ-COMBO-03" ;
+    mtg:epistemicStatus "curated" .
+
+mtg:employsStrategy a owl:ObjectProperty ;
+    rdfs:domain mtg:Archetype ;
+    rdfs:range mtg:Strategy ;
+    rdfs:label "employs strategy"@en ;
+    mtg:epistemicStatus "curated" .
+
+mtg:hasArchetype a owl:ObjectProperty ;
+    rdfs:domain mtg:Deck ;
+    rdfs:range mtg:Archetype ;
+    rdfs:label "has archetype"@en ;
+    mtg:epistemicStatus "curated" .
+
+# OWL 2 property chain: a deck employs whatever strategy its archetype does.
+mtg:deckEmploysStrategy a owl:ObjectProperty ;
+    owl:propertyChainAxiom ( mtg:hasArchetype mtg:employsStrategy ) ;
+    rdfs:domain mtg:Deck ;
+    rdfs:range mtg:Strategy ;
+    rdfs:label "deck employs strategy"@en ;
+    mtg:derivedFromCQ "CQ-ARCH-04" ;
+    mtg:epistemicStatus "curated" .
+
+mtg:synergisesWith a owl:ObjectProperty , owl:SymmetricProperty , owl:IrreflexiveProperty ;
+    rdfs:domain mtg:CardDesign ;
+    rdfs:range mtg:CardDesign ;
+    rdfs:label "synergises with"@en ;
+    rdfs:comment "Symmetric and irreflexive. Curated synergies only — learned ones are reified as mtg:InducedSynergy."@en ;
+    mtg:derivedFromCQ "CQ-SYN-01" ;
+    mtg:epistemicStatus "curated" .
+
+mtg:counters a owl:ObjectProperty , owl:AsymmetricProperty , owl:IrreflexiveProperty ;
+    rdfs:domain mtg:CardDesign ;
+    rdfs:range [ a owl:Class ; owl:unionOf ( mtg:CardDesign mtg:Combo mtg:Strategy ) ] ;
+    rdfs:label "counters"@en ;
+    rdfs:comment "Asymmetric: that A answers B does not make B answer A."@en ;
+    mtg:derivedFromCQ "CQ-ANSW-01" ;
+    mtg:epistemicStatus "curated" .
+
+# OWL 2 property chain: answering any piece of a combo answers the combo.
+mtg:answersCombo a owl:ObjectProperty ;
+    owl:propertyChainAxiom ( mtg:counters mtg:partOfCombo ) ;
+    rdfs:domain mtg:CardDesign ;
+    rdfs:range mtg:Combo ;
+    rdfs:label "answers combo"@en ;
+    mtg:rationale "Disruption works piecewise; this chain derives combo-level answers from card-level ones instead of requiring them to be enumerated." ;
+    mtg:derivedFromCQ "CQ-ANSW-05" ;
+    mtg:epistemicStatus "curated" .
+
+mtg:legalIn a owl:ObjectProperty ;
+    rdfs:domain mtg:CardDesign ;
+    rdfs:range mtg:Format ;
+    rdfs:label "legal in"@en ;
+    mtg:derivedFromCQ "CQ-CARD-07" ;
+    mtg:epistemicStatus "curated" .
+
+### --- Rules grounding ----------------------------------------------------
+
+mtg:groundedIn a owl:ObjectProperty ;
+    rdfs:subPropertyOf dul:isDescribedBy ;
+    rdfs:range mtg:ComprehensiveRule ;
+    rdfs:label "grounded in"@en ;
+    rdfs:comment "Links a modelled term to the CR section that licenses it."@en ;
+    mtg:derivedFromCQ "CQ-RULE-01" ;
+    mtg:epistemicStatus "curated" .
+
+# =============================================================================
+# 4. Datatype properties
+# =============================================================================
+
+mtg:cardName a owl:DatatypeProperty , owl:FunctionalProperty ;
+    rdfs:domain mtg:CardDesign ;
+    rdfs:range xsd:string ;
+    rdfs:label "card name"@en ;
+    mtg:epistemicStatus "curated" .
+
+mtg:oracleText a owl:DatatypeProperty , owl:FunctionalProperty ;
+    rdfs:domain mtg:CardDesign ;
+    rdfs:range xsd:string ;
+    rdfs:label "oracle text"@en ;
+    mtg:epistemicStatus "curated" .
+
+mtg:manaCostString a owl:DatatypeProperty , owl:FunctionalProperty ;
+    rdfs:domain mtg:CardDesign ;
+    rdfs:range xsd:string ;
+    rdfs:label "mana cost"@en ;
+    rdfs:comment "Symbolic cost, e.g. {2}{W}{U}. The numeric mana value is a quality with its own region."@en ;
+    mtg:crRule "202" ;
+    mtg:epistemicStatus "curated" .
+
+mtg:scryfallId a owl:DatatypeProperty , owl:FunctionalProperty , owl:InverseFunctionalProperty ;
+    rdfs:domain mtg:CardPrinting ;
+    rdfs:range xsd:string ;
+    rdfs:label "Scryfall ID"@en ;
+    rdfs:comment "Inverse-functional: the Scryfall UUID identifies a printing globally."@en ;
+    mtg:epistemicStatus "curated" .
+
+mtg:regionValue a owl:DatatypeProperty ;
+    rdfs:domain mtg:ValueRegion ;
+    rdfs:range xsd:string ;
+    rdfs:label "region value"@en ;
+    rdfs:comment "Lexical value of a quality region — \"3\", \"*\", \"1+*\", \"X\"."@en ;
+    mtg:epistemicStatus "curated" .
+
+mtg:numericValue a owl:DatatypeProperty ;
+    rdfs:domain mtg:ValueRegion ;
+    rdfs:range xsd:integer ;
+    rdfs:label "numeric value"@en ;
+    rdfs:comment "Present only when the region is numerically determinate."@en ;
+    mtg:epistemicStatus "curated" .
+
+mtg:comboId a owl:DatatypeProperty , owl:FunctionalProperty ;
+    rdfs:domain mtg:Combo ;
+    rdfs:range xsd:string ;
+    rdfs:label "combo ID"@en ;
+    mtg:epistemicStatus "curated" .
+
+mtg:cardCoveragePct a owl:DatatypeProperty ;
+    rdfs:range xsd:float ;
+    rdfs:label "card-pool coverage"@en ;
+    rdfs:comment "Fraction of the Scryfall pool whose oracle text matches this mechanic. Measured, hence induced."@en ;
+    mtg:epistemicStatus "induced" .
+
+### OWL 2 keys — identity conditions, stated rather than assumed
+
+mtg:CardDesign owl:hasKey ( mtg:cardName ) ;
+    mtg:rationale "Oracle names are unique across the card pool; declaring the key lets a reasoner merge duplicate design nodes from different importers." ;
+    mtg:epistemicStatus "curated" .
+
+mtg:Combo owl:hasKey ( mtg:comboId ) ;
+    mtg:epistemicStatus "curated" .
+
+mtg:CardPrinting owl:hasKey ( mtg:scryfallId ) ;
+    mtg:epistemicStatus "curated" .
+
+# =============================================================================
+# 5. Quality / region wiring
+# =============================================================================
+
+mtg:hasQuality a owl:ObjectProperty ;
+    rdfs:subPropertyOf dul:hasQuality ;
+    rdfs:domain [ a owl:Class ; owl:unionOf ( mtg:CardDesign mtg:GameObject ) ] ;
+    rdfs:range mtg:GameQuality ;
+    rdfs:label "has quality"@en ;
+    mtg:epistemicStatus "curated" .
+
+mtg:hasRegion a owl:ObjectProperty , owl:FunctionalProperty ;
+    rdfs:subPropertyOf dul:hasRegion ;
+    rdfs:domain mtg:GameQuality ;
+    rdfs:range mtg:ValueRegion ;
+    rdfs:label "has region"@en ;
+    rdfs:comment "Functional: a quality has one value at a time. Layer-system recomputation replaces the region, it does not add one."@en ;
+    mtg:crRule "613" ;
+    mtg:derivedFromCQ "CQ-MECH-12" ;
+    mtg:epistemicStatus "curated" .
+
+# A creature has both a power and a toughness — stated as qualified
+# existentials over the quality, which is what makes "* / 1+*" expressible.
+mtg:CreatureObject a owl:Class ;
+    rdfs:subClassOf mtg:GameObject ,
+        [ a owl:Restriction ; owl:onProperty mtg:hasQuality ;
+          owl:someValuesFrom mtg:Power ] ,
+        [ a owl:Restriction ; owl:onProperty mtg:hasQuality ;
+          owl:someValuesFrom mtg:Toughness ] ;
+    owl:equivalentClass [
+        a owl:Restriction ;
+        owl:onProperty mtg:hasCardType ;
+        owl:hasValue mtg:Creature
+    ] ;
+    rdfs:label "Creature Object"@en ;
+    mtg:crRule "302" ;
+    mtg:epistemicStatus "curated" .
+
+# =============================================================================
+# 6. Agent decision module  (mtgd:)
+# =============================================================================
+#
+# The agents' own reasoning is represented in the same graph as the game.
+# This is what makes a decision auditable: "why did seat 0 attack on turn 6?"
+# resolves to a Decision node carrying its expected-free-energy decomposition,
+# the belief state it was taken under, and the policy that produced it.
+#
+# The vocabulary follows the belief-space KL-control formulation implemented
+# in src/agents/kl_control.py: G = control cost + risk, with the preference
+# potential defined over latent game state and no additive epistemic bonus.
+
+mtgd:ArtificialAgent a owl:Class ;
+    rdfs:subClassOf dul:Agent ;
+    rdfs:label "Artificial Agent"@en ;
+    rdfs:comment "A software agent occupying a seat."@en ;
+    mtg:epistemicStatus "curated" .
+
+mtgd:Policy a owl:Class ;
+    rdfs:subClassOf dul:Plan ;
+    rdfs:label "Policy"@en ;
+    rdfs:comment "A plan mapping belief states to action distributions."@en ;
+    mtg:epistemicStatus "curated" .
+
+mtgd:Decision a owl:Class ;
+    rdfs:subClassOf mtg:GameAction , prov:Activity ;
+    rdfs:label "Decision"@en ;
+    rdfs:comment "One action selection at one priority window, with its full objective decomposition retained."@en ;
+    mtg:derivedFromCQ "CQ-AGENT-01" ;
+    mtg:epistemicStatus "curated" .
+
+mtgd:BeliefState a owl:Class ;
+    rdfs:subClassOf dul:InformationObject ;
+    rdfs:label "Belief State"@en ;
+    rdfs:comment "A distribution over hidden game state — the opponent's hand and library order."@en ;
+    mtg:derivedFromCQ "CQ-OPP-02" ;
+    mtg:epistemicStatus "curated" .
+
+mtgd:PreferencePotential a owl:Class ;
+    rdfs:subClassOf dul:Parameter ;
+    rdfs:label "Preference Potential"@en ;
+    rdfs:comment "V(eta) = -ln p(eta) over latent game state. The sole encoding of goals."@en ;
+    mtg:rationale "Anchoring preferences to plant state rather than observations is what rules out transducer wireheading; recording it as a first-class parameter makes the agent's goal specification inspectable." ;
+    mtg:epistemicStatus "curated" .
+
+mtgd:ExpectedFreeEnergy a owl:Class ;
+    rdfs:subClassOf dul:Parameter ;
+    rdfs:label "Expected Free Energy"@en ;
+    rdfs:comment "G(pi) for one candidate action: control cost plus risk."@en ;
+    mtg:epistemicStatus "curated" .
+
+mtgd:hasObjective a owl:ObjectProperty ;
+    rdfs:domain mtgd:Decision ;
+    rdfs:range mtgd:ExpectedFreeEnergy ;
+    rdfs:label "has objective"@en ;
+    mtg:epistemicStatus "curated" .
+
+mtgd:underBelief a owl:ObjectProperty ;
+    rdfs:domain mtgd:Decision ;
+    rdfs:range mtgd:BeliefState ;
+    rdfs:label "under belief"@en ;
+    mtg:epistemicStatus "curated" .
+
+mtgd:followsPolicy a owl:ObjectProperty ;
+    rdfs:domain mtgd:Decision ;
+    rdfs:range mtgd:Policy ;
+    rdfs:label "follows policy"@en ;
+    mtg:epistemicStatus "curated" .
+
+mtgd:controlCost a owl:DatatypeProperty , owl:FunctionalProperty ;
+    rdfs:domain mtgd:ExpectedFreeEnergy ;
+    rdfs:range xsd:double ;
+    rdfs:label "control cost (nats)"@en ;
+    rdfs:comment "KL divergence of the controlled path against the passive prior."@en ;
+    mtg:epistemicStatus "curated" .
+
+mtgd:risk a owl:DatatypeProperty , owl:FunctionalProperty ;
+    rdfs:domain mtgd:ExpectedFreeEnergy ;
+    rdfs:range xsd:double ;
+    rdfs:label "risk (nats)"@en ;
+    rdfs:comment "Expected terminal preference potential under the controlled path."@en ;
+    mtg:epistemicStatus "curated" .
+
+mtgd:precision a owl:DatatypeProperty , owl:FunctionalProperty ;
+    rdfs:domain mtgd:Policy ;
+    rdfs:range xsd:double ;
+    rdfs:label "precision (beta)"@en ;
+    rdfs:comment "Bounded-rationality parameter. beta -> infinity recovers the deterministic Bellman minimiser."@en ;
+    mtg:epistemicStatus "curated" .
+
+mtgd:beliefEntropy a owl:DatatypeProperty , owl:FunctionalProperty ;
+    rdfs:domain mtgd:BeliefState ;
+    rdfs:range xsd:double ;
+    rdfs:label "belief entropy (nats)"@en ;
+    rdfs:comment "Diagnostic only — deliberately not a term in the objective."@en ;
+    mtg:epistemicStatus "curated" .
+
+# =============================================================================
+# 7. Induced (learned) extension layer
+# =============================================================================
+#
+# Everything mined from self-play is reified, weighted and attributed. It is
+# never asserted as a curated relation, so a consumer can always recover the
+# deterministic sub-graph by filtering on epistemicStatus.
+
+mtg:InducedAssertion a owl:Class ;
+    rdfs:subClassOf prov:Entity ;
+    rdfs:label "Induced Assertion"@en ;
+    rdfs:comment "A relation proposed by trace mining rather than curation."@en ;
+    mtg:epistemicStatus "curated" .
+
+mtg:InducedSynergy a owl:Class ;
+    rdfs:subClassOf mtg:InducedAssertion ;
+    rdfs:subClassOf [ a owl:Restriction ;
+        owl:onProperty mtg:aboutCard ;
+        owl:minQualifiedCardinality "2"^^xsd:nonNegativeInteger ;
+        owl:onClass mtg:CardDesign ] ;
+    rdfs:label "Induced Synergy"@en ;
+    rdfs:comment "Reified n-ary synergy claim between two or more designs, carrying its evidence."@en ;
+    mtg:rationale "Reification rather than a direct mtg:synergisesWith edge keeps the curated symmetric relation clean and lets conflicting evidence coexist." ;
+    mtg:derivedFromCQ "CQ-SYN-03" ;
+    mtg:epistemicStatus "curated" .
+
+mtg:aboutCard a owl:ObjectProperty ;
+    rdfs:domain mtg:InducedAssertion ;
+    rdfs:range mtg:CardDesign ;
+    rdfs:label "about card"@en ;
+    mtg:epistemicStatus "curated" .
+
+mtg:SelfPlayRun a owl:Class ;
+    rdfs:subClassOf prov:Activity ;
+    rdfs:label "Self-Play Run"@en ;
+    rdfs:comment "The batch of games an induced assertion was derived from."@en ;
+    mtg:epistemicStatus "curated" .
+
+mtg:evidenceWeight a owl:DatatypeProperty ;
+    rdfs:domain mtg:InducedAssertion ;
+    rdfs:range xsd:double ;
+    rdfs:label "evidence weight"@en ;
+    mtg:epistemicStatus "curated" .
+
+mtg:supportCount a owl:DatatypeProperty ;
+    rdfs:domain mtg:InducedAssertion ;
+    rdfs:range xsd:nonNegativeInteger ;
+    rdfs:label "support count"@en ;
+    rdfs:comment "Number of games supporting the claim. Used with refutationCount to compute confidence."@en ;
+    mtg:epistemicStatus "curated" .
+
+mtg:refutationCount a owl:DatatypeProperty ;
+    rdfs:domain mtg:InducedAssertion ;
+    rdfs:range xsd:nonNegativeInteger ;
+    rdfs:label "refutation count"@en ;
+    mtg:epistemicStatus "curated" .
+
+mtg:InducedAssertion rdfs:subClassOf [
+    a owl:Restriction ;
+    owl:onProperty prov:wasGeneratedBy ;
+    owl:someValuesFrom mtg:SelfPlayRun
+] ;
+    mtg:rationale "No induced assertion may exist without the run that produced it — provenance is a modelling constraint, not a convention." ;
+    mtg:epistemicStatus "curated" .
+
+# =============================================================================
+# 8. Strategy and outcome individuals
+# =============================================================================
+
+mtg:Aggro    a mtg:Strategy ; rdfs:label "Aggro"@en ;    rdfs:comment "Win by dealing damage quickly with efficient threats."@en .
+mtg:Midrange a mtg:Strategy ; rdfs:label "Midrange"@en ; rdfs:comment "Win through individually powerful cards and attrition."@en .
+mtg:Control  a mtg:Strategy ; rdfs:label "Control"@en ;  rdfs:comment "Win by answering threats and accruing card advantage."@en .
+mtg:ComboStrategy a mtg:Strategy ; rdfs:label "Combo"@en ; rdfs:comment "Win by assembling a specific card interaction."@en .
+mtg:Tempo    a mtg:Strategy ; rdfs:label "Tempo"@en .
+mtg:Stax     a mtg:Strategy ; rdfs:label "Stax"@en .
+
+mtg:InfiniteMana    a mtg:Outcome ; rdfs:label "Infinite Mana"@en ;    skos:notation "mana/infinite" .
+mtg:InfiniteDamage  a mtg:Outcome ; rdfs:label "Infinite Damage"@en ;  skos:notation "damage/infinite" .
+mtg:InfiniteTokens  a mtg:Outcome ; rdfs:label "Infinite Tokens"@en ;  skos:notation "tokens/infinite" .
+mtg:InstantWin      a mtg:Outcome ; rdfs:label "Instant Win"@en ;      skos:notation "win/immediate" .
+mtg:ArbitraryDraw   a mtg:Outcome ; rdfs:label "Arbitrarily Large Draw"@en ; skos:notation "draw/arbitrary" .
+
+mtg:Standard  a mtg:Format ; rdfs:label "Standard"@en .
+mtg:Pioneer   a mtg:Format ; rdfs:label "Pioneer"@en .
+mtg:Modern    a mtg:Format ; rdfs:label "Modern"@en .
+mtg:Legacy    a mtg:Format ; rdfs:label "Legacy"@en .
+mtg:Vintage   a mtg:Format ; rdfs:label "Vintage"@en .
+mtg:Pauper    a mtg:Format ; rdfs:label "Pauper"@en .
+mtg:Commander a mtg:Format ; rdfs:label "Commander"@en ; skos:altLabel "EDH"@en ; mtg:crRule "903" .

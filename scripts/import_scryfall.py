@@ -43,13 +43,31 @@ async def download_bulk_data(output_path: str = BULK_DATA_PATH) -> str:
     return output_path
 
 
-async def main() -> None:
+async def main(shape: str = "ontology") -> None:
     path = BULK_DATA_PATH
     if not Path(path).exists():
         logger.info("Bulk data not found locally — downloading...")
         path = await download_bulk_data(path)
     else:
         logger.info(f"Using existing bulk data: {path}")
+
+    if shape == "ontology":
+        from src.knowledge.abox_builder import AboxBuilder
+
+        abox = AboxBuilder()
+        try:
+            report = await abox.import_from_bulk(path)
+            logger.info("ABox import complete: %s", report.summary())
+        finally:
+            await abox.close()
+        # Legalities still come from the legacy builder; they are unaffected
+        # by the design/printing split.
+        builder = KGBuilder()
+        try:
+            await builder.import_legalities(path)
+        finally:
+            await builder.close()
+        return
 
     builder = KGBuilder()
     try:
@@ -61,4 +79,17 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    import argparse
+
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument(
+        "--shape",
+        choices=["ontology", "legacy"],
+        default="ontology",
+        help=(
+            "ontology: CardDesign/CardPrinting with classified types, subtypes "
+            "and quality/region values (matches mtg-ontology-v2.0). "
+            "legacy: the flat (:Card) node with type-derived labels."
+        ),
+    )
+    asyncio.run(main(ap.parse_args().shape))

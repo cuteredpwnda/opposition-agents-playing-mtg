@@ -78,15 +78,15 @@
 }
 
 % =============================================================================
-\title{\bfseries Opposition Agents Playing Magic: The Gathering\\[2pt]
-       \large Knowledge-Graph-Grounded JEPA World Models\\
-       and Active-Inference LLM Agents}
+\title{\bfseries Neuro-Symbolic Agents Playing Magic: The Gathering\\[2pt]
+       \large Ontology-Grounded Knowledge Graphs, Latent World Models,\\
+       and Control-Theoretic Action Selection under Partial Observability}
 
 \author[1]{Felix Neub\"urger}
 \author[1]{Jonas Neub\"urger}
 \affil[1]{Independent Research \\ \texttt{github.com/cuteredpwnda/opposition-agents-playing-mtg}}
 
-\date{May 2026}
+\date{September 2026}
 
 % =============================================================================
 \begin{document}
@@ -94,11 +94,11 @@
 
 \begin{abstract}
 \noindent
-\emph{Magic: The Gathering} (MTG) is, by several measures, the most combinatorially complex commercial card game ever published: more than 28{,}000 unique cards, a 260-page rule book, partial observability over 50--90 hidden cards, an unbounded action space, a turn-based stack with priority, and a state space conservatively estimated above $10^{800}$. We present \textsc{Opposition Agents Playing MTG}, an open-source research framework that combines (i) the Rust-native \texttt{phase-rs} Comprehensive-Rules engine as the runtime game backend, (ii) a Neo4j property-graph database holding a knowledge graph (KG) backed by an OWL~2 (Web Ontology Language, version 2) ontology of cards, mechanics, archetypes and combos, (iii) a four-component world model in the Vision--Memory--Controller (V+M+C) tradition of \citet{ha2018world} extended with a Joint-Embedding Predictive Architecture (JEPA) head in the spirit of \citet{lecun2022path}, and (iv) Active-Inference Large-Language-Model (LLM) agents that fuse symbolic graph queries, latent imagination and free-energy-minimising action selection. The framework treats one seat of an MTG game as a Partially Observable Markov Decision Process (POMDP) embedded inside an $n$-player Markov game, and we derive each agent as an explicit approximation to that POMDP. We describe the system end-to-end, justify the design choices against the structure of the game, and report on a champion-vs-challenger self-play promotion loop with Elo (Elo, 1978) rating tracking. The code, ontology, and this report are released under the Massachusetts Institute of Technology (MIT) licence.
+\emph{Magic: The Gathering} (MTG) is, by several measures, the most combinatorially complex commercial card game ever published: more than 28{,}000 unique cards, a 260-page rule book, partial observability over 50--90 hidden cards, an unbounded action space, a turn-based stack with priority, and a state space conservatively estimated above $10^{800}$. We study agents that play it \emph{neuro-symbolically}: a verified rules engine decides what is legal, a formal ontology fixes what card semantics mean, a knowledge graph accumulates strategic structure, and learned components supply the statistics that no amount of symbolic knowledge can provide. Three claims organise the work. First, the symbolic layer should be a real ontology rather than a schema: we ground the agents in an OWL~2 DL ontology of MTG derived from the Comprehensive Rules and aligned to DOLCE, described separately \citep{neuburger2026ontology}. Second, the knowledge graph should be \emph{built by playing}: agents mine their own trajectories into an append-only, provenance-bearing extension layer that later agents query as a strategic prior, while curated card semantics remain untouched --- a population-level learning loop in which the graph is shared long-term memory rather than static context. Third, action selection should be posed as \emph{stochastic optimal control under partial observability} rather than as expected-free-energy minimisation: following \citet{kaufmann2026aifcontrol}, the canonical discretisation of Active Inference is belief-space KL control, so we implement that objective directly and retain the two conventional expected-free-energy factorisations only as ablation arms with documented failure modes. We describe the architecture, state where the symbolic/sub-symbolic boundary lies and what crosses it in each direction, and specify the evaluation that would test the control claim inside MTG rather than on toy POMDPs. Code, ontology, and traces are released under the MIT licence.
 \end{abstract}
 
 \vspace{0.5em}
-\noindent\textbf{Keywords:} world models, JEPA, knowledge graphs, active inference, LLM agents, self-play, neuro-symbolic reasoning, Magic: The Gathering.
+\noindent\textbf{Keywords:} neuro-symbolic AI, knowledge graphs, world models, JEPA, stochastic optimal control, partially observable Markov decision processes, LLM agents, self-play, Magic: The Gathering.
 
 % =============================================================================
 \section{Introduction}
@@ -141,10 +141,12 @@ Our position is that the structure of MTG demands a \emph{neuro-symbolic} stack:
 \paragraph{Contributions.} This work makes four contributions.
 \begin{enumerate}[leftmargin=1.2em, itemsep=2pt]
   \item A scientific framing of MTG as an \emph{open-ended partially observable control problem} whose difficulty comes not only from combinatorics, but from the continual introduction of new symbolic rules through quarterly card releases.
-  \item A neuro-symbolic research substrate that couples a rules-correct engine, an ontology-grounded knowledge graph, and a latent world model, making it possible to study planning under both symbolic and statistical uncertainty in one environment.
-  \item An \emph{active-inference reading} of MTG decision making in which pragmatic value, epistemic value, and language-model priors can be combined inside a single action-selection objective rather than treated as unrelated heuristics.
-  \item A reproducible training-and-evaluation workflow for self-play, checkpoint comparison, and model selection, intended to support future comparisons between trained agents and strong symbolic baselines rather than only one-off demonstrations.
+  \item An architecture in which the symbolic/sub-symbolic boundary is stated rather than assumed (\Cref{sec:neurosymbolic}): what is symbolic, what is learned, what crosses in each direction, and what gates the crossing.
+  \item A \emph{play-to-graph} learning loop in which agents mine their own trajectories into an append-only extension layer of the knowledge graph, and later agents query that layer as a strategic prior --- with curated card semantics protected from statistical contamination by construction (\Cref{sec:playtograph}).
+  \item A \emph{control-theoretic} reading of MTG decision making: we adopt the result of \citet{kaufmann2026aifcontrol} that discrete Active Inference is belief-space KL control, implement that objective directly, and retain the two legacy expected-free-energy factorisations only as ablation arms (\Cref{sec:aif}).
 \end{enumerate}
+
+The ontology that grounds the symbolic layer is a contribution in its own right and is described in a companion paper \citep{neuburger2026ontology}; here we treat it as given and focus on what an agent does with it.
 
 \paragraph{Why these four together.} Each contribution targets a specific failure mode of the others. The engine prevents the LLM from playing illegal moves and the world model from imagining inconsistent dynamics. The knowledge graph compresses the 28{,}000-card pool into a structure with a few hundred archetype clusters so that an agent can reason about ``what card type does this state want next'' without enumerating all candidates. The world model amortises the cost of multi-turn lookahead so that decisions remain well within a few hundred milliseconds even when planning ten turns deep. The active-inference fusion agent finally ties the three together with a single tunable objective --- expected free energy --- whose pragmatic and epistemic terms have a direct mapping onto MTG concepts of \emph{value} and \emph{information}.
 
@@ -160,13 +162,17 @@ The framework is released as open source\footnote{\url{https://github.com/cutere
 
 \paragraph{World models.} \citet{ha2018world} introduced the V+M+C decomposition --- a vision-VAE, a recurrent dynamics model with mixture-density output, and a tiny linear/MLP controller trained in the dream of M. Successors include Dreamer \citep{hafner2020dream, hafner2023dreamerv3} and the Schmidhuber-line of self-referential systems \citep{schmidhuber2015learning, irie2022neural}. We adopt the V+M+C skeleton but (i) replace the convolutional vision encoder with a Set-Transformer over symbolic game tokens, and (ii) attach a JEPA head \citep{lecun2022path, assran2023ijepa} that predicts a target encoding rather than a pixel-level reconstruction --- a closer fit to MTG, where ``imagination'' should preserve abstract game state, not card art. On the software side we now follow the modular research stack exemplified by \texttt{stable-pretraining}, \texttt{stable-worldmodel}, and LeWorldModel \citep{balestriero2025stable, maes_lelidec2026swm, maes_lelidec2026lewm}: the MTG-specific encoder, dynamics, and controller remain local to this repository, while stage-5 JEPA optimisation is delegated to the upstream training infrastructure.
 
-\paragraph{Active inference.} The Free-Energy Principle of \citet{friston2010free} and its discrete-state operationalisation \citep{sajid2021active} provide a principled objective for action selection under uncertainty: minimise expected free energy, which decomposes into a pragmatic (reward-seeking) and an epistemic (information-seeking) term. We use this decomposition to balance ``play to win'' against ``probe the opponent'' decisions during the early game.
+\paragraph{Active inference and stochastic optimal control.} The Free-Energy Principle of \citet{friston2010free} and its discrete-state operationalisation \citep{sajid2021active} propose that action selection minimise \emph{expected free energy} (EFE), conventionally decomposed into a pragmatic (reward-seeking) and an epistemic (information-seeking) term. \citet{kaufmann2026aifcontrol} shows that this framing inverts the actual mathematical hierarchy: continuous-time Active Inference on path space \emph{is} finite-horizon path-integral stochastic MPC in the sense of \citet{kappen2005path}, \citet{todorov2009efficient} and \citet{williams2017mppi}, and its canonical discretisation is classical KL control on belief space. The exploration--exploitation trade-off is not supplied by an added epistemic term; it is Fel'dbaum's dual control effect \citep{feldbaum1960dual}, present in stochastic control from the outset, and it is recovered as soon as plans are evaluated \emph{closed-loop} over beliefs rather than as open-loop action sequences. We follow that result rather than the conventional decomposition, for the concrete engineering reasons set out in \Cref{sec:aif}: the two extant EFE factorisations have opposing, empirically demonstrated failure modes, and both are avoidable.
 
-\paragraph{Knowledge graphs and GraphRAG.} Neo4j with the \texttt{n10s} plugin enables direct ingestion of OWL ontologies as labeled property graphs \citep{neo4j_n10s}; the APOC library adds graph algorithms; GraphSAGE \citep{hamilton2017inductive} provides inductive node embeddings. GraphRAG \citep{edge2024graphrag} has recently emerged as a complement to vector RAG for queries that benefit from explicit relational structure. MTG is a textbook GraphRAG case: ``find me a two-card combo using only cards in my library that survive Counterspell'' is a multi-hop graph query, not a similarity search.
+\paragraph{Knowledge graphs, GraphRAG, and their limits.} Neo4j with the \texttt{n10s} plugin enables direct ingestion of OWL ontologies as labeled property graphs \citep{neo4j_n10s}; the APOC library adds graph algorithms; GraphSAGE \citep{hamilton2017inductive} provides inductive node embeddings. GraphRAG \citep{edge2024graphrag} complements vector RAG for queries that benefit from explicit relational structure, and \citet{liao2026graphragbp} give the first component-level ablation of a GraphRAG pipeline, finding that retriever choice and graph \emph{serialisation format} dominate the outcome --- structured, code-like serialisations outperform prose renderings of the same subgraph. MTG is a textbook GraphRAG case: ``find me a two-card combo using only cards in my library that survive \emph{Counterspell}'' is a multi-hop graph query, not a similarity search. Two cautions from the same literature shape our design. \citet{diettrich2026harp} show that consumers of an evolving schema must discover it at runtime rather than assume it, because static pipelines fail silently under schema drift; and \citet{romanova2026relationships} gives a per-relation diagnostic for whether explicit graph structure still adds signal beyond node text at all, which is the honest way to decide where graph engineering is worth the effort.
 
-\paragraph{MTG and other complex card games.} Earlier MTG-AI work has used hand-crafted heuristics \citep{cowling2012ensemble}, MCTS, and small policy nets on restricted card pools (e.g., \texttt{open-mtg}). On the rules side, \texttt{Forge}, \texttt{XMage} and \texttt{Mage} provide JVM-based reference implementations. To our knowledge, no prior public system combines a full Comprehensive-Rules engine with a learned world model and a graph-grounded LLM controller. \citet{moravvcik2017deepstack} (poker), \citet{vinyals2019grandmaster} (StarCraft) and \citet{schrittwieser2020mastering} (MuZero) are spiritual antecedents at the algorithmic level.
+\paragraph{Foundational ontologies and the symbolic layer.} The symbolic substrate of this system is an OWL~2~DL ontology of MTG aligned to DOLCE-UltraLite \citep{gangemi2002dolce, borgo2022dolce} and populated by mechanical derivation from the Comprehensive Rules. Its design, derivation pipeline and validation are the subject of a companion paper \citep{neuburger2026ontology} and are not restated here. What matters for the present argument is a property that most knowledge-graph-grounded agents lack: the vocabulary an agent reasons in is a checked artefact, in a decidable profile, with constraints stated as axioms rather than conventions. The broader turn toward competency-question-driven, validator-gated ontology construction \citep{garijo2026maseo, cq4oe2026, lippolis2026ontoextend, tiwari2026ontoprompt} is the methodological context for that work.
 
-\paragraph{Ontologies for games.} Game ontologies have been explored for serious games and educational metadata; for trading-card games specifically, public OWL ontologies are sparse. Our ontology (\texttt{data/ontology/mtg-ontology-v1.1.owl}) is hand-crafted following the methodology surveyed in \citet{noy2001ontology} and validated by SHACL shapes \citep{w3c2017shacl}. The framework is designed to interoperate with the OntologyExtender tool \citep{ontology_extender}\,---\,a separate, in-development multi-agent human-in-the-loop ontology-evolution toolchain by the same lab\,---\,but in the present version the OWL schema is a fixed v1.1 artefact: we do not currently run automated extension passes.
+\paragraph{Neuro-symbolic systems and the curated/induced boundary.} The framing that organises \Cref{sec:neurosymbolic} is the distinction between \emph{curated} and \emph{induced} semantics. \citet{sabou2026neurosymbolic} argues that trustworthy neuro-symbolic AI requires explanations grounded in domain knowledge rather than saliency, and identifies provenance and continuous auditing as the missing infrastructure. \citet{thombre2026selfdemo} demonstrate that neuro-symbolic decomposition --- symbolic constraints narrowing the search space, the neural component reasoning inside each narrowed sub-task --- substantially outperforms monolithic prompting. \citet{vanschependom2026synthology} generate reasoning training data from an ontology by backward-chaining proof search, the natural route to a reasoning benchmark \emph{for} a schema such as ours. \citet{ehrenmuller2026sock} address the reconciliation of conflicting graph claims from heterogeneous sources with explicit methodological provenance, which is structurally the same problem as reconciling curated card semantics with statistics mined from imperfect self-play. Our contribution to this thread is a domain where the induced layer is generated by an agent acting in a \emph{verified} environment, so a learned assertion can in principle be traced back to the exact game states that support it.
+
+\paragraph{MTG and other complex card games.} Earlier MTG-AI work has used hand-crafted heuristics \citep{cowling2012ensemble}, MCTS, and small policy nets on restricted card pools (e.g., \texttt{open-mtg}). On the rules side, \texttt{Forge}, \texttt{XMage} and \texttt{Mage} provide JVM-based reference implementations, and \texttt{phase-rs} provides a Rust one. To our knowledge, no prior public system combines a full Comprehensive-Rules engine with a learned world model and a foundational-ontology-grounded symbolic layer. \citet{moravvcik2017deepstack} (poker), \citet{vinyals2019grandmaster} (StarCraft) and \citet{schrittwieser2020mastering} (MuZero) are spiritual antecedents at the algorithmic level.
+
+\paragraph{Ontologies for games.} Game ontologies have been explored for serious games and educational metadata; for trading-card games specifically, public OWL ontologies are sparse and, where they exist, are unaligned flat vocabularies. The ontology used here \citep{neuburger2026ontology} is, to our knowledge, the first for a trading card game that is both in the OWL~2~DL profile and foundationally aligned.
 
 % =============================================================================
 \section{Theoretical Foundations}
@@ -199,23 +205,84 @@ with $K = 8$, $H = 10$ by default.  No actual rules-engine simulation is perform
 
 \paragraph{Training implementation note.} The current stage-5 training path keeps the MTG architecture in \texttt{src/world\_model/world\_model.py} but wraps optimisation in \texttt{stable\_pretraining.Manager} and Lightning callbacks rather than a bespoke trainer. We keep \texttt{stable-worldmodel} in the stack as the upstream world-model research substrate and benchmark interface, matching the layering used by LeWorldModel \citep{maes_lelidec2026swm, balestriero2025stable, maes_lelidec2026lewm} while preserving MTG-specific state encoding, graph fusion, and legal-action masking locally.
 
-\subsection{Active inference and the free-energy principle}
-Friston's free-energy principle \citep{friston2010free} frames perception and action as two sides of variational inference under a generative model $p(o,s)$.  Variational free energy decomposes as
+\subsection{Active inference as path-integral control}
+\label{sec:aif}
+
+Friston's free-energy principle \citep{friston2010free} frames perception and action as two sides of variational inference under a generative model $p(o,s)$. Variational free energy decomposes as
 \begin{equation}
 F[q] = \mathbb{E}_q[\log q(s) - \log p(o,s)] = \mathrm{KL}\!\big(q(s) \,\|\, p(s \mid o)\big) - \log p(o),
 \end{equation}
-so minimising $F$ over $q$ simultaneously sharpens beliefs (the KL term) and accumulates evidence ($-\log p(o)$).  Action selection is recovered by minimising \emph{expected} free energy, conditioned on a policy $\pi = (a_{t}, a_{t+1}, \dots)$:
+so minimising $F$ over $q$ simultaneously sharpens beliefs and accumulates evidence. Action selection is then conventionally recovered by minimising \emph{expected} free energy. It is at this second step that the literature fractures, and where we depart from it.
+
+\paragraph{The path-space objective.} Following \citet{kaufmann2026aifcontrol}, write the agent's goals as a preference prior $p(\eta)$ over \emph{latent plant state} $\eta$ --- the state of the game itself --- and define the potential
 \begin{equation}
-G(\pi) = \underbrace{-\,\mathbb{E}_q[\log p(o_\tau \mid C)]}_{\text{pragmatic value}}
-        \,+\, \underbrace{-\,\mathbb{E}_q\!\left[ \mathrm{KL}\!\big( q(s_\tau \mid o_\tau, \pi) \,\|\, q(s_\tau \mid \pi) \big) \right]}_{\text{epistemic value}},
-\label{eq:efe}
+V(\eta) := -\log p(\eta).
+\label{eq:potential}
 \end{equation}
-where $C$ encodes the agent's preferences (in our setting: ``win''), $q(s_\tau \mid \pi)$ is the predictive belief under policy $\pi$, and the epistemic term rewards information-gathering actions.  Bayesian RL falls out as the special case where preferences are uniform; pure exploration falls out when rewards vanish.  In the MTG context, the pragmatic term encodes ``play to win'' and the epistemic term encodes ``probe the opponent's hand'' --- exactly the trade-off that \citet{sajid2021active} formalise.  Our \texttt{ActiveInferenceAgent} maintains a Dirichlet belief over the opponent's hand composition seeded from the decklist (cf.\ \texttt{docs/OPPONENT\_MODELING\_WITH\_DECKLIST.md}) and re-evaluates Eq.~\eqref{eq:efe} at every priority pass.
+Let $Q^{u}$ be the path measure induced on a planning horizon by control $u$, and let $P_0$ be the uncontrolled (passive) path measure. The Gibbs tilt $P_V \propto e^{-V(\eta_T)} P_0$ is the target. Path-form expected free energy is then simply the relative entropy of the controlled path measure against the target,
+\begin{equation}
+G[u] \;=\; \mathrm{KL}\!\big(Q^{u} \,\big\|\, P_V\big),
+\label{eq:pathefe}
+\end{equation}
+and by Girsanov's theorem this equals, up to policy-independent constants, a finite-horizon stochastic MPC objective with quadratic control cost and terminal potential $V$. Minimising expected free energy \emph{is} path-integral control.
+
+\paragraph{The discrete counterpart we implement.} Time-slicing \eqref{eq:pathefe} gives belief-space KL control:
+\begin{equation}
+G(\pi) \;=\; \underbrace{\mathrm{KL}\!\big(Q(\eta \mid \pi) \,\big\|\, P_0(\eta)\big)}_{\text{control cost } C_{\mathrm{action}}}
+          \;+\; \underbrace{\mathbb{E}_{Q(\eta \mid \pi)}\!\big[V(\eta)\big]}_{\text{risk}}.
+\label{eq:klcontrol}
+\end{equation}
+Two things are absent from \eqref{eq:klcontrol} and their absence is deliberate. There is \textbf{no additive information-gain bonus} and there is \textbf{no ambiguity (likelihood-entropy) penalty}. Measurement likelihoods belong to the observation filtration that drives the belief estimator; they are not part of the plant objective. Exploration is recovered instead from Fel'dbaum's dual control effect \citep{feldbaum1960dual}: because $\pi$ is evaluated \emph{closed-loop} over belief states with observation branching, an action that sharpens the posterior unlocks cheaper continuations and therefore lowers $\mathbb{E}[V(\eta_T)]$ on its own. A probe is taken if and only if the resulting drop in expected terminal potential exceeds its control cost --- which is exactly the condition one wants, and which no hand-tuned coefficient has to encode.
+
+\paragraph{Why not the conventional factorisations.} The two EFE forms in common use are
+\begin{align}
+G_{\mathrm{IG}}(\pi) &= - \underbrace{\mathbb{E}_{Q}\!\big[\log Q(\eta \mid s) - \log Q(\eta)\big]}_{\text{information gain}} - \underbrace{\mathbb{E}_{Q}\!\big[\log p(s)\big]}_{\text{pragmatic}}, \label{eq:efe1}\\
+G_{\mathrm{AMB}}(\pi) &= \underbrace{\mathrm{KL}\!\big(Q(\eta\mid\pi)\,\|\,\tilde p(\eta)\big)}_{\text{risk}} + \underbrace{\mathbb{E}_{Q}\!\big[\mathrm{H}[p(s \mid \eta)]\big]}_{\text{ambiguity}}, \label{eq:efe2}
+\end{align}
+and they are known to coincide only when the sensory preference $p(s)$ is exactly the pushforward of the state preference through the observation channel \citep{millidge2021whence} --- a condition hand-authored preferences essentially never satisfy. Each also has a characteristic pathology, and both have a concrete MTG shape:
+
+\begin{itemize}[leftmargin=1.2em, itemsep=2pt]
+  \item \eqref{eq:efe1} rewards information for its own sake and is captured by \emph{noisy-TV} distractors. In MTG this manifests as compulsive scry/surveil/cantrip loops: the agent repeatedly buys information about the top of its library because the bonus is unconditional, while the board state deteriorates.
+  \item \eqref{eq:efe2} penalises outcome entropy and induces \emph{scotophobia}. In MTG this manifests as refusal to attack into possible blockers or to cast into open mana --- lines whose variance is high but whose expectation is strictly favourable.
+\end{itemize}
+
+Both are implemented in \texttt{src/agents/kl\_control.py::LegacyEFE} purely so that \Cref{sec:eval-aif-ablation} can measure these failure modes in our domain rather than assume them.
+
+\paragraph{Bounded rationality.} Deliberation is not free. Under a finite cognitive budget the hard $\min$ is replaced by the softmin (free-energy) operator and policy selection follows the bounded-optimal Gibbs distribution
+\begin{equation}
+p_\beta(\pi) \;=\; \frac{1}{Z_\beta}\, q(\pi)\, e^{-\beta\, G(\pi)},
+\qquad
+\operatorname{softmin}_\beta(x) = -\tfrac{1}{\beta}\log \textstyle\sum_i q_i e^{-\beta x_i},
+\label{eq:gibbs}
+\end{equation}
+which recovers the deterministic Bellman minimiser as $\beta \to \infty$ and the passive prior as $\beta \to 0$. A single scalar $\beta$ therefore interpolates between a greedy planner and a prior-following one, and it has an operational meaning (how much compute we are willing to spend per priority window) rather than being a free knob.
+
+\paragraph{Where the other signals go.} The passive prior $q$ in \eqref{eq:klcontrol}--\eqref{eq:gibbs} is load-bearing. It is the reference measure the control cost is charged against, which gives the heuristic, knowledge-graph and language-model signals a principled home: they \emph{shape} $q$, and deviating from the resulting informed default carries a thermodynamic price $-\log q(a)$. In the previous version of this system those three signals entered as an additive weighted sum with hand-set coefficients $(\alpha_h,\alpha_g,\alpha_w,\alpha_\ell)$; \eqref{eq:klcontrol} replaces that with a single objective in which their role is determined rather than chosen.
 
 \subsection{Knowledge graphs as a symbolic prior}
-Cards form an inductive graph $\mathcal{G} = (V, E, \tau)$ with typed edges $\tau \in \{\text{combo}, \text{synergy}, \text{counter}, \text{enables}\}$ ingested from the OWL ontology and an embedding pipeline trained with GraphSAGE \citep{hamilton2017inductive}.  GraphSAGE is inductive: a freshly printed card $v_{\text{new}}$ obtains an embedding $\mathbf{h}_{v_{\text{new}}} \in \mathbb{R}^{128}$ by sampling and aggregating its neighbours, without retraining.  We exploit this in two ways: (i) the encoder feeds a graph latent $g_t = \mathrm{Enc}_{KG}(\mathcal{G}, s_t)$ into the recurrent dynamics so that the world model's prior is graph-aware, and (ii) the heuristic agent rescores candidate spells by their graph distance to combo completions, mirroring GraphRAG's ``relational evidence'' pattern \citep{edge2024graphrag}.
+Cards form an inductive graph $\mathcal{G} = (V, E, \tau)$ with typed edges $\tau \in \{\text{combo}, \text{synergy}, \text{counter}, \text{enables}\}$ ingested from the OWL ontology and an embedding pipeline trained with GraphSAGE \citep{hamilton2017inductive}.  GraphSAGE is inductive: a freshly printed card $v_{\text{new}}$ obtains an embedding $\mathbf{h}_{v_{\text{new}}} \in \mathbb{R}^{128}$ by sampling and aggregating its neighbours, without retraining.  We exploit this in two ways: (i) the encoder feeds a graph latent $g_t = \mathrm{Enc}_{KG}(\mathcal{G}, s_t)$ into the recurrent dynamics so that the world model's prior is graph-aware, and (ii) the passive prior $q$ of \eqref{eq:klcontrol} is tilted by graph distance to combo completions, mirroring GraphRAG's ``relational evidence'' pattern \citep{edge2024graphrag}.
 
-In implementation, we separate immutable source facts (card oracle data, ontology-grounded edges) from learned extension evidence. Self-play enrichment appends provenance-linked learned nodes/edges instead of mutating base facts, allowing many agents and runs to contribute to one shared strategic memory while preserving reproducibility and auditability.
+In implementation, we separate immutable source facts (card oracle data, ontology-grounded edges) from learned extension evidence. Self-play enrichment appends provenance-linked learned nodes/edges instead of mutating base facts, allowing many agents and runs to contribute to one shared strategic memory while preserving reproducibility and auditability. \Cref{sec:ontology} makes this separation a property of the schema rather than a convention.
+
+\subsection{The neuro-symbolic boundary}
+\label{sec:neurosymbolic}
+
+``Neuro-symbolic'' is used loosely enough that it is worth stating exactly what is symbolic here, what is learned, and what crosses between them. The system contains three symbolic artefacts and three learned ones, and the interfaces between them are narrow by construction.
+
+\paragraph{Symbolic side.} (i) The \texttt{phase-rs} rules engine is a verified, deterministic transition system: it decides legality, resolves the stack, applies state-based actions, and is the only component permitted to mutate game state. (ii) The OWL~2~DL ontology (\Cref{sec:ontology}) fixes the vocabulary in which card semantics, turn structure, roles, and strategic constructs are expressed, and is checked by a reasoner and by SHACL shapes. (iii) The knowledge graph is the ABox populated against that TBox from Scryfall and combo databases.
+
+\paragraph{Learned side.} (i) A GraphSAGE encoder turns the graph into dense node embeddings. (ii) The JEPA world model learns latent dynamics from self-play trajectories. (iii) Language models supply a prior over the legal-action set.
+
+\paragraph{What crosses, and in which direction.} The crossings are the substance of the architecture:
+
+\begin{enumerate}[leftmargin=1.4em, itemsep=2pt]
+  \item \textbf{Symbolic $\rightarrow$ neural (structure as inductive bias).} Graph structure is compiled into the encoder's context channel $g_t$, and the legal-action set produced by the engine masks the controller's output. The neural components therefore never have to learn legality or card identity; they learn only what is genuinely statistical.
+  \item \textbf{Symbolic $\rightarrow$ neural (structure as reference measure).} The knowledge graph and the heuristic shape the passive prior $q$ of \eqref{eq:klcontrol}. Symbolic knowledge thus enters the control objective as a \emph{cost of deviation}, not as an additive score.
+  \item \textbf{Neural $\rightarrow$ symbolic (induction of new relations).} Self-play traces are mined into candidate relations --- card co-occurrence in winning positions, answer/threat pairs, archetype signatures --- and written back as \emph{induced} assertions. This is the direction most neuro-symbolic systems leave empty, and it is where the interesting failure modes live: a statistical regularity is not an ontological commitment.
+  \item \textbf{Validation as the gate between them.} Nothing induced is promoted to curated status automatically. Candidate relations are reified, weighted, attributed to the run that produced them, and validated by the shapes and reasoner before a human may accept them. This mirrors the finding of \citet{tiwari2026ontoprompt} that the validator, not the generator, is what turns diverse neural proposals into a high-precision graph.
+\end{enumerate}
+
+\paragraph{Curated versus induced semantics.} The design commitment underlying all four crossings is that deterministic facts and learned regularities must remain distinguishable forever. A card's oracle text is curated: it is definitional, immutable, and wrong is wrong. That two cards co-occur in 83\,\% of the games one of them wins is induced: it is defeasible, provenance-bearing, and may be an artefact of the deck pool sampled. Collapsing the two --- writing a learned edge into the same relation as a curated one --- destroys the ability to recover ground truth and makes the graph unauditable. \Cref{sec:ontology} enforces the distinction with an \texttt{mtg:epistemicStatus} annotation on every axiom and a schema-level requirement that no induced assertion may exist without a \texttt{prov:Activity} that generated it.
 
 \subsection{LLM as a constrained-decoding policy}
 The LLM never freely generates moves.  Given the prompt $\rho(s_t, \mathcal{A})$ that enumerates legal actions by index, we read off
@@ -232,15 +299,33 @@ Training combines all three signals.  The replay buffer $\mathcal{D}$ is collect
 \label{sec:arch}
 
 \subsection{Game engine}
-The runtime engine is now \texttt{phase-rs} (Rust), accessed over the
-protocol-v6 WebSocket interface via
-\texttt{src/integrations/phase\_rs/}.
+The runtime engine is \texttt{phase-rs} (Rust), accessed over its
+WebSocket interface via \texttt{src/integrations/phase\_rs/}.
 Our Python side is intentionally adapter-only at execution time:
 \texttt{client.py} handles protocol envelopes,
 \texttt{runner.py} drives game loops,
 \texttt{adapter.py} maps legal actions/snapshots into our policy API,
 and \texttt{server\_process.py} manages local server lifecycle for
 training scripts.
+
+\paragraph{Tracking a living upstream.} \texttt{phase-rs} is under active
+development and its wire protocol is versioned and enforced at handshake.
+Over the period covered by this report the upstream protocol advanced from
+v6 to v75, which is a useful reminder that an external rules engine is a
+dependency with its own release cadence, not a fixed substrate. Two of
+those changes were structural rather than additive and required adapter
+work: rejections became a typed \texttt{ActionRejection} carrying a stable
+machine-readable code and a recovery disposition rather than a prose
+string, and the engine now publishes \emph{viewer interactions} --- an
+explicit, engine-authored protocol for the choices a player must make
+during resolution (targets, modes, damage assignment, ordering). The
+second is the more significant for us: it moves a large class of
+decisions out of the flat \texttt{legal\_actions} list into a structured
+opportunity schema, which is strictly better for an agent that wants to
+reason about \emph{what kind} of choice it is making. We pin the protocol
+constant in \texttt{client.py} and fail closed on mismatch rather than
+attempting to negotiate, on the principle that a silently
+misinterpreted game state is worse than a refused connection.
 
 Core integration modules:
 \begin{itemize}[leftmargin=1.2em, itemsep=1pt]
@@ -291,15 +376,31 @@ Legal-action enumeration                 & --- (engine-internal) & \texttt{src/e
 \label{tab:engine-pointers}
 \end{table}
 
-\subsection{Knowledge graph}
-Cards are imported from Scryfall and reified as \texttt{(:Card)} nodes carrying mana cost, type line, oracle text, colour identity, and a SBERT embedding of the oracle text. Mechanics, abilities, archetypes and combos become first-class nodes connected by typed edges (\texttt{HAS\_KEYWORD}, \texttt{ENABLES\_COMBO}, \texttt{ARCHETYPE\_OF}, \ldots). The OWL ontology (v1.1) declares the schema; \texttt{n10s} imports it; \texttt{pyshacl} validates it; APOC provides PageRank, community detection and shortest-path queries used in agent reasoning. \Cref{lst:cypher} shows a typical multi-hop query used by the combo-detector agent.
+\subsection{Symbolic substrate: the ontology}
+\label{sec:ontology}
 
-\begin{lstlisting}[language=Cypher, caption={Two-card combo query.}, label={lst:cypher}]
-MATCH (c1:Card)-[:ENABLES_COMBO]->(combo:Combo)<-[:ENABLES_COMBO]-(c2:Card)
-WHERE c1.name IN $library AND c2.name IN $library AND c1 <> c2
-RETURN combo.name, combo.win_condition, c1.name, c2.name
-ORDER BY combo.cmc_total ASC LIMIT 10;
-\end{lstlisting}
+The symbolic layer is an OWL~2~DL ontology of MTG derived from the Comprehensive Rules and aligned to the DOLCE-UltraLite foundational ontology. It is a contribution in its own right and is described in a companion paper \citep{neuburger2026ontology}; we summarise here only what an agent actually depends on.
+
+Three properties matter for the argument of this paper. First, the ontology is \emph{expressive enough to be wrong}: it is in the DL profile, so a reasoner can be run against it, and constraints such as the card-type/subtype correlation of CR 205.3 are stated as axioms rather than left as prose. An agent querying it is querying something that has been checked. Second, its content is \emph{derived, not curated by hand}: 3{,}161 rules and roughly 550 type and keyword individuals are generated from the rules text, each grounded in the rule that licenses it, so the vocabulary tracks the game as the publisher extends it. Third, and most importantly here, it distinguishes \emph{curated} from \emph{induced} assertions at the schema level. That distinction is what makes the learning loop of \Cref{sec:playtograph} safe.
+
+For orientation: cards are imported from Scryfall as \texttt{CardDesign} nodes with oracle text and an SBERT embedding; mechanics, abilities, archetypes and combos are first-class nodes; APOC supplies PageRank, community detection and shortest-path queries; and multi-hop retrieval over this structure is the ``relational evidence'' pattern of GraphRAG \citep{edge2024graphrag}, which suits questions --- \emph{which two cards in my library combo, and does either die to a counterspell?} --- that similarity search answers badly.
+
+\subsection{Playing to build the graph}
+\label{sec:playtograph}
+
+The knowledge graph is usually treated as a fixed input: someone curates it, the agent reads it. We are interested in the other direction as well, because an agent that plays thousands of games observes something a curator cannot --- which cards actually co-occur in positions that get won, against which opponents, at which points on the curve.
+
+The loop has four steps. Agents play on the rules engine and emit structured decision traces. Traces are post-processed into candidate relations: card pairs recurring in winning positions, answer/threat pairs, archetype signatures. Candidates are written into the graph as \emph{induced} assertions --- reified, weighted by support and refutation counts, and attributed under PROV-O to the run that produced them. Later agents query those assertions as an additional prior, and their play produces the next round of evidence.
+
+Two design commitments keep this from degenerating.
+
+\paragraph{The extension layer is append-only and typed apart.} An induced synergy is not an edge in the curated \texttt{synergisesWith} relation; it is a reified evidence node that the schema requires to be attributable to an activity. A consumer needing deterministic ground truth recovers it by filtering on epistemic status. This matters because the two kinds of claim have different logic: a card's oracle text is definitional and wrong is wrong, whereas a co-occurrence statistic is defeasible and may be an artefact of the deck pool sampled. Systems that write learned edges into curated relations lose the ability to tell the difference, and with it the ability to audit.
+
+\paragraph{Promotion is not automatic.} Nothing is reclassified from induced to curated without a human. We regard the promotion gate --- what support threshold, what handling of disagreement between runs \citep{ehrenmuller2026sock} --- as an open problem rather than a solved one, and say so in \Cref{sec:limits}.
+
+\paragraph{Agent reasoning is itself in the graph.} A decision is recorded as a \texttt{prov:Activity} carrying the objective decomposition it was selected by, the belief it was taken under, and the policy precision in force. ``Why did seat~0 attack on turn~6?'' is therefore a graph query rather than a log grep. This is a deliberate response to the observation \citep{sabou2026neurosymbolic} that trustworthy neuro-symbolic systems need explanations grounded in domain knowledge with provenance attached, rather than post-hoc attribution scores; it also means the explanation and the game state it refers to are expressed in one vocabulary.
+
+\paragraph{Collective intelligence, stated carefully.} The attractive reading is that heterogeneous agents accumulate shared strategic memory across runs, so that later agents inherit what earlier ones discovered without retraining. The framework supports that reading structurally. We have not yet demonstrated it: showing that graph enrichment from run $n$ measurably improves agents in run $n{+}1$, and is not merely overfitting to a fixed deck pool, is the experiment that would substantiate the claim, and it is not among the results reported here.
 
 \subsection{World model}
 \label{sec:wm}
@@ -375,7 +476,7 @@ with three tactical refinements: (i) counter-spell discipline filters \texttt{co
 \end{equation*}
 where the indicator is computed by a single Cypher round-trip
 (\texttt{kg.detect\_near\_combos}) and synergy strength comes from the
-\texttt{HAS\_SYNERGY} edges of \Cref{lst:cypher}. The best-scoring cast
+\texttt{HAS\_SYNERGY} edges of the knowledge graph. The best-scoring cast
 replaces the cast subset in the legal-action list and the parent
 priority logic resumes, so \textsc{play\_land} can still beat
 \textsc{cast\_spell}. On any KG exception the agent latches
@@ -387,13 +488,9 @@ priority logic resumes, so \textsc{play\_land} can still beat
 \end{equation*}
 Illegal actions are unrepresentable by construction. We use Gemma~4-edge (\texttt{gemma4:e2b}) at temperature $0.2$ via Ollama for a $\sim$1--4\,s budget per decision. On any HTTP or parse failure the agent falls back to $\pi^{\mathrm{rand}}$ and records the event in a per-game stats dictionary.
 
-\paragraph{Active Inference ($\pi^{\mathrm{AI}}$).} Maintains a particle-filter belief $b_t$ over the opponent's hand and library top conditioned on the published decklist (\texttt{src/agents/opponent\_model.py}). Action selection minimises the discrete-state expected free energy
-\begin{equation*}
-\mathcal{F}(a) \;=\; -\Expect_{q(s'|a,b_t)}[R(s')] \;-\; \mathrm{IG}(a, b_t),
-\qquad
-\mathrm{IG}(a, b_t) \;=\; \mathrm{H}[q(s'|a,b_t)] - \Expect_{q(s|b_t)}[\mathrm{H}[q(s'|s,a)]],
-\end{equation*}
-exposed as \texttt{ActiveInferenceModule.rank\_actions(legal, state)}. A tactical override re-ranks \textsc{declare\_attackers} actions by target threat $\max(0, 40 - \mathrm{life}) + 2\cdot \mathrm{commander\_dmg\_taken}$, and a counter-spell-aware filter drops non-mana \textsc{cast\_spell} actions when the opponent model places probability $>0.5$ on a counter-spell being held.
+\paragraph{Active Inference / KL control ($\pi^{\mathrm{KL}}$).} Maintains a categorical belief $b_t$ over hidden-information hypotheses about the opponent's hand (\texttt{holds\_removal}, \texttt{holds\_counterspell}, \texttt{holds\_threat}, \texttt{holds\_nothing}), updated by Bayes from public signals only --- untapped mana, graveyard contents, revealed cards. Action selection minimises \eqref{eq:klcontrol}: control cost against a passive prior plus expected terminal preference potential. Two planners are available. The \emph{tree} engine performs exact closed-loop dynamic programming over the belief tree with observation branching; it is the reference semantics. The \emph{MPPI} engine samples $K$ continuations from the passive prior, rolls each forward $H$ steps through an analytic transition model, and aggregates terminal potentials with the softmin operator of \eqref{eq:gibbs} --- the scalable path-integral form, and the one used against \texttt{phase-rs}. Defaults are $H=3$, $K=48$, $\beta=4$. Crucially, the belief entropy is \emph{reported} in the decision trace but never enters the objective; a regression test asserts that sharpening the belief without changing the plant state leaves the control cost unmoved, which is the invariant that rules out noisy-TV capture.
+
+\paragraph{Preference potential.} Goals are encoded in exactly one place: $V(\eta) = -\log p(\eta)$ over the plant coordinates of \eqref{eq:potential} --- life differential, board power differential, permanent count, cards in hand, a mild turn-pressure term, and the two terminal conditions. Anchoring preferences to game state rather than to observations is what rules out transducer wireheading (an agent that satisfies its sensors instead of winning), and it makes the agent's goal specification a small, inspectable object rather than a distributed property of several scoring functions.
 
 \paragraph{World-Model agent ($\pi^{\mathrm{WM}}$).} Plays through the V+M+C+JEPA stack of \Cref{sec:wm}. Every turn,
 \begin{equation*}
@@ -469,7 +566,7 @@ Checkpoint & vs.\ random WR & vs.\ heuristic WR & EFE \\
 \end{table}
 
 \paragraph{(iv) Pairwise ablation against the heuristic baseline.}
-We use the in-tree \texttt{scripts/run\_matchups.py} harness to play each candidate agent versus the strategy-aware \texttt{HeuristicAgent} on a fixed Modern matchup (Mono-Red Burn vs.\ Azorius Control), 16 games per cell with seat order swapped to remove going-first bias, \texttt{--max-turns}~30, seed~7. Results are summarised in \Cref{tab:ablation-1v1}. The KG-grounded heuristic and the LLM agent both clear 50\,\% against the baseline; the world-model agent ties; the LLM--WM--KG \emph{fusion} agent currently underperforms its components, which we attribute to (a)~its much larger per-decision latency biasing toward conservative passes when the cost-aware short-circuit fires, and (b)~uncalibrated mixture weights $(\alpha,\beta,\gamma,\delta)$ in the $\sigma$ scoring of \S\ref{sec:fusion}. Calibration is queued in \Cref{sec:future}.
+We use the in-tree \texttt{scripts/run\_matchups.py} harness to play each candidate agent versus the strategy-aware \texttt{HeuristicAgent} on a fixed Modern matchup (Mono-Red Burn vs.\ Azorius Control), 16 games per cell with seat order swapped to remove going-first bias, \texttt{--max-turns}~30, seed~7. Results are summarised in \Cref{tab:ablation-1v1}. The KG-grounded heuristic and the LLM agent both clear 50\,\% against the baseline; the world-model agent ties; the LLM--WM--KG \emph{fusion} agent underperforms its own components, which we attribute to (a)~its much larger per-decision latency biasing toward conservative passes when the cost-aware short-circuit fires, and (b)~uncalibrated mixture weights $(\alpha_h,\alpha_g,\alpha_w,\alpha_\ell)$ in the additive scoring of \Cref{sec:agentzoo}. We record this result because it is the direct motivation for the reformulation in \Cref{sec:aif}: a weighted sum of four heterogeneous signals has four free parameters, no unit in which the terms are commensurable, and no principle for setting them. Belief-space KL control removes the choice --- the knowledge-graph, heuristic and language-model signals shape the passive prior $q$, and the price of deviating from it is fixed at $-\log q(a)$ rather than tuned.
 
 \begin{table}[h]
 \centering
@@ -579,6 +676,21 @@ Agent & s=11 & s=23 & s=47 & s=101 & s=main & Mean \\
 \paragraph{(x) LLM model-size sweep.}
 Stream~C evaluated three small Ollama-hosted models --- \texttt{llama3.2:1b}, \texttt{qwen2.5-coder:1.5b}, and \texttt{gemma3:4b} --- each playing 8 games against \texttt{heuristic} on the same Modern matchup (seed~20260428). All three finish at exactly $50\,\%$, with mean game lengths of $6.75$, $7.25$, and $7.0$ turns respectively and per-game wall times under $1$\,s. We interpret this as a clean negative: within the $1$--$4$\,B parameter range, model capacity does not differentiate play quality when actions are constrained to the engine's legal set and no chain-of-thought is enabled. The apparent ceiling suggests that action-selection quality, not language quality, is the bottleneck --- consistent with our decision to move strategic reasoning into the world model and use the LLM only as a soft prior over the legal set.
 
+\paragraph{(xi) Planned: objective ablation for the control formulation.}
+\label{sec:eval-aif-ablation}
+The claim of \Cref{sec:aif} --- that belief-space KL control is the right objective and the two conventional EFE factorisations are not --- is an empirical claim in our domain, and we state the experiment that tests it rather than asserting the conclusion. All three objectives are implemented behind one interface (\texttt{src/integrations/phase\_rs/kl\_control\_picker.py}, \texttt{--objective kl|efe\_infogain|efe\_ambiguity}) so they differ in nothing but the scoring function: identical belief state, identical transition model, identical preference potential, identical passive prior, identical seeds.
+
+Three measurements are planned against \texttt{phase-ai} at fixed difficulty:
+\begin{enumerate}[leftmargin=1.2em, itemsep=1pt]
+  \item \textbf{Win rate.} If the analysis transfers, \texttt{kl} should dominate both surrogates.
+  \item \textbf{A noisy-TV probe.} Rate of cantrip/scry/surveil activations that do not change the subsequent action choice --- information bought with no operational value. The prediction is that \texttt{efe\_infogain} inflates this and \texttt{kl} does not, because \eqref{eq:klcontrol} contains no term that pays for information as such.
+  \item \textbf{A scotophobia probe.} Rate of declined profitable attacks and of spells held with lethal available, conditioned on opponent untapped mana. The prediction is that \texttt{efe\_ambiguity} inflates this, since it charges outcome entropy directly.
+\end{enumerate}
+The value of the design is that the two surrogate arms are not straw men: they are the objectives most discrete Active Inference implementations actually use, evaluated on the same substrate. A negative result --- no separation in MTG --- would itself be informative, and would suggest the pathologies are visible only when the epistemic term is not swamped by a large action space.
+
+\paragraph{(xii) Planned: ontology-conditioned evaluation.}
+The ontology is validated structurally and against its own competency questions \citep{neuburger2026ontology}, but the \emph{agent-facing} value of the symbolic layer is not yet measured. Two follow-ups are queued. First, a reasoning benchmark generated from the ontology itself by backward-chaining proof search in the manner of \citet{vanschependom2026synthology}, which gives controlled multi-hop depth and proof-based negatives for free. Second, submission of the generated artefact to a public competency-question-driven ontology benchmark \citep{cq4oe2026} as an additional baseline, since our authoring process --- human-curated schema plus machine-induced extension under provenance --- differs from the fully automated pipelines currently evaluated there.
+
 We deliberately do not claim ``state of the art'' numbers: we know of no comparable public baseline that plays full-Comprehensive-Rules MTG, and the contribution of this report is the system itself, plus the ontology and the released self-play infrastructure.
 
 % =============================================================================
@@ -586,13 +698,15 @@ We deliberately do not claim ``state of the art'' numbers: we know of no compara
 \label{sec:discussion}
 \label{sec:limits}
 
-\paragraph{Scope.} The current engine targets a Standard subset and an extended Commander subset; banding, phasing, planeswalker loyalty abilities, and exotic targeting restrictions remain partial. The ontology v1.1 covers core mechanics but does not yet encode every keyword from every set, and we do not currently extend it automatically per Standard rotation --- a known limitation that motivates planned integration with the OntologyExtender tool (\Cref{sec:future}).
+\paragraph{Scope.} The engine is \texttt{phase-rs} and therefore covers the Comprehensive Rules to whatever depth upstream does; our own exposure is the adapter, which currently flattens the new viewer-interaction schema into the same opaque choice list as ordinary actions and so cannot yet reason about \emph{what kind} of choice it is making. The ontology v2.0 covers the core game structure, the ability taxonomy, the strategic layer and the agent decision module, but does not yet encode every keyword from every set, and we do not extend it automatically per Standard rotation.
 
-\paragraph{Compute.} Defaults are tuned for a single-GPU workstation: $z \in \mathbb{R}^{256}$, the LSTM hidden size is 512, the JEPA predictor is a 4-layer pre-norm Transformer, and the LLM is \texttt{gemma4:e2b}. Larger pretrained encoders or stronger LLMs (e.g., \texttt{llama-3.1-70b}) would likely improve play strength but were not the focus of this report.
+\paragraph{Ontology limitations.} Three are worth stating plainly. (i) The DOLCE alignment is asserted, not verified against a reasoner in CI: HermiT runs require a JRE and resolution of the imported DUL, so the default validation path is offline and structural, and the CR 205.3 correlation constraint is enforced procedurally by the type-line parser rather than by a reasoner over the populated graph. (ii) Card designs now instantiate the type, subtype and quality/region patterns, but the role/situation pattern has no population path yet --- roles are produced only by gameplay, and the trace-to-graph writer for combat situations is not implemented. (iii) Coverage is measured against our own competency questions, which is a weak test: a question set authored alongside an ontology will tend to be answerable by it. Extrinsic evaluation against an external benchmark is the honest check and is queued in \Cref{sec:future}.
 
-\paragraph{Active inference vs. RL.} Active inference here is implemented primarily at the \emph{decision} level (action selection conditional on world-model rollouts), not yet as the full learning objective for the world model itself. This is a deliberate simplification: the world model is still trained by the standard JEPA-style MSE+KL objective, which is much cheaper than full Bayesian model-evidence maximisation. The next step is to use active inference at \emph{selection time} during training --- treating checkpoint choice as an expected-free-energy problem that trades off win rate, robustness across opponents, and computational cost --- before attempting a fully variational training objective.
+\paragraph{Compute.} Defaults are tuned for a single-GPU workstation: $z \in \mathbb{R}^{256}$, the LSTM hidden size is 512, the JEPA predictor is a 4-layer pre-norm Transformer, and the LLM is \texttt{gemma4:e2b}. Larger pretrained encoders or stronger LLMs would likely improve play strength but were not the focus of this report.
 
-\paragraph{LLM grounding.} The LLM never produces game actions directly. It produces a posterior over the legal-action set provided by the engine; illegal actions are masked. This eliminates the dominant failure mode of LLM-only MTG bots (hallucinated cards, illegal plays) at the cost of a small expressivity loss.
+\paragraph{The control formulation is adopted, not re-derived.} We take the equivalence between discrete Active Inference and belief-space KL control from \citet{kaufmann2026aifcontrol} and implement its consequences; we do not reprove it, and our contribution on that axis is the domain transfer plus the ablation design of \Cref{sec:eval-aif-ablation}. Two implementation caveats follow. First, the transition model used for rollouts is an analytic approximation, not the rules engine: a path-integral controller is only useful because its rollouts are cheap, and a JEPA decoder is the intended eventual replacement. Second, the closed-loop tree planner is exact but its continuation set is currently degenerate, so the deep-branching behaviour that generates the most interesting dual-control effects is exercised only by the MPPI path.
+
+\paragraph{LLM grounding.} The LLM never produces game actions directly. It shapes the passive prior over the engine-provided legal-action set; illegal actions are unrepresentable. This eliminates the dominant failure mode of LLM-only MTG bots (hallucinated cards, illegal plays) at the cost of a small expressivity loss.
 
 % =============================================================================
 \section{Future Work}
@@ -609,7 +723,9 @@ The following items are tracked in \texttt{IMPLEMENTATION\_PLAN.md} and constitu
   \item \textbf{Parallel self-play.} \texttt{asyncio.gather}-based parallel game execution to lift trajectory throughput, plus restoring \texttt{pytest-asyncio} so the async runner is exercised in CI.
   \item \textbf{Belief-state visualisation.} JSON export and a Streamlit panel for the particle-filter posterior over the opponent's hand.
   \item \textbf{Commander politics.} Threat assessment across $N{>}2$ opponents, including a multi-agent extension of the active-inference objective, and the Commander variant of the mulligan (free first mulligan).
-  \item \textbf{Ontology evolution.} Wire the framework into the OntologyExtender tool \citep{ontology_extender} so the OWL schema is updated semi-automatically per Standard rotation, with humans in the loop on debated axioms. At present the ontology is a static, hand-curated v1.1 artefact.
+  \item \textbf{Ontology evolution and ABox migration.} Migrate the Scryfall importer onto the v2.0 role/situation and quality/region patterns so the expressive gain reaches the populated graph, then wire the framework into a human-in-the-loop ontology-evolution toolchain \citep{ontology_extender, garijo2026maseo} so the schema is updated semi-automatically per Standard rotation, with humans adjudicating debated axioms. The retrieval-scoped extension strategy of \citet{lippolis2026ontoextend} --- retrieve the relevant ontology fragment per competency question rather than stuffing the whole TBox into context --- is the approach we intend to follow.
+  \item \textbf{Promotion of induced evidence.} Define and evaluate the gate by which an \texttt{mtg:InducedSynergy} with sufficient support may be promoted to a curated \texttt{synergisesWith} edge, including how to represent and surface disagreement between runs \citep{ehrenmuller2026sock}. This is the point at which the curated/induced boundary becomes a policy question rather than a schema question.
+  \item \textbf{Structured interaction handling.} Consume \texttt{phase-rs}'s viewer-interaction schema natively instead of flattening it, so the agent can distinguish a targeting decision from a mode choice from a damage assignment --- each of which has a different shape of belief dependence.
 \end{enumerate}
 
 % =============================================================================
@@ -722,16 +838,6 @@ D.~Edge et al.
 \newblock From Local to Global: A Graph RAG Approach to Query-Focused Summarisation.
 \newblock \emph{arXiv:2404.16130}, 2024.
 
-\bibitem[Noy \& McGuinness(2001)]{noy2001ontology}
-N.~F.~Noy and D.~L.~McGuinness.
-\newblock Ontology Development 101: A Guide to Creating Your First Ontology.
-\newblock Stanford Knowledge Systems Laboratory, 2001.
-
-\bibitem[Knublauch \& Kontokostas(2017)]{w3c2017shacl}
-H.~Knublauch and D.~Kontokostas (eds.).
-\newblock Shapes Constraint Language (SHACL).
-\newblock \emph{W3C Recommendation}, 2017.
-
 \bibitem[{Neo4j Labs}(n.d.)]{neo4j_n10s}
 Neo4j Labs.
 \newblock Neosemantics (n10s): RDF and Semantics Toolkit for Neo4j.
@@ -760,6 +866,120 @@ L.~Maes, Q.~Le~Lidec, D.~Scieur, Y.~LeCun, and R.~Balestriero.
 \newblock LeWorldModel: Stable End-to-End Joint-Embedding Predictive Architecture from Pixels.
 \newblock \emph{arXiv preprint}, 2026.
 \newblock Software: \url{https://github.com/lucas-maes/le-wm}.
+
+% --- Active inference as optimal control ------------------------------------
+
+\bibitem[Kaufmann(2026)]{kaufmann2026aifcontrol}
+R.~Kaufmann.
+\newblock Active Inference is Optimal Control.
+\newblock Preprint, August 2026.
+
+\bibitem[Neub\"urger \& Neub\"urger(2026)]{neuburger2026ontology}
+F.~Neub\"urger and J.~Neub\"urger.
+\newblock An OWL~2 DL Ontology for Magic: The Gathering, Derived from the Comprehensive Rules and Aligned to DOLCE.
+\newblock Companion resource paper, 2026.
+
+\bibitem[Fel'dbaum(1960)]{feldbaum1960dual}
+A.~A.~Fel'dbaum.
+\newblock Dual Control Theory I--II.
+\newblock \emph{Automation and Remote Control}, 21:874--880, 1033--1039, 1960.
+
+\bibitem[Kappen(2005)]{kappen2005path}
+H.~J.~Kappen.
+\newblock Path Integrals and Symmetry Breaking for Optimal Control Theory.
+\newblock \emph{Journal of Statistical Mechanics}, P11011, 2005.
+
+\bibitem[Todorov(2009)]{todorov2009efficient}
+E.~Todorov.
+\newblock Efficient Computation of Optimal Actions.
+\newblock \emph{PNAS}, 106(28):11478--11483, 2009.
+
+\bibitem[Williams et~al.(2017)]{williams2017mppi}
+G.~Williams, N.~Wagener, B.~Goldfain, P.~Drews, J.~M.~Rehg, B.~Boots, and E.~A.~Theodorou.
+\newblock Information Theoretic MPC for Model-Based Reinforcement Learning.
+\newblock \emph{ICRA}, 2017.
+
+\bibitem[Millidge et~al.(2021)]{millidge2021whence}
+B.~Millidge, A.~Tschantz, and C.~L.~Buckley.
+\newblock Whence the Expected Free Energy?
+\newblock \emph{Neural Computation}, 33(2):447--482, 2021.
+
+% --- Foundational ontologies and ontology engineering ------------------------
+
+\bibitem[Gangemi et~al.(2002)]{gangemi2002dolce}
+A.~Gangemi, N.~Guarino, C.~Masolo, A.~Oltramari, and L.~Schneider.
+\newblock Sweetening Ontologies with DOLCE.
+\newblock \emph{EKAW}, LNCS 2473, pages 166--181, 2002.
+
+\bibitem[Borgo et~al.(2022)]{borgo2022dolce}
+S.~Borgo, R.~Ferrario, A.~Gangemi, N.~Guarino, C.~Masolo, D.~Porello, E.~M.~Sanfilippo, and L.~Vieu.
+\newblock DOLCE: A Descriptive Ontology for Linguistic and Cognitive Engineering.
+\newblock \emph{Applied Ontology}, 17(1):45--69, 2022.
+
+\bibitem[Garijo et~al.(2026)]{garijo2026maseo}
+D.~Garijo et~al.
+\newblock MASEO: A Multi-Agent System for Explainable Ontology Generation.
+\newblock Ontology Engineering Group, Universidad Polit\'ecnica de Madrid, 2026.
+\newblock Software: \url{https://github.com/oeg-upm/maseo}.
+
+\bibitem[{Ontology Engineering Group}(2026)]{cq4oe2026}
+Ontology Engineering Group, Universidad Polit\'ecnica de Madrid.
+\newblock CQ4OE: A Benchmark for LLM-Assisted Ontology Generation from Competency Questions.
+\newblock 2026.
+\newblock \url{https://oeg-upm.github.io/cq4oe-benchmark/}.
+
+\bibitem[Lippolis et~al.(2026)]{lippolis2026ontoextend}
+A.~S.~Lippolis, M.~Saeedizade, R.~Schmid, D.~Blattner, R.~Keskis\"arkk\"a, A.~Gangemi, E.~Blomqvist, and A.~G.~Nuzzolese.
+\newblock OntoExtend: Requirement-Driven and Scalable Ontology Extension with Large Language Models.
+\newblock \emph{SEMANTiCS 2026}, Studies on the Semantic Web 63, pages 107--122.
+\newblock doi:10.3233/SSW260011.
+
+\bibitem[Tiwari et~al.(2026)]{tiwari2026ontoprompt}
+S.~Tiwari, T.~Lopes Oliveira, M.~R.~A.~H.~Firmansyah, H.~M.~Zahera, F.~Hopfgartner, and A.-C.~Ngonga Ngomo.
+\newblock Ontology-Aware Prompting for Knowledge Graph Construction from Text.
+\newblock \emph{SEMANTiCS 2026}, Studies on the Semantic Web 63, pages 87--102.
+\newblock doi:10.3233/SSW260009.
+
+\bibitem[Thombre et~al.(2026)]{thombre2026selfdemo}
+A.~Thombre, M.~Patwardhan, and S.~Sarawagi.
+\newblock Surprising Effectiveness of Self-Demonstrations in Enhancing Schema--Ontology Mapping with LLMs.
+\newblock \emph{SEMANTiCS 2026}, Studies on the Semantic Web 63, pages 70--85.
+\newblock doi:10.3233/SSW260008.
+
+\bibitem[Van Schependom et~al.(2026)]{vanschependom2026synthology}
+J.~Van~Schependom, T.~Proost, and P.~Bonte.
+\newblock SYNTHOLOGY: Ontology-Based Data Generation for Neurosymbolic Reasoning.
+\newblock \emph{SEMANTiCS 2026}, Studies on the Semantic Web 63, pages 211--226.
+\newblock doi:10.3233/SSW260018.
+
+\bibitem[Ehrenm\"uller et~al.(2026)]{ehrenmuller2026sock}
+M.~Ehrenm\"uller, L.~Kook, F.~J.~Ekaputra, and M.~Sabou.
+\newblock Synthesising Causal Knowledge with Semantic Technologies.
+\newblock \emph{SEMANTiCS 2026}, Studies on the Semantic Web 63, pages 19--33.
+\newblock doi:10.3233/SSW260004.
+
+\bibitem[Sabou(2026)]{sabou2026neurosymbolic}
+M.~Sabou.
+\newblock Beyond Data: Why the Future of AI is Neurosymbolic.
+\newblock Keynote, Neurosymbolic AI Workshop, SEMANTiCS 2026, Ghent, 2026.
+
+\bibitem[Liao et~al.(2026)]{liao2026graphragbp}
+Y.~Liao, D.~Collarana, C.~Pack, A.~Grass, A.~Both, S.~Decker, and C.~Beecks.
+\newblock GraphRAG Best Practices: A Modular Evaluation Framework and Regulatory Case Study.
+\newblock \emph{SEMANTiCS 2026}, Studies on the Semantic Web 63, pages 141--156.
+\newblock doi:10.3233/SSW260013.
+
+\bibitem[Diettrich et~al.(2026)]{diettrich2026harp}
+M.~Diettrich, J.~Friedenberger, and A.~Both.
+\newblock Navigating Schema Drift.
+\newblock \emph{SEMANTiCS 2026}, Studies on the Semantic Web 63, pages 160--174.
+\newblock doi:10.3233/SSW260014.
+
+\bibitem[Romanova(2026)]{romanova2026relationships}
+A.~Romanova.
+\newblock When Knowledge Graph Relationships Still Matter.
+\newblock \emph{SEMANTiCS 2026}, Studies on the Semantic Web 63, pages 196--209.
+\newblock doi:10.3233/SSW260016.
 
 \end{thebibliography}
 

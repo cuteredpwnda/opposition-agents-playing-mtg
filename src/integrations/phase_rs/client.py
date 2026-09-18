@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 # Mirror of PROTOCOL_VERSION in server-core/src/protocol.rs. Bump when the
 # upstream constant changes; mismatched clients are rejected at handshake.
-PROTOCOL_VERSION = 6
+PROTOCOL_VERSION = 75
 
 # Our identity advertised to phase-server. The version string is informational;
 # only ``protocol_version`` gates compatibility.
@@ -83,6 +83,8 @@ class GameStarted:
     spell_costs: dict[str, Any]
     legal_actions_by_object: dict[str, list[dict[str, Any]]]
     derived: dict[str, Any]
+    viewer_interaction: dict[str, Any]
+    state_revision: int
     player_token: str | None
     raw: dict[str, Any]
 
@@ -98,6 +100,8 @@ class StateUpdate:
     spell_costs: dict[str, Any]
     legal_actions_by_object: dict[str, list[dict[str, Any]]]
     derived: dict[str, Any]
+    viewer_interaction: dict[str, Any]
+    state_revision: int
     raw: dict[str, Any]
 
 
@@ -109,7 +113,24 @@ class GameOver:
 
 @dataclass
 class ActionRejected:
+    """``ServerMessage::ActionRejected`` — carries an ``ActionRejection`` DTO."""
+
     reason: str
+    code: str = ""
+    disposition: str = ""
+    related_object_ids: list[int] = field(default_factory=list)
+
+    @property
+    def is_retryable(self) -> bool:
+        """``Transient`` rejections can be retried with a different action."""
+        return self.disposition in {"Transient", "Retryable"}
+
+
+@dataclass
+class ActionFailed:
+    """Operational failure while processing one submitted action/interaction."""
+
+    message: str
 
 
 class PhaseServerError(RuntimeError):
@@ -131,7 +152,16 @@ def parse_envelope(payload: dict[str, Any]) -> tuple[str, dict[str, Any]]:
 
 def parse_server_message(
     payload: dict[str, Any],
-) -> ServerHello | GameCreated | GameStarted | StateUpdate | GameOver | ActionRejected | tuple[str, dict[str, Any]]:
+) -> (
+    ServerHello
+    | GameCreated
+    | GameStarted
+    | StateUpdate
+    | GameOver
+    | ActionRejected
+    | ActionFailed
+    | tuple[str, dict[str, Any]]
+):
     """Decode a ``ServerMessage`` into a typed dataclass when we model it.
 
     Returns the raw ``(type, data)`` tuple for messages we don't yet model so
@@ -159,6 +189,8 @@ def parse_server_message(
             spell_costs=dict(data.get("spell_costs", {})),
             legal_actions_by_object=dict(data.get("legal_actions_by_object", {})),
             derived=dict(data.get("derived", {})),
+            viewer_interaction=dict(data.get("viewer_interaction", {})),
+            state_revision=int(data.get("state_revision", 0)),
             player_token=data.get("player_token"),
             raw=payload,
         )
@@ -173,12 +205,27 @@ def parse_server_message(
             spell_costs=dict(data.get("spell_costs", {})),
             legal_actions_by_object=dict(data.get("legal_actions_by_object", {})),
             derived=dict(data.get("derived", {})),
+            viewer_interaction=dict(data.get("viewer_interaction", {})),
+            state_revision=int(data.get("state_revision", 0)),
             raw=payload,
         )
     if msg_type == "GameOver":
         return GameOver(winner=data.get("winner"), reason=str(data.get("reason", "")))
     if msg_type == "ActionRejected":
+        rejection = data.get("rejection")
+        if isinstance(rejection, dict):
+            return ActionRejected(
+                reason=str(rejection.get("message", "")),
+                code=str(rejection.get("code", "")),
+                disposition=str(rejection.get("disposition", "")),
+                related_object_ids=[int(o) for o in rejection.get("related_object_ids", [])],
+            )
+        # Pre-v7 servers sent a bare ``reason`` string.
         return ActionRejected(reason=str(data.get("reason", "")))
+    if msg_type in ("ActionFailed", "RequestRejected"):
+        return ActionFailed(
+            message=str(data.get("message") or data.get("reason") or msg_type)
+        )
     return (msg_type, data)
 
 
@@ -375,6 +422,16 @@ class PhaseServerClient:
         """Send a ``GameAction`` envelope. ``action`` is the raw tagged-union
         dict received in ``legal_actions``."""
         await self._send("Action", {"action": action})
+
+    async def send_interaction(self, submission: dict[str, Any]) -> None:
+        """Answer an engine-authored interaction prompt (protocol v75+).
+
+        ``submission`` is an ``InteractionSubmission``
+        (``{"interactionId": ..., "response": {"type": ..., "data": ...}}``)
+        — either echoed verbatim from ``ProgressAvailable.witness`` or built
+        from an opportunity's published choices.
+        """
+        await self._send("Interaction", {"submission": submission})
 
     async def concede(self) -> None:
         await self._send("Concede", {})

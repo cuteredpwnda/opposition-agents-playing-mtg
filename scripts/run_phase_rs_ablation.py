@@ -24,6 +24,7 @@ from pathlib import Path
 from src.integrations.phase_rs import (
     AgentActionPicker,
     HeuristicActionPicker,
+    KLControlActionPicker,
     OllamaActionPicker,
     PhaseServerConfig,
     PreferNonPassPicker,
@@ -52,6 +53,15 @@ def _make_picker(args: argparse.Namespace, seed: int):
         return PreferNonPassPicker(seed=seed)
     if args.picker == "heuristic":
         return HeuristicActionPicker(seed=seed)
+    if args.picker == "kl_control":
+        return KLControlActionPicker(
+            seed=seed,
+            objective=args.objective,
+            horizon=args.horizon,
+            beta=args.beta,
+            rollouts=args.rollouts,
+            engine=args.planner,
+        )
     if args.picker == "ollama":
         return OllamaActionPicker(
             seed=seed,
@@ -176,11 +186,27 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--picker",
         help=(
-            "Policy for our seat: random | prefer-nonpass | heuristic | ollama "
-            "| agent:<name> (e.g. agent:heuristic, agent:world_model, "
-            "agent:active_inference, agent:fusion)"
+            "Policy for our seat: random | prefer-nonpass | heuristic | "
+            "kl_control | ollama | agent:<name> (e.g. agent:heuristic, "
+            "agent:world_model, agent:fusion)"
         ),
         default="random",
+    )
+    parser.add_argument(
+        "--objective",
+        choices=["kl", "efe_infogain", "efe_ambiguity"],
+        default="kl",
+        help=(
+            "Objective for --picker kl_control. 'kl' is belief-space KL control "
+            "(the one intended for play); the other two are the legacy expected-"
+            "free-energy factorisations, kept as ablation arms."
+        ),
+    )
+    parser.add_argument("--horizon", type=int, default=3, help="KL-control planning depth H.")
+    parser.add_argument("--beta", type=float, default=4.0, help="Bounded-rationality precision.")
+    parser.add_argument("--rollouts", type=int, default=48, help="MPPI sample count K.")
+    parser.add_argument(
+        "--planner", choices=["mppi", "tree"], default="mppi", help="KL-control planner engine."
     )
     parser.add_argument("--ollama-model", default="gemma4:e2b")
     parser.add_argument("--ollama-url", default="http://localhost:11434")

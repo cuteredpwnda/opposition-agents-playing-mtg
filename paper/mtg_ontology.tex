@@ -1,0 +1,462 @@
+% =============================================================================
+% An OWL 2 DL Ontology for Magic: The Gathering
+% Derived from the Comprehensive Rules, aligned to DOLCE
+%
+% Standalone resource paper. Self-contained LaTeX (arXiv-compatible).
+% Build:  pdflatex mtg_ontology.tex   (twice, for cross-references)
+% =============================================================================
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[english]{babel}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{microtype}
+\usepackage{authblk}
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage[authoryear,round]{natbib}
+\usepackage[colorlinks=true,
+            linkcolor=black,
+            citecolor=blue!60!black,
+            urlcolor=blue!60!black]{hyperref}
+\usepackage{cleveref}
+\usepackage{listings}
+
+\definecolor{codebg}{RGB}{248,248,248}
+\lstdefinelanguage{Turtle}{
+  morekeywords={a, PREFIX, prefix},
+  sensitive=true,
+  comment=[l]{\#},
+  string=[b]",
+}
+\lstset{
+  basicstyle=\ttfamily\footnotesize,
+  backgroundcolor=\color{codebg},
+  frame=single,
+  framerule=0pt,
+  breaklines=true,
+  showstringspaces=false,
+  keywordstyle=\bfseries\color{blue!50!black},
+  commentstyle=\color{green!30!black},
+  stringstyle=\color{red!50!black},
+  numbers=none
+}
+
+% =============================================================================
+\title{\bfseries An OWL~2 DL Ontology for \emph{Magic: The Gathering}\\[2pt]
+       \large Derived from the Comprehensive Rules and Aligned to DOLCE}
+
+\author[1]{Felix Neub\"urger}
+\author[1]{Jonas Neub\"urger}
+\affil[1]{Independent Research \\ \texttt{github.com/cuteredpwnda/opposition-agents-playing-mtg}}
+
+\date{September 2026}
+
+% =============================================================================
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent
+\emph{Magic: The Gathering} (MTG) is a domain of unusual formal richness: a 260-page normative rule text, more than 28{,}000 card designs whose behaviour is specified in open-textured natural language, a type system with fifteen card types and roughly 550 subtypes across ten families, and a quarterly release cadence that adds new vocabulary indefinitely. Existing machine-readable representations of the game are flat vocabularies or relational schemas that conflate levels --- most commonly card types with subtypes --- and none is expressive enough to state the constraints the rules actually impose. We present an OWL~2~DL ontology for MTG that (i) is aligned to the DOLCE-UltraLite foundational ontology, so that the endurant/perdurant, quality/region, and role/situation distinctions the game requires are available rather than improvised; (ii) is populated by a reproducible three-stage pipeline that translates the Comprehensive Rules into 29{,}336 triples of definitional content, each grounded in the rule that licenses it; and (iii) separates hand-curated schema from machine-induced evidence under PROV-O provenance, so that deterministic card semantics and defeasible learned regularities remain distinguishable. We describe the design, the derivation pipeline, the modelling errors the pipeline exposed in our own earlier versions, and a seven-stage validation cascade driven by 32 versioned competency questions. The ontology is released under MIT and is intended to be reusable independently of the agent framework it was built for.
+\end{abstract}
+
+\vspace{0.5em}
+\noindent\textbf{Keywords:} ontology engineering, OWL~2, DOLCE, foundational ontologies, knowledge graphs, competency questions, provenance, games, Magic: The Gathering.
+
+% =============================================================================
+\section{Introduction}
+\label{sec:intro}
+
+Trading card games are an attractive ontology-engineering target for a reason that is easy to state and hard to satisfy: they come with their own normative text. \emph{Magic: The Gathering}'s Comprehensive Rules (CR) is a numbered, versioned, hierarchically structured document that defines every term in the domain, is updated on a fixed schedule, and is authoritative by construction --- there is no ground truth to argue about, because the publisher's text \emph{is} the ground truth. A domain with those properties should, in principle, admit a high-quality ontology derived largely mechanically.
+
+In practice the machine-readable representations of MTG in circulation are impoverished. Card databases such as Scryfall expose a denormalised record per printing; community ontologies, where they exist, are flat \texttt{owl:Class} vocabularies with labels. Our own earlier versions were no better, and were worse in an instructive way: they used terms such as \texttt{CardType} and \texttt{Zone} simultaneously as classes and as individuals, which is OWL~2 punning and pushed the artefact outside the DL profile, meaning no reasoner could be run against it. The result was an entity-relationship diagram in RDF clothing.
+
+Three concrete failures follow from that level of modelling, and they motivate this work.
+
+\paragraph{Card types and subtypes get conflated.} CR 205.2a fixes exactly fifteen card types. CR 205.3g--q separately fix ten families of \emph{subtypes} totalling roughly 550 terms. \emph{Vehicle} and \emph{Spacecraft} are artifact subtypes; \emph{Planet} is a land subtype; \emph{Mount} is a creature subtype. A schema with a single flat ``type'' field cannot express the correlation constraint of CR 205.3c/d --- that a subtype belongs to its card type and an object cannot gain a subtype it has no type for --- and therefore cannot detect a malformed card.
+
+\paragraph{Context-dependent properties get flattened into booleans.} A creature is an \emph{attacker} only relative to a particular combat. Recording this as \texttt{is\_attacking = true} cannot say which combat, cannot survive the creature blocking on the next turn, and cannot be queried historically. The same applies to targets, controllers, and the monarch.
+
+\paragraph{Learned and definitional knowledge get mixed.} A card's oracle text is definitional. That two cards co-occur in most games one of them wins is a statistic, possibly an artefact of the deck pool sampled. Systems that mine gameplay and write results back into the same relations as the curated facts destroy the ability to recover ground truth.
+
+\paragraph{Contributions.} We present an ontology and a derivation pipeline addressing all three.
+\begin{enumerate}[leftmargin=1.2em, itemsep=2pt]
+  \item An OWL~2~DL ontology of MTG aligned to DOLCE-UltraLite \citep{gangemi2002dolce, borgo2022dolce}, using the information-realisation, role/situation, and quality/region design patterns \citep{gangemi2009odp} where the domain requires them (\Cref{sec:design}).
+  \item A three-stage, reproducible pipeline that translates the Comprehensive Rules into definitional content --- 3{,}161 rules and roughly 550 type and keyword individuals --- each grounded in its source rule and attributed under PROV-O (\Cref{sec:derivation}).
+  \item A schema-enforced separation between curated and induced assertions, so that gameplay-mined evidence is reified, weighted, and attributable rather than asserted into curated relations (\Cref{sec:induced}).
+  \item A seven-stage validation cascade driven by 32 versioned competency questions with bidirectional CQ$\leftrightarrow$axiom provenance (\Cref{sec:validation}), and a report of the modelling defects it found in our own hand-authored file.
+\end{enumerate}
+
+The ontology is deliberately published separately from the agent framework it was built for \citep{neuburger2026agents}: nothing in it presupposes that consumer, and the card, rules, and strategic layers should be useful to deck-building tools, rules-lookup assistants, collection managers, and simulators that share none of our research goals.
+
+% =============================================================================
+\section{Related Work}
+\label{sec:related}
+
+\paragraph{Foundational ontologies.} DOLCE \citep{gangemi2002dolce, borgo2022dolce} is a descriptive foundational ontology whose central commitments --- the endurant/perdurant split, qualities distinguished from their values, roles distinguished from the entities that play them --- are precisely the distinctions a game domain needs and rarely gets. We align to DOLCE-UltraLite (DUL), the lightweight OWL rendering, following the ontology-design-pattern methodology \citep{gangemi2009odp} and the classical development guidance of \citet{noy2001ontology}. Alternatives were considered: BFO's stronger realism commitments fit a physical-science domain better than a rule-constituted artificial one, and UFO's rich social layer would be useful for the tournament and format layer but is heavier than the rest of the ontology warrants.
+
+\paragraph{Ontologies for games.} Game ontologies exist for serious games, educational metadata, and game-design vocabularies, but for trading card games specifically the public record is thin, and what exists is typically an unaligned flat vocabulary. We are not aware of a prior MTG ontology that is both in the OWL~2~DL profile and foundationally aligned.
+
+\paragraph{Ontology construction from text and from LLMs.} The current wave of LLM-assisted ontology engineering is organised around competency questions as the driving artefact. \citet{garijo2026maseo} generate OWL from competency questions through a sequential multi-agent pipeline, attaching a per-entity rationale log and a source log linking each change to the question or defect that motivated it; \citet{cq4oe2026} formalise CQ-to-term and CQ-to-axiom provenance as a benchmark with six gold ontologies; \citet{lippolis2026ontoextend} show that requirement-driven \emph{extension} of an existing ontology, with retrieval scoped per competency question, is the realistic steady state and that quality is bounded above by competency-question quality. \citet{tiwari2026ontoprompt} report the finding that most directly shaped our pipeline: in text-to-graph construction, a cheap rule-based validator, not a larger generator, is the component that converts diverse candidate output into a high-precision graph.
+
+Our derivation differs from all of these in its source. We do not extract from prose of uncertain authority; we extract from a numbered normative document whose enumerations are closed by construction. That makes the extraction problem easier and the provenance problem cleaner, and it means the appropriate tooling is a parser with assertions, not a language model with a validator. We regard this as a useful boundary case for the literature above: it marks where LLM assistance stops being necessary.
+
+\paragraph{Provenance and the curated/induced boundary.} \citet{sabou2026neurosymbolic} argues that trustworthy neuro-symbolic systems require explanations grounded in domain knowledge rather than saliency, and names provenance and continuous auditing as the missing infrastructure. \citet{ehrenmuller2026sock} address the integration of causal claims from heterogeneous sources --- expert-curated versus algorithmically discovered, including conflicting ones --- with explicit methodological provenance, which is structurally the problem \Cref{sec:induced} addresses for gameplay-mined evidence. PROV-O supplies the vocabulary.
+
+\paragraph{Reasoning benchmarks from ontologies.} \citet{vanschependom2026synthology} generate neurosymbolic reasoning datasets from an OWL~2~RL ontology by backward-chaining proof search, guaranteeing multi-hop derivations by construction and producing near-miss negatives by perturbing a proof leaf. This is the natural extrinsic evaluation route for an ontology such as ours and is discussed in \Cref{sec:limits}.
+
+% =============================================================================
+\section{Requirements}
+\label{sec:requirements}
+
+Competency questions are treated as first-class, versioned artefacts rather than as documentation. \texttt{data/competency\_questions.yaml} holds 32 questions, each carrying an identifier, the terms required to answer it, and where checkable a SPARQL query. Terms are annotated \emph{explicit} (lexically present in the question), \emph{implicit} (synonymous phrasing), or \emph{derived} (needed to answer but unstated), following the annotation scheme of \citet{cq4oe2026}. Axioms in the ontology carry \texttt{mtg:derivedFromCQ} pointing back at the question that motivated them, so provenance runs in both directions.
+
+\Cref{tab:cqs} gives a representative sample across the seven groups. Three of these deserve comment because they are the ones that forced structural decisions. CQ-MECH-11 (``which creatures were attackers in a given combat, and which blocked them?'') cannot be answered by any boolean-flag schema and drove the adoption of the role/situation pattern. CQ-CARD-04 (``what is the printed power of a creature whose power is characteristic-defining?'') drove the quality/region split, because the honest answer is a value like \texttt{*} that is not an integer. CQ-SYN-04 (``which synergy claims are curated and which are induced?'') is only answerable if the distinction is carried in the schema.
+
+\begin{table}[t]
+\centering
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabularx}{\linewidth}{lXl}
+\toprule
+\textbf{ID} & \textbf{Question} & \textbf{Drove} \\
+\midrule
+CQ-CARD-02 & Which printings realise a given card design, and in which sets? & Information realisation \\
+CQ-CARD-04 & What is the printed power of a creature whose power is characteristic-defining? & Quality/region \\
+CQ-CARD-08 & What subtypes does a card have, and which card type is each correlated to? & Subtype families \\
+CQ-CARD-10 & Which artifact subtypes exist, and is \emph{Vehicle} or \emph{Spacecraft} among them? & CR derivation \\
+CQ-COMBO-02 & Which cards are needed to assemble a given combo? & Combo as \texttt{dul:Plan} \\
+CQ-MECH-01 & Which step precedes the declare-blockers step in a turn? & Event ordering \\
+CQ-MECH-03 & In which zone is an object, and can it be in more than one? & Functional property \\
+CQ-MECH-11 & Which creatures were attackers in a given combat, and which blocked them? & Role/situation \\
+CQ-RULE-02 & What is the full text of a rule, and which rules are nested under it? & Rule tree \\
+CQ-SYN-04 & Which synergy claims are curated and which are induced? & Epistemic status \\
+\bottomrule
+\end{tabularx}
+\caption{Representative competency questions and the modelling decision each forced. The full set of 32 is versioned alongside the ontology.}
+\label{tab:cqs}
+\end{table}
+
+% =============================================================================
+\section{Design}
+\label{sec:design}
+
+\subsection{DOLCE alignment}
+
+Every top-level class is placed under a DUL category. \Cref{tab:dolce} gives the alignment and, for each entry, what it buys --- the justification is always a query we could not otherwise answer, never taxonomic tidiness.
+
+\begin{table}[t]
+\centering
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}p{0.24\textwidth} p{0.24\textwidth} p{0.46\textwidth}@{}}
+\toprule
+\textbf{MTG term} & \textbf{DUL category} & \textbf{What the alignment buys} \\
+\midrule
+\texttt{CardDesign} & \texttt{InformationObject} & Separates the designed card from its printings and from in-game objects. \\
+\texttt{CardPrinting} & \texttt{InformationRealization} & Two printings may realise one design. \\
+\texttt{GameObject} & \texttt{Object} & An endurant that may have no design (a token) or one it does not match (a copy). \\
+\texttt{Zone} & \texttt{Place} & Location, with a functional constraint (CR 400.5). \\
+\texttt{Turn}, \texttt{Phase}, \texttt{Step} & \texttt{Event} & Perdurants with mereology and a strict ordering. \\
+\texttt{GameAction} & \texttt{Action} & An event with a player as agent. \\
+\texttt{GameSituation} & \texttt{Situation} & The context a role assignment is relative to. \\
+\texttt{GameRole} & \texttt{Role} & \emph{Attacker}, \emph{blocker}, \emph{target}, \emph{commander}. \\
+\texttt{Power}, \texttt{Toughness} & \texttt{Quality} & Inhering in an object, valued by a region. \\
+\texttt{ValueRegion} & \texttt{Region} & Lets power be \texttt{*} or \texttt{1+*} without degrading the datatype. \\
+\texttt{CardType}, \texttt{Subtype}, \texttt{Keyword} & \texttt{Concept} & Classification, which can change in-game, rather than subsumption, which cannot. \\
+\texttt{Combo}, \texttt{Strategy} & \texttt{Plan} & Descriptions defining tasks and producing an outcome. \\
+\texttt{Archetype}, \texttt{Format}, \texttt{Ability} & \texttt{Description} & Normative or descriptive artefacts, not sets of cards. \\
+\texttt{Deck} & \texttt{Collection} & \\
+\bottomrule
+\end{tabular}
+\caption{DOLCE-UltraLite alignment.}
+\label{tab:dolce}
+\end{table}
+
+\paragraph{Role/situation.} A creature does not \emph{have} the property of attacking. It \texttt{playsRole} an \texttt{AttackerRole} whose \texttt{roleInSituation} is a particular combat, and an OWL~2 property chain derives participation in one hop:
+\[
+\texttt{involvedIn} \;\sqsupseteq\; \texttt{playsRole} \circ \texttt{roleInSituation}.
+\]
+The gain is not elegance but expressiveness: the same creature can be an attacker in one combat and a blocker in the next without contradictory assertions, and combat history becomes queryable.
+
+\paragraph{Quality/region.} Our earlier versions typed \texttt{power} as \texttt{xsd:string}, precisely because characteristic-defining power is not a number. That degrades the datatype for the entire card pool to accommodate a minority of cards. The DOLCE quality/quale distinction states it properly: a \texttt{Power} quality holds a \texttt{ValueRegion} carrying a lexical value always and a numeric value only when determinate. CR 613's layer system then has somewhere coherent to write: recomputation replaces the region, it does not add a second one, which is why \texttt{hasRegion} is functional.
+
+\paragraph{Information realisation.} \texttt{CardDesign} (the oracle card), \texttt{CardPrinting} (a printing in a set), and \texttt{GameObject} (a thing in a game) are three distinct entities that earlier versions collapsed into one \texttt{Card} class. The separation is what lets us state that a token realises no design --- a qualified maximum cardinality of zero on \texttt{realizes}, which is the formal rendering of ``a token is not a card'' (CR 111.1).
+
+\subsection{OWL 2 constructs, used where the rules license them}
+
+Punning is removed: card types, zones, and subtypes are individuals of concept classes, not classes doubling as instances. Beyond that we use the OWL~2 constructs that carry real domain weight, and only those:
+
+\begin{itemize}[leftmargin=1.2em, itemsep=1pt]
+  \item \texttt{inZone} is \textbf{functional} --- CR 400.5, an object exists in exactly one zone.
+  \item \texttt{precedes} is \textbf{transitive, asymmetric, irreflexive} --- the ordering of steps, phases and turns is a strict partial order.
+  \item \texttt{counters} is \textbf{asymmetric} (that A answers B does not make B answer A); \texttt{synergisesWith} is \textbf{symmetric and irreflexive}.
+  \item \texttt{Ability} is a \textbf{disjoint union} of activated, triggered, static and spell abilities --- CR 113.3 states exactly that partition.
+  \item \texttt{Combo} carries a \textbf{qualified minimum cardinality} of two pieces; this was previously only a SHACL shape, i.e.\ a data constraint rather than a definition.
+  \item \texttt{owl:hasKey} declares identity conditions (\texttt{cardName}, \texttt{comboId}, \texttt{scryfallId}) so importers can merge duplicate nodes soundly.
+  \item Three \textbf{property chains}: \texttt{involvedIn} above; \texttt{deckEmploysStrategy} $\sqsupseteq$ \texttt{hasArchetype} $\circ$ \texttt{employsStrategy}; and \texttt{answersCombo} $\sqsupseteq$ \texttt{counters} $\circ$ \texttt{partOfCombo}, which derives combo-level disruption from card-level answers instead of requiring it to be enumerated.
+\end{itemize}
+
+\subsection{The type system}
+\label{sec:types}
+
+CR 205.2a fixes fifteen card types. CR 205.3g--q fix ten subtype families. \Cref{tab:types} gives the sizes as extracted from the revision effective 19 August 2026.
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{llr@{\hskip 2em}llr}
+\toprule
+\textbf{Family} & \textbf{CR} & \textbf{$n$} & \textbf{Family} & \textbf{CR} & \textbf{$n$} \\
+\midrule
+Card types        & 205.2a & 15  & Spell types       & 205.3k & 5 \\
+Creature types    & 205.3m & 324 & Enchantment types & 205.3h & 13 \\
+Planar types      & 205.3n & 82  & Dungeon types     & 205.3p & 1 \\
+Planeswalker types& 205.3j & 80  & Battle types      & 205.3q & 1 \\
+Artifact types    & 205.3g & 22  & Keyword abilities & 702    & 194 \\
+Land types        & 205.3i & 17  & Keyword actions   & 701    & 69 \\
+\bottomrule
+\end{tabular}
+\caption{Type-system inventory extracted from the Comprehensive Rules.}
+\label{tab:types}
+\end{table}
+
+The correlation constraint of CR 205.3c/d is stated as OWL axioms rather than left as prose. Carrying an artifact subtype \emph{entails} being an artifact:
+
+\begin{lstlisting}[language=Turtle, caption={CR 205.3d as a subclass axiom between restrictions.}]
+[ a owl:Restriction ; owl:onProperty mtg:hasSubtype ;
+  owl:someValuesFrom mtg:ArtifactType ]
+  rdfs:subClassOf
+[ a owl:Restriction ; owl:onProperty mtg:hasCardType ;
+  owl:hasValue mtg:Artifact ] .
+\end{lstlisting}
+
+Spell types and creature types span two card types each (instant/sorcery, creature/kindred), so their consequents are unions. The practical effect is that a malformed card --- an enchantment declared with the subtype \emph{Vehicle} --- is detected by a reasoner rather than tolerated.
+
+\paragraph{Why the subtype families are not disjoint.} It is tempting to assert the ten families pairwise disjoint. That would be wrong: the rules reuse words across families. \emph{Spacecraft} is both an artifact type (CR 205.3g) and a planar type (CR 205.3n). Asserting disjointness would render the extracted content inconsistent. The pipeline reports every cross-family reuse it finds rather than silently merging or dropping, and the schema carries a comment recording why the axiom is absent.
+
+% =============================================================================
+\section{Deriving Content from the Comprehensive Rules}
+\label{sec:derivation}
+
+A schema is not content. The two have different authorship economics: the schema is small, contestable, and must be human-reviewed; the content is large, definitional, and must never be hand-copied. \texttt{scripts/build\_ontology\_from\_cr.py} generates the latter in three stages.
+
+\paragraph{Stage 1 --- rule tree.} Every numbered rule becomes an \texttt{mtg:ComprehensiveRule} individual carrying its number, full text, top-level section (1--9), and a transitive \texttt{subRuleOf} link to its parent: 3{,}161 rules. This gives every generated term something to point at and makes ``which rule licenses this?'' a graph query rather than a comment.
+
+\paragraph{Stage 2 --- enumerations.} The rules contain closed lists that are the authoritative answer to questions a hand-authored ontology answers badly. Each list is located by its rule number and an anchor phrase, split on the document's own conventions (parenthetical cross-references, Oxford \emph{and}, multi-word members such as \emph{Time Lord} and \emph{Bolas's Meditation Realm}), and emitted as typed individuals.
+
+\paragraph{Stage 3 --- provenance.} Every generated individual carries \texttt{mtg:groundedIn} its source rule, \texttt{mtg:epistemicStatus "curated"} (the rules are definitional, not inferred), and \texttt{prov:wasDerivedFrom} a document entity recording the revision date and attribution to the publisher.
+
+\paragraph{Namespacing.} Generated families live in their own namespaces (\texttt{mtgs:} for subtypes, \texttt{mtgk:} for keywords, \texttt{mtgka:} for keyword actions). This is not cosmetic. CR 701 defines a keyword action \emph{Exile}; CR 406 defines a zone of the same name. Minting both in one namespace produces a single individual that is both a place and an action --- well-formed OWL, complete nonsense. A regression test asserts the two remain distinct.
+
+\subsection{What the derivation exposed}
+
+Running the pipeline against our own hand-authored schema surfaced three defects that had survived three ontology versions and would not have been found by re-reading the file.
+
+\begin{enumerate}[leftmargin=1.4em, itemsep=2pt]
+  \item \textbf{Seven missing card types and all 550 subtypes.} The hand-authored file declared eight card types; CR 205.2a lists fifteen. More seriously, there was no subtype machinery at all, so \emph{Vehicle}, \emph{Equipment}, \emph{Aura}, \emph{Saga}, \emph{Planet} and \emph{Mount} were not merely absent but unrepresentable.
+  \item \textbf{Cross-family word reuse}, discussed in \Cref{sec:types}, which a plausible disjointness axiom would have made inconsistent.
+  \item \textbf{Identifier collisions between levels}, which forced per-family namespaces.
+\end{enumerate}
+
+The general lesson matches what \citet{tiwari2026ontoprompt} report for text-to-graph construction: the generator is not where the value lies. Every defect above was caught by a cheap deterministic check --- an enumeration count, a collision report, a consistency constraint --- and none by careful authoring.
+
+\subsection{Licensing of derived content}
+\label{sec:licensing}
+
+The Comprehensive Rules are copyright Wizards of the Coast. This has a practical consequence for redistribution that a resource paper should not gloss over. The \emph{enumerations} we extract --- the names of card types, supertypes, subtypes, keyword abilities and keyword actions --- are facts about the game and are the reusable core of the artefact. The \emph{rule text} carried by Stage 1 is the publisher's copyrighted expression.
+
+The generator therefore writes two files. \texttt{mtg-cr-types.ttl} (4{,}319 lines) holds the enumerations and is redistributed under MIT. \texttt{mtg-cr-rules.ttl} (28{,}356 lines) holds the rule tree with its text, is excluded from version control, and is produced locally by the consumer against their own copy of the rules --- \texttt{scripts/fetch\_rules.py} retrieves the current revision from the publisher's site. Regenerating both is a single command and takes a few seconds. Consumers that only need the type system, which is most of them, never materialise the second file at all.
+
+% =============================================================================
+\section{The Induced Extension Layer}
+\label{sec:induced}
+
+The ontology is designed to be written to as well as read from, by consumers that observe gameplay. That capability is only safe if learned assertions cannot be mistaken for definitional ones.
+
+Every declared term carries an \texttt{mtg:epistemicStatus} of \texttt{curated}, \texttt{induced}, or \texttt{proposed}, and the validator fails if any term lacks one. Learned relations are never asserted directly into curated properties. An \texttt{mtg:InducedSynergy} is a reified \texttt{prov:Entity} carrying \texttt{evidenceWeight}, \texttt{supportCount} and \texttt{refutationCount}, and the schema \emph{requires}, via an existential restriction on \texttt{prov:wasGeneratedBy}, that it be attributable to an activity:
+
+\begin{lstlisting}[language=Turtle, caption={Provenance as a modelling constraint, not a convention.}]
+mtg:InducedAssertion rdfs:subClassOf [
+    a owl:Restriction ;
+    owl:onProperty prov:wasGeneratedBy ;
+    owl:someValuesFrom mtg:SelfPlayRun ] .
+\end{lstlisting}
+
+A consumer needing deterministic ground truth recovers it by filtering on status; the curated symmetric \texttt{synergisesWith} relation is never polluted by statistics. Promotion from induced to curated is deliberately \emph{not} automatic, and defining that gate --- including how to represent disagreement between runs, in the manner of \citet{ehrenmuller2026sock} --- is open work.
+
+\paragraph{An agent decision vocabulary.} A companion namespace, \texttt{mtgd:}, represents the reasoning of agents that consume the ontology: a \texttt{Decision} is both a \texttt{GameAction} and a \texttt{prov:Activity}, carrying the objective decomposition it was selected by, the belief state it was taken under, and the policy that produced it. This is included because it is the piece that makes an automated consumer auditable in the same terms as the card data, addressing the provenance gap \citet{sabou2026neurosymbolic} identifies; its use is described in the companion paper \citep{neuburger2026agents} and it can be ignored entirely by consumers that do not play games.
+
+% =============================================================================
+\section{Validation}
+\label{sec:validation}
+
+\texttt{scripts/validate\_ontology.py} runs seven independent stages and reports each separately, so a failure localises to one concern rather than producing a single opaque verdict.
+
+\begin{enumerate}[leftmargin=1.4em, itemsep=1pt]
+  \item \textbf{Syntax} --- rdflib parse.
+  \item \textbf{Structure} --- term inventory, including counts of the OWL~2 constructs the design depends on, so their silent removal is detectable.
+  \item \textbf{OWL~2~DL profile} --- punning detection, undeclared terms in domain/range position, dangling subclass targets. These run without a reasoner and therefore without a JRE.
+  \item \textbf{Provenance completeness} --- every in-namespace declared term carries an epistemic status.
+  \item \textbf{Competency questions} --- term coverage plus SPARQL execution against the TBox.
+  \item \textbf{SHACL} --- \texttt{pyshacl} against the shapes file \citep{w3c2017shacl}.
+  \item \textbf{Consistency} --- optional HermiT via \texttt{owlready2}.
+\end{enumerate}
+
+\Cref{tab:stats} reports the current state. The provenance stage found four terms missing an epistemic status on its first run against a carefully hand-authored file, which is the kind of defect no amount of authorial care reliably prevents and the reason the cascade exists.
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{lr@{\hskip 2em}lr}
+\toprule
+\textbf{Schema (hand-authored)} & & \textbf{Content (generated)} & \\
+\midrule
+\texttt{owl:Class}              & 72 & Comprehensive Rules        & 3{,}161 \\
+\texttt{owl:ObjectProperty}     & 34 & creature types             &     324 \\
+\texttt{owl:DatatypeProperty}   & 18 & keyword abilities          &     194 \\
+\texttt{owl:AnnotationProperty} &  5 & planar types               &      82 \\
+\texttt{rdfs:subClassOf}        & 78 & planeswalker types         &      80 \\
+\texttt{owl:propertyChainAxiom} &  3 & keyword actions            &      69 \\
+\texttt{owl:hasKey}             &  3 & artifact types             &      22 \\
+\texttt{owl:disjointUnionOf}    &  1 & land types                 &      17 \\
+qualified cardinality           &  3 & keyword counters           &      16 \\
+CQ coverage                     & 32/32 & card types              &      15 \\
+\midrule
+\textbf{1{,}176 triples} & & \textbf{29{,}336 triples} & \\
+\bottomrule
+\end{tabular}
+\caption{Term inventory. Left: \texttt{mtg-ontology-v2.0.ttl}, hand-authored and human-reviewed. Right: \texttt{mtg-cr-derived.ttl}, generated from the rules text. For comparison, our v1.1 had 17 classes, 24 properties, no property chains, no keys, no qualified cardinality, no subtypes, and a punning violation placing it outside OWL~2~DL.}
+\label{tab:stats}
+\end{table}
+
+Beyond the cascade, 38 pytest contract tests assert the modelling commitments directly --- that every DOLCE alignment holds, that no subtype is declared as a card type, that \emph{Vehicle} is an artifact type and \emph{Mount} a creature type, that the two \emph{Exile}s stay distinct, and that every generated individual is grounded in a rule. Regenerating from a newer revision of the rules will move these, which is the intent: they are the regression net for ``a new set added a type and nobody noticed''.
+
+% =============================================================================
+\section{Availability and Sustainability}
+\label{sec:availability}
+
+\paragraph{Artefacts.} Schema: \texttt{data/ontology/mtg-ontology-v2.0.ttl}. Generated type system and keyword vocabulary: \texttt{data/ontology/mtg-cr-types.ttl}. Generated rule tree (local only, see \Cref{sec:licensing}): \texttt{data/ontology/mtg-cr-rules.ttl}. SHACL shapes: \texttt{data/ontology/mtg-shapes.ttl}. Competency questions: \texttt{data/competency\_questions.yaml}. Pipeline, validator and conformance checker: \texttt{scripts/build\_ontology\_from\_cr.py}, \texttt{scripts/validate\_ontology.py}, \texttt{scripts/check\_card\_types.py}.
+
+\paragraph{Namespaces.} Core \texttt{http://purl.org/mtg/ontology\#}; subtypes, keywords, keyword actions and the decision module under sibling paths. Version IRI \texttt{http://purl.org/mtg/ontology/2.0}.
+
+\paragraph{Licence.} MIT for the ontology, pipeline and competency questions. See \Cref{sec:licensing} on the rule text.
+
+\paragraph{Sustainability.} The maintenance burden is deliberately concentrated in one command. When the publisher issues a new revision, \texttt{fetch\_rules.py} retrieves it and \texttt{build\_ontology\_from\_cr.py} regenerates the content layer; the contract tests then report exactly what changed. The hand-authored schema requires attention only when a genuinely new \emph{kind} of thing is introduced, which happens on the scale of years rather than quarters.
+
+\paragraph{Loading.} The ontology imports into Neo4j via \texttt{n10s} \citep{neo4j_n10s}, and the repository ships the graph-config and SHACL-import steps. Nothing about the design assumes Neo4j; any RDF store will do.
+
+% =============================================================================
+\section{Limitations and Future Work}
+\label{sec:limits}
+
+\paragraph{The alignment is asserted, not machine-verified in CI.} HermiT requires a JRE and resolution of the imported DUL, so the default validation path is offline and structural. The CR 205.3 correlation axioms are enforced procedurally by the type-line parser rather than by a reasoner over the populated graph, which is weaker: the parser checks what it was written to check.
+
+\paragraph{The role/situation pattern has no population path.} Card designs now instantiate the type, subtype and quality patterns, but roles and situations are produced only by gameplay, and the trace-to-graph writer for combat situations is not yet implemented. The pattern is therefore exercised by hand-written queries rather than by data.
+
+\paragraph{The ABox uses the patterns; the reasoner does not yet police it.} The Scryfall importer emits the v2.0 shape --- \texttt{CardDesign}/\texttt{CardPrinting} pairs, card types and subtypes as classification rather than labels, and \texttt{Power}/\texttt{Toughness} qualities carrying \texttt{ValueRegion} values. Type lines are parsed against the extracted vocabularies rather than by substring matching, which makes the CR 205.3c/d correlation constraint checkable on real data: \texttt{scripts/check\_card\_types.py} reports, for a card pool, every subtype not licensed by any of its card's types and every token matching no known vocabulary. The latter count is the early-warning signal that a new set shipped vocabulary the ontology has not yet absorbed. What remains is closing the loop with the reasoner: the constraint is stated in OWL and checked procedurally, but HermiT is not run over the populated graph in CI.
+
+\paragraph{The rules are carried, not formalised.} Stage 1 stores rule \emph{text}. CR 613's layer system is present as thirty paragraphs of English, not as executable structure. Formalising selected rule sections --- the layer system, the timing rules, state-based actions --- is a substantial project and the obvious continuation.
+
+\paragraph{Evaluation is intrinsic.} Coverage is measured against our own competency questions, which is a weak test: a question set authored alongside an ontology tends to be answerable by it. Two extrinsic routes are queued: submitting the artefact to a competency-question-driven benchmark \citep{cq4oe2026} as a baseline whose authoring process (curated schema plus mechanically derived content) differs from the fully automated pipelines evaluated there, and generating a reasoning benchmark from the ontology itself by backward-chaining proof search \citep{vanschependom2026synthology}.
+
+\paragraph{Scope.} Formats, tournament structure, and the multiplayer and casual-variant rules (CR 8--9) are modelled thinly. The strategic layer --- archetypes, combos, synergies --- has schema but little curated content, by design: it is the layer intended to be populated by consumers.
+
+% =============================================================================
+\section{Conclusion}
+
+MTG is a domain where the ground truth is a published, versioned, numbered document, and we have argued that this makes it a case where the right ontology-engineering strategy is a small human-reviewed schema plus mechanically derived content, rather than either hand-curation or generative extraction. The DOLCE alignment is what makes the schema small: the distinctions the game needs --- design versus printing versus object, quality versus value, role versus bearer --- are foundational distinctions, and taking them off the shelf is cheaper and more defensible than reinventing them per domain. The derivation pipeline is what makes the content trustworthy: every term is grounded in the rule that licenses it, and regenerating from a new revision is one command.
+
+We release the artefact separately from the agent framework that motivated it because the two have different audiences. Anyone building a deck-builder, a rules assistant, a collection manager, or a simulator needs the card, type, and rules layers, and should not have to adopt a research stack to get them.
+
+% =============================================================================
+\section*{Acknowledgments}
+\noindent Card data from Scryfall; combo data from Commander Spellbook. The Comprehensive Rules are copyright Wizards of the Coast, which is not affiliated with and does not endorse this work.
+
+% =============================================================================
+\begin{thebibliography}{99}
+\small
+
+\bibitem[Gangemi et~al.(2002)]{gangemi2002dolce}
+A.~Gangemi, N.~Guarino, C.~Masolo, A.~Oltramari, and L.~Schneider.
+\newblock Sweetening Ontologies with DOLCE.
+\newblock \emph{EKAW}, LNCS 2473, pages 166--181, 2002.
+
+\bibitem[Borgo et~al.(2022)]{borgo2022dolce}
+S.~Borgo, R.~Ferrario, A.~Gangemi, N.~Guarino, C.~Masolo, D.~Porello, E.~M.~Sanfilippo, and L.~Vieu.
+\newblock DOLCE: A Descriptive Ontology for Linguistic and Cognitive Engineering.
+\newblock \emph{Applied Ontology}, 17(1):45--69, 2022.
+
+\bibitem[Gangemi \& Presutti(2009)]{gangemi2009odp}
+A.~Gangemi and V.~Presutti.
+\newblock Ontology Design Patterns.
+\newblock In \emph{Handbook on Ontologies}, pages 221--243. Springer, 2009.
+
+\bibitem[Noy \& McGuinness(2001)]{noy2001ontology}
+N.~F.~Noy and D.~L.~McGuinness.
+\newblock Ontology Development 101: A Guide to Creating Your First Ontology.
+\newblock Stanford Knowledge Systems Laboratory, 2001.
+
+\bibitem[Garijo et~al.(2026)]{garijo2026maseo}
+D.~Garijo et~al.
+\newblock MASEO: A Multi-Agent System for Explainable Ontology Generation.
+\newblock Ontology Engineering Group, Universidad Polit\'ecnica de Madrid, 2026.
+\newblock \url{https://github.com/oeg-upm/maseo}.
+
+\bibitem[{Ontology Engineering Group}(2026)]{cq4oe2026}
+Ontology Engineering Group, Universidad Polit\'ecnica de Madrid.
+\newblock CQ4OE: A Benchmark for LLM-Assisted Ontology Generation from Competency Questions.
+\newblock 2026. \url{https://oeg-upm.github.io/cq4oe-benchmark/}.
+
+\bibitem[Lippolis et~al.(2026)]{lippolis2026ontoextend}
+A.~S.~Lippolis, M.~Saeedizade, R.~Schmid, D.~Blattner, R.~Keskis\"arkk\"a, A.~Gangemi, E.~Blomqvist, and A.~G.~Nuzzolese.
+\newblock OntoExtend: Requirement-Driven and Scalable Ontology Extension with Large Language Models.
+\newblock \emph{SEMANTiCS 2026}, Studies on the Semantic Web 63, pages 107--122. doi:10.3233/SSW260011.
+
+\bibitem[Tiwari et~al.(2026)]{tiwari2026ontoprompt}
+S.~Tiwari, T.~Lopes Oliveira, M.~R.~A.~H.~Firmansyah, H.~M.~Zahera, F.~Hopfgartner, and A.-C.~Ngonga Ngomo.
+\newblock Ontology-Aware Prompting for Knowledge Graph Construction from Text.
+\newblock \emph{SEMANTiCS 2026}, Studies on the Semantic Web 63, pages 87--102. doi:10.3233/SSW260009.
+
+\bibitem[Van Schependom et~al.(2026)]{vanschependom2026synthology}
+J.~Van~Schependom, T.~Proost, and P.~Bonte.
+\newblock SYNTHOLOGY: Ontology-Based Data Generation for Neurosymbolic Reasoning.
+\newblock \emph{SEMANTiCS 2026}, Studies on the Semantic Web 63, pages 211--226. doi:10.3233/SSW260018.
+
+\bibitem[Ehrenm\"uller et~al.(2026)]{ehrenmuller2026sock}
+M.~Ehrenm\"uller, L.~Kook, F.~J.~Ekaputra, and M.~Sabou.
+\newblock Synthesising Causal Knowledge with Semantic Technologies.
+\newblock \emph{SEMANTiCS 2026}, Studies on the Semantic Web 63, pages 19--33. doi:10.3233/SSW260004.
+
+\bibitem[Sabou(2026)]{sabou2026neurosymbolic}
+M.~Sabou.
+\newblock Beyond Data: Why the Future of AI is Neurosymbolic.
+\newblock Keynote, Neurosymbolic AI Workshop, SEMANTiCS 2026, Ghent.
+
+\bibitem[Knublauch \& Kontokostas(2017)]{w3c2017shacl}
+H.~Knublauch and D.~Kontokostas (eds.).
+\newblock Shapes Constraint Language (SHACL).
+\newblock \emph{W3C Recommendation}, 2017.
+
+\bibitem[{Neo4j Labs}(n.d.)]{neo4j_n10s}
+Neo4j Labs.
+\newblock Neosemantics (n10s): RDF and Semantics Toolkit for Neo4j.
+\newblock \url{https://neo4j.com/labs/neosemantics/}.
+
+\bibitem[Neub\"urger \& Neub\"urger(2026)]{neuburger2026agents}
+F.~Neub\"urger and J.~Neub\"urger.
+\newblock Neuro-Symbolic Agents Playing Magic: The Gathering.
+\newblock Companion paper, 2026.
+
+\end{thebibliography}
+
+\end{document}

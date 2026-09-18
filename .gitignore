@@ -94,4 +94,11 @@ data/card_graph_embeddings.pt
 
 *.pt
 
-presentations/repo_for_girlfriend.*
+presentations/repo_for_girlfriend.*# Comprehensive Rules text and any derivation carrying it. The rule text is
+# copyright Wizards of the Coast; only the extracted enumerations
+# (data/ontology/mtg-cr-types.ttl) are redistributable. Regenerate with:
+#   python scripts/fetch_rules.py && python scripts/build_ontology_from_cr.py
+data/rules/MagicCompRules*.txt
+data/rules/latest.txt
+data/ontology/mtg-cr-rules.ttl
+data/ontology/mtg-cr-derived.ttl

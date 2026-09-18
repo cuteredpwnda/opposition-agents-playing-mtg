@@ -1,14 +1,129 @@
 # Implementation Plan — Single Source of Truth
 
 > **opposition-agents-playing-mtg**
-> Last updated: 2026-05-20
+> Last updated: 2026-09-17
 
 This document is the **single source of truth** for what has been implemented,
 what is in progress, and what remains. It supersedes the phase descriptions in
 `PLAN.md`, `ARCHITECTURE.md`, and the presentation slides for tracking purposes
 — those documents retain their value as design rationale and research context.
 
-## Status Snapshot — May 2026 (Updated May 20)
+## Status Snapshot — September 2026
+
+Two structural changes landed this cycle: the action-selection objective was
+replaced with a principled one, and the ontology was rebuilt as a real OWL 2 DL
+artefact.
+
+- **Active inference reformulated as belief-space KL control (Sept 17).**
+  Following Kaufmann (2026), *Active Inference is Optimal Control*: continuous
+  Active Inference on path space is finite-horizon path-integral stochastic MPC,
+  and its canonical discretisation is classical KL control on belief space,
+  `G(π) = KL(Q(η|π) ‖ P₀(η)) + E_Q[V(η)]`. New `src/agents/kl_control.py`
+  implements exactly that — **no additive information-gain bonus, no ambiguity
+  penalty** — plus `LegacyEFE` holding the two extant factorisations as ablation
+  arms. Exploration is recovered from closed-loop belief branching (Fel'dbaum's
+  dual control effect), not from a surrogate term.
+- **OWL 2 DL ontology v2.0, DOLCE-aligned (Sept 17).**
+  `data/ontology/mtg-ontology-v2.0.ttl` (935 triples, 56 classes, 46
+  properties). Removes the class/individual punning that kept v1.x outside
+  OWL 2 DL; aligns every top-level term to DOLCE-UltraLite; adds role/situation
+  and quality/region patterns; uses property chains, `owl:hasKey`, qualified
+  cardinality and a disjoint union where the rules license them; and enforces a
+  curated/induced split with `mtg:epistemicStatus` on every axiom plus a
+  schema-level `prov:wasGeneratedBy` requirement on induced assertions.
+- **Agent decision module in the ontology.** New `mtgd:` namespace represents
+  the agents' own reasoning — `Decision` (a `prov:Activity`), `ExpectedFreeEnergy`
+  with its control-cost/risk decomposition, `BeliefState`, `Policy` with
+  precision β, `PreferencePotential`. "Why did seat 0 attack on turn 6?" becomes
+  a graph query.
+- **Phase-rs updated to upstream `10d8e40d2d`; client moved to protocol v75**
+  (was v6, 5034 commits behind). Structured `ActionRejection` DTOs, `ActionFailed`
+  / `ActionNoOp` / `RequestRejected` handling, and `Interaction` submission
+  support added to `client.py`.
+- **Validation cascade.** `scripts/validate_ontology.py` — seven independent
+  stages (syntax, structure, OWL 2 DL profile, provenance completeness,
+  competency-question coverage + SPARQL, SHACL, optional HermiT). Found four
+  real defects on its first run. 26 competency questions now live as versioned
+  artefacts in `data/competency_questions.yaml` with CQ↔axiom provenance.
+- **Paper and tech report rewritten** around the neurosymbolic framing, the
+  control-theoretic objective, and the foundational-ontology alignment, with
+  SEMANTiCS 2026 related work incorporated.
+
+- **Comprehensive Rules translated into the ontology (Sept 17).**
+  `scripts/build_ontology_from_cr.py` — three stages (rule tree → enumerations →
+  provenance) producing `data/ontology/mtg-cr-derived.ttl`, **29,336 triples**
+  from the CR revision effective 2026-08-19 (fetched with
+  `scripts/fetch_rules.py`). Extracted: 3,161 rules, 15 card types, 324 creature
+  types, 194 keyword abilities, 82 planar types, 80 planeswalker types, 69
+  keyword actions, 22 artifact types, 17 land types, 16 keyword counters, 13
+  enchantment types, 5 spell types, 1 dungeon type, 1 battle type. Every
+  individual is `groundedIn` its source rule and `prov:wasDerivedFrom` the CR
+  document.
+
+  Three defects this exposed in the hand-authored schema, all now fixed:
+  - **Seven missing card types** (CR 205.2a lists 15; we declared 8) and **no
+    subtype machinery at all** — `Vehicle`, `Spacecraft`, `Equipment`, `Aura`,
+    `Saga`, `Planet`, `Mount` and ~550 others were unrepresentable, not merely
+    absent. v2.0 now declares 10 subtype families and states the CR 205.3c/d
+    correlation constraint as OWL axioms (carrying an artifact subtype entails
+    being an artifact).
+  - **Cross-family word reuse**: `Spacecraft` is both an artifact type (205.3g)
+    and a planar type (205.3n), so the subtype families must *not* be asserted
+    pairwise disjoint. The generator reports every such reuse.
+  - **Identifier collision**: CR 701 defines a keyword action `Exile`; CR 406
+    defines a zone of the same name. Generated families now live in their own
+    namespaces (`mtgs:`, `mtgk:`, `mtgka:`); a regression test asserts the two
+    stay distinct.
+
+- **Papers split into three documents (Sept 17).** See `paper/README.md`.  1. `paper/mtg_ontology.tex` — **new**, standalone resource paper on the
+     ontology, intended to be published independently so other MTG projects can
+     adopt the artefact without the research stack. Includes a licensing section
+     distinguishing redistributable term enumerations (facts) from the
+     publisher's copyrighted rule text (generated locally by the consumer).
+  2. `paper/opposition_agents_mtg.tex` — retitled *Neuro-Symbolic Agents Playing
+     Magic: The Gathering*; reframed as a research paper around three claims
+     (ontology-grounded symbolic layer, play-to-graph learning loop,
+     control-theoretic action selection). Ontology material handed off to (1);
+     `phase-rs` now described at research rather than module level.
+  3. `paper/agents_tech_report.tex` — unchanged role: engineering reference.
+
+- **ABox migrated onto the v2.0 patterns (Sept 18).** The importer no longer
+  writes a flat `(:Card)` node with type-derived Neo4j labels.
+  - `src/knowledge/type_line.py` — parses Scryfall type lines against the
+    CR-extracted vocabularies (15 card types, 5 supertypes, 544 subtypes across
+    9 families) instead of substring matching, resolving every subtype to the
+    family it belongs to. Handles two-word creature types (`Time Lord`),
+    multi-word planar subtypes (CR 205.3b), multiple supertypes, dual-type
+    cards (`Land Creature — Forest Dryad`), and split/DFC faces.
+  - `src/knowledge/abox_builder.py` — emits `CardDesign`/`CardPrinting` linked
+    by `REALIZES`, `HAS_CARD_TYPE`/`HAS_SUPERTYPE`/`HAS_SUBTYPE` classification,
+    and `GameQuality`→`ValueRegion` for power/toughness/loyalty/defense so `*`
+    and `1+*` keep a lexical value while the numeric one goes null.
+  - `scripts/check_card_types.py` — offline conformance check. Reports CR 205.3d
+    violations (a subtype not licensed by any of the card's types) and unknown
+    tokens, the latter being the early-warning signal that a new set shipped
+    vocabulary the ontology has not absorbed. 12/12 probe cases pass.
+  - `scripts/import_scryfall.py --shape ontology|legacy`; ontology is default.
+  - Supertypes (CR 205.4a) added to the CR extractor and the schema.
+  - 30 new tests in `tests/test_type_line.py`.
+
+
+### Known gaps from this cycle
+
+- `phase-server` does not currently build locally: the MSVC toolset is installed
+  but `link.exe` is not on `PATH`. Build inside a Developer Command Prompt, or
+  run `vcvars64.bat` first. Nothing in the Python layer depends on this to
+  import or to be tested.
+- The role/situation pattern has no population path: roles are produced by
+  gameplay, and the trace-to-graph writer for combat situations is not built.
+- The `tree` planner's continuation set is degenerate, so deep belief branching
+  is exercised only via MPPI.
+- HermiT is not run over the populated graph in CI; CR 205.3 is enforced
+  procedurally by the type-line parser instead.
+
+---
+
+## Previous Snapshot — May 2026 (phase-rs-first hardening)
 
 Full games of Magic now run end-to-end on the **phase-rs Rust engine**. Python agents drive the phase-rs seat via WebSocket bridge, collecting structured JSONL traces for offline JEPA training. Recent phase-rs-first hardening pass (May 20):
 
@@ -853,6 +968,68 @@ These five items finish the engine's structural backbone so that *any*
 new mechanic can be expressed declaratively instead of bolted on with
 case-by-case `if` chains. Each has a sketched module layout so the
 work can be picked up without redesign.
+
+#### K1 — Build phase-server locally (blocker for all gameplay evaluation)
+
+The MSVC toolset (14.35.32215) is installed under
+`C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools` but
+`link.exe` is not on `PATH`, so `cargo build --release --bin phase-server`
+fails with `linker 'link.exe' not found`. Fix: run the build from a
+Developer Command Prompt, or wrap it:
+
+```
+cmd /c '"C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat" && cargo build --release --bin phase-server'
+```
+
+Everything downstream of this is blocked: the objective ablation (K2),
+trace collection, and any win-rate number. Nothing in the Python layer
+imports or tests against a live server, so the rest of the stack is
+unaffected.
+
+#### K2 — Objective ablation: KL control vs. the two legacy EFE forms
+
+All three objectives are already implemented behind one flag
+(`src/integrations/phase_rs/kl_control_picker.py --objective
+kl|efe_infogain|efe_ambiguity`) sharing belief, transition model,
+potential, prior and seed. Once K1 lands, run against `phase-ai` at fixed
+difficulty and measure three things:
+
+1. **Win rate** per objective.
+2. **Noisy-TV rate** — cantrip/scry/surveil activations that do not change
+   the subsequent action choice. Prediction: inflated under
+   `efe_infogain`, flat under `kl`.
+3. **Scotophobia rate** — declined profitable attacks and spells held with
+   lethal available, conditioned on opponent untapped mana. Prediction:
+   inflated under `efe_ambiguity`.
+
+A null result is publishable and would suggest the pathologies are masked
+by MTG's large action space.
+
+#### K3 — Migrate the ABox importer onto the v2.0 patterns
+
+`src/knowledge/` still writes flat card properties. The v2.0 TBox declares
+role/situation and quality/region patterns that nothing currently
+populates, so the expressive gain is available only to hand-written
+queries. Needs: Scryfall importer emitting `CardDesign`/`CardPrinting`
+pairs, `Power`/`Toughness` qualities with `ValueRegion` values, and
+`hasCardType` classification rather than direct typing.
+
+#### K4 — Promotion gate for induced evidence
+
+`mtg:InducedSynergy` nodes accumulate `supportCount`/`refutationCount` but
+there is no defined process by which one becomes a curated
+`synergisesWith` edge. Needs a confidence threshold, a human review step,
+and a representation for disagreement between runs.
+
+#### K5 — Consume phase-rs viewer interactions natively
+
+Protocol v75 publishes an engine-authored interaction schema
+(`InteractionOpportunity` / `InteractionSubmission`) for targeting, modes,
+damage assignment and ordering. `client.py` can now send submissions, but
+`runner.py` still flattens everything into the opaque `legal_actions`
+list, so the agent cannot tell a targeting decision from a mode choice.
+Each has a different shape of belief dependence and should be planned
+differently.
 
 #### H1 — Continuous-effects layer system (CR 613) ✅ Implemented
 

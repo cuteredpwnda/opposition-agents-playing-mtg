@@ -39,7 +39,8 @@ detects and handles both.
 | `OllamaAgent` | `src/agents/ollama_agent.py` | Local LLM via Ollama — same interface as `LLMAgent` but talks to `http://localhost:11434`. See `docs/OLLAMA_SETUP.md`. |
 | `WorldModelAgent` | `src/agents/world_model_agent.py` | V+M+C: encodes state → simulates k-step rollouts in latent space → picks action with highest predicted value. |
 | `LLMFusionAgent` | `src/agents/llm_fusion_agent.py` | Combines an LLM critic with the world model's value estimate; LLM picks among the top-N world-model candidates. |
-| `ActiveInferenceAgent` | `src/agents/active_inference_agent.py` | Maintains a Bayesian belief over hidden information (opponent hand, library top) and minimises expected free energy. |
+| `ActiveInferenceAgent` | `src/agents/active_inference_agent.py` | Legacy keyword-scored EFE. Superseded by the KL-control picker below; kept for back-compat. |
+| `KLControlActionPicker` | `src/integrations/phase_rs/kl_control_picker.py` | **Belief-space KL control** — the canonical discretisation of Active Inference (= path-integral MPC). Control cost against a passive prior plus expected terminal potential, planned closed-loop over a belief. No epistemic bonus, no ambiguity term. See [docs/ACTIVE_INFERENCE.md](docs/ACTIVE_INFERENCE.md). |
 | `HierarchicalAgent` | `src/agents/hierarchical_agent.py` | High-level "plan" (e.g. *race*, *stabilise*, *combo*) selected by an outer policy; low-level move chosen by an inner policy. |
 
 ## Collective Intelligence Layer

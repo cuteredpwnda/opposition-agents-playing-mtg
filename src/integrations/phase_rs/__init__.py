@@ -41,6 +41,10 @@ from src.integrations.phase_rs.decks import (
     decklist_to_deck_data,
     load_deck_data,
 )
+from src.integrations.phase_rs.kl_control_picker import (
+    OBJECTIVES as KL_CONTROL_OBJECTIVES,
+    KLControlActionPicker,
+)
 from src.integrations.phase_rs.runner import GameRunResult, run_game, run_game_sync
 from src.integrations.phase_rs.server_process import PhaseServerProcess
 from src.integrations.phase_rs.state_view import PhaseRsPlayerView, PhaseRsStateView
@@ -54,6 +58,8 @@ __all__ = [
     "GameRunResult",
     "GameStarted",
     "HeuristicActionPicker",
+    "KL_CONTROL_OBJECTIVES",
+    "KLControlActionPicker",
     "OllamaActionPicker",
     "PhaseRsPlayerView",
     "PhaseRsStateView",
