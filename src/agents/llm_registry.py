@@ -86,6 +86,15 @@ LLM_REGISTRY: dict[str, LLMSpec] = {
         params_billion=7.0,
         vram_gb_estimate=5.0,
     ),
+    "lfm2.5-8b": LLMSpec(
+        name="lfm2.5-8b",
+        ollama_tag="lfm2.5:8b",
+        family="liquidfoundation",
+        params_billion=8.0,
+        vram_gb_estimate=6.0,
+        context_tokens=8192,
+        notes="Liquid Foundation Model 2.5; strong reasoning at small scale. Requires Ollama 0.3+.",
+    ),
 }
 
 

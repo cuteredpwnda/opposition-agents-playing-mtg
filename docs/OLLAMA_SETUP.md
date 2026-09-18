@@ -4,7 +4,7 @@ This project uses Ollama for LLM-powered agent decision-making in Magic: The Gat
 
 ## Installation
 
-1. **Install Ollama**
+1. **Install Ollama** (version 0.3 or later recommended for all models)
    - Download from: https://ollama.ai
    - Available for Mac, Linux, and Windows
 
@@ -18,6 +18,7 @@ This project uses Ollama for LLM-powered agent decision-making in Magic: The Gat
    - `ollama pull gemma4:12b` - Mid-tier Gemma 4 (needs ~8 GB VRAM)
    - `ollama pull gemma4:27b` - Full Gemma 4 (best quality, ~16 GB VRAM)
    - `ollama pull mistral` - Alternative open-source model
+   - `ollama pull lfm2.5:8b` - Liquid Foundation Model 2.5 (strong reasoning, ~6 GB VRAM)
    - `ollama pull phi` - Lightweight option
 
 3. **Start Ollama server**
