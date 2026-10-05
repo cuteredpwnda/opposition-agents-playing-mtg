@@ -106,6 +106,13 @@ Deliberately less technical than the previous version of this document:
 `phase-rs` and the module layout are described at a research level.
 Implementation detail lives in paper 3.
 
+The **Research questions and staged ablation design** subsection now sets out
+policy comparison, learning, induced graph memory, their 2×3 factorial
+interaction, and cross-agent transfer/accumulation. These are planned studies
+with explicit eligibility gates, not reported results. The matching detailed
+[study protocol](../docs/AGENT_LEARNING_STUDY.md) specifies controls, splits,
+metrics, power and stopping rules; implementation status stays in the plan.
+
 The theoretical foundation now explains **one-step latent prediction** versus
 complete successor-state prediction, including the shared stop-gradient target
 encoder and standard-normal regulariser. It separates JEPA training from the
@@ -124,7 +131,13 @@ win rates, latency, shortlist coverage and failure accounting. Tev1 playing
 strength is a hypothesis; an API smoke test is not reported as a game result.
 The paper also records the local endpoint's 64 KiB/2050-token limits and
 the compact context projection; full-game Tev1 pilots remain incomplete.
-Earlier numerical results are explicitly labelled archived experiments.
+The research manuscript is self-contained: no Markdown-document referrals,
+dated work-log paragraphs or historical Python-engine strength tables.
+It includes a research-question ablation overview, the weight/graph factorial,
+an implementation-specific baseline comparison (including upstream `phase-ai`
+and its privileged information access), and a defined Buchholz tiebreak.
+Results describe current native execution, not learning effects. Wider
+deck-family and playstyle generalisation is explicitly a later study.
 The full executable publication plan is tracked in
 [`IMPLEMENTATION_PLAN.md`, section 6](../IMPLEMENTATION_PLAN.md#6-benchmark--evaluation-plan);
 [`RESEARCH_PIPELINES.md`](../docs/RESEARCH_PIPELINES.md) provides five Mermaid

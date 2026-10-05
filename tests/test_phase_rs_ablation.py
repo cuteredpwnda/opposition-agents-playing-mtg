@@ -53,6 +53,36 @@ def _mock_runtime(monkeypatch):
     )
 
 
+@pytest.mark.parametrize("name", ["world_model", "fusion"])
+def test_explicit_checkpoint_and_model_options_reach_factory(tmp_path, monkeypatch, name):
+    checkpoint = tmp_path / "model.pt"
+    checkpoint.write_bytes(b"fixture")
+    args = ablation.parse_args([
+        "--picker", f"agent:{name}", "--agent-checkpoint", str(checkpoint),
+        "--agent-mode", "dream_search", "--agent-deterministic",
+        "--dream-rollouts", "2", "--dream-depth", "3", "--ollama-model", "test-model",
+    ])
+    calls = []
+    monkeypatch.setattr(ablation, "make_agent",
+                        lambda *a, **kw: calls.append((a, kw)) or object())
+    ablation._make_picker(args, seed=7)
+    options = calls[0][1]
+    assert options["checkpoint"] == str(checkpoint)
+    assert options["dream_rollouts"] == 2 and options["dream_depth"] == 3
+    if name == "world_model":
+        assert options["mode"] == "dream_search" and options["deterministic"] is True
+    else:
+        assert options["llm_model"] == "test-model"
+
+
+def test_missing_checkpoint_is_explicit_failure(tmp_path):
+    args = ablation.parse_args([
+        "--picker", "agent:world_model", "--agent-checkpoint", str(tmp_path / "missing.pt"),
+    ])
+    with pytest.raises(ValueError, match="Checkpoint does not exist"):
+        ablation._make_picker(args, seed=7)
+
+
 def test_objective_schedule_and_outputs(tmp_path, monkeypatch):
     _mock_runtime(monkeypatch)
     calls = []

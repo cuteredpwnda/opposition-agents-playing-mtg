@@ -89,7 +89,7 @@
 \author[1]{Jonas Neub\"urger}
 \affil[1]{Independent Research \\ \texttt{github.com/cuteredpwnda/opposition-agents-playing-mtg}}
 
-\date{September 2026}
+\date{October 2026}
 
 % =============================================================================
 \begin{document}
@@ -157,7 +157,7 @@ The ontology that grounds the symbolic layer is a contribution in its own right 
 
 \paragraph{Scope and what we do \emph{not} do.} We do not solve MTG; we do not even target tournament-strength play. The contribution is a research substrate that is rules-correct on the implemented card pool, that maintains a queryable symbolic representation of card semantics, and that supports plug-in research on world models and inference-style agents on a problem qualitatively harder than the standard benchmarks. The empirical claims in \S\ref{sec:eval} are therefore framework-level (decks complete, agents converge faster than baselines, ablations show graded contributions) rather than absolute strength claims against human play.
 
-The framework is released as open source\footnote{\url{https://github.com/cuteredpwnda/opposition-agents-playing-mtg}} and the codebase is the canonical artifact accompanying this report. Section~\ref{sec:related} positions the work against prior literature; \S\ref{sec:theory} formalises the POMDP and the four learning principles (world models, FEP, knowledge-graph priors, constrained-decoding LLMs); \S\ref{sec:arch} walks the architecture top-down; \S\ref{sec:eval} presents the empirical protocol and preliminary results; \S\ref{sec:limits}--\ref{sec:future} discuss limitations and next steps.
+The framework is released as open source\footnote{\url{https://github.com/cuteredpwnda/opposition-agents-playing-mtg}} and the codebase is the canonical artifact accompanying this report. Section~\ref{sec:related} positions the work against prior literature; \S\ref{sec:theory} formalises the POMDP and the four learning principles (world models, FEP, knowledge-graph priors, constrained-decoding LLMs); \S\ref{sec:arch} walks the architecture top-down; \S\ref{sec:eval} presents the controlled study design and current native evidence; \S\ref{sec:limits}--\ref{sec:future} discuss limitations and next steps.
 
 % =============================================================================
 \section{Related Work}
@@ -518,7 +518,15 @@ $\theta$ is the promotion threshold (default $0.55$). The loop is implemented in
 \label{sec:agentzoo}
 The framework combines Python agents satisfying \texttt{decide\_action(state, legal\_actions) $\to$ action} with native \texttt{phase-rs} pickers selecting an index into the engine's legal-action list. They span the spectrum from combinatorial baselines to the V+M+C+JEPA+KG+LLM fusion of \Cref{sec:wm}; the native pickers additionally expose KL control and decision-tuned language models. We summarise their algorithmic roles below; implementation detail belongs in the companion technical report.
 
-\paragraph{Random ($\pi^{\mathrm{rand}}$).} A weighted sampler over legal actions with fixed type-class weights $w_{\mathrm{land}}\!=\!25$, $w_{\mathrm{cast}}\!=\!10$ (boosted to $30$ for casts from the command zone), $w_{\mathrm{atk}}\!=\!8$, $w_{\mathrm{pass}}\!=\!1$. Used as a baseline floor; not deterministic per-instance because it shares the process-global RNG.
+\paragraph{Random policies ($\pi^{\mathrm{rand}}$).}
+The native-wire baseline used in the experiments samples uniformly from the
+supplied legal-action list using an instance-local seeded RNG. It does not
+evaluate cards, targets or future consequences; if concession is offered,
+it is part of that sampling domain. The separate translated Python random
+agent is a different policy: a weighted sampler with
+$w_{\mathrm{land}}=25$, $w_{\mathrm{cast}}=10$ (30 for command-zone casts),
+$w_{\mathrm{atk}}=8$ and $w_{\mathrm{pass}}=1$, using a process-global RNG.
+Results for these two implementations must not be pooled under one label.
 
 \paragraph{Heuristic ($\pi^{\mathrm{heur}}$).} Deterministic priority cascade
 \begin{equation*}
@@ -534,7 +542,53 @@ a^\star = \argmax_{a \in \mathcal{A}_{\mathrm{legal}}} \; \mathrm{prio}(a),
   \textsc{concede} \mapsto 0,
 \end{cases}
 \end{equation*}
-with three tactical refinements: (i) counter-spell discipline filters \texttt{counter target} casts unless an opponent spell tops the stack, (ii) when \texttt{prefer\_aggressive} is set the agent always picks an attack at the top tier, (iii) on the blocking step it chump-blocks the largest unblocked attacker with the smallest blocker. Tie-breaking uses a seeded \texttt{random.Random}, making it the strongest fully-reproducible baseline.
+with three tactical refinements: (i) counter-spell discipline filters \texttt{counter target} casts unless an opponent spell tops the stack, (ii) when \texttt{prefer\_aggressive} is set the agent picks an attack at the top tier, (iii) on the blocking step it chump-blocks the largest unblocked attacker with the smallest blocker. Tie-breaking uses an instance-local seeded RNG. This describes the translated Python heuristic, not the native-wire baseline: the latter prefers land, cast, activate, then attack, breaks within-tier ties randomly, and otherwise passes or chooses a non-concession action. It does not rank targets or simulate combat.
+
+\paragraph{Built-in opponent: \texttt{phase-ai}.}
+The upstream engine includes a distinct decision system \citep{phase2026engine},
+not a renamed version of either Python baseline. It constructs legal
+candidates, applies tactical policies and safety/loop guards, and scores
+positions using life, board material, hand resources, zone quality and
+synergy. Its turn-dependent evaluation weights are distributed as fitted
+parameters; our experiments neither retrain nor independently validate the
+upstream fitting procedure. Difficulty controls stochastic selection,
+tactical lookahead and search. The \texttt{VeryEasy} preset used here disables
+tree search but retains scored tactical decisions and softmax selection
+with temperature 4; it is \emph{not uniform random}. For comparison,
+the native \texttt{Medium} preset enables beam-plus-rollout search with
+depth 2, a 24-node ceiling, branching cap 5 and one depth-1 rollout sample,
+with a 1.5-second interactive search deadline. Special decisions may take
+deterministic policy paths rather than the generic softmax path.
+
+An important asymmetry concerns information, not just compute.
+The native AI receives the internal game state; the shipped search presets
+set hidden-zone determinization samples to zero and use the unsampled state.
+Our external policies receive perspective-filtered observations.
+Consequently native-AI performance is an \emph{anchor under its declared
+information regime}, not a fair partial-information algorithm ranking.
+Matched-information comparisons require masking and independently checking
+the native opponent's access. The opponent is held fixed during a learning
+experiment and does not update from our gameplay traces.
+
+\begin{table}[ht]
+\centering
+\small
+\begin{tabularx}{\linewidth}{lXXX}
+\toprule
+Policy & Decision rule & Card/tactical reasoning & Search and learning \\
+\midrule
+Wire random & Uniform over offered legal actions & None & No search or updates \\
+Wire heuristic & Fixed action-type tiers; seeded tie sampling & No target or combat valuation & No search or updates \\
+Python heuristic & Priorities plus counter/attack/block rules & Limited hand-crafted tactics & No search or updates \\
+\texttt{phase-ai}, VeryEasy & Tactical scoring; stochastic choice & State, card, combat and synergy policies & No tree search; fixed fitted evaluator \\
+\texttt{phase-ai}, Medium & Tactical scoring plus beam/rollout & Same native policies and internal-state access & Bounded native search; no study-time updates \\
+\bottomrule
+\end{tabularx}
+\caption{Baseline implementations are not interchangeable. Seeded external
+selection does not seed engine shuffling or native-AI selection. Native
+internal-state access differs from external perspective filtering.}
+\label{tab:baseline-policies}
+\end{table}
 
 \paragraph{KG-Heuristic ($\pi^{\mathrm{KG\!+\!heur}}$).} Inherits $\pi^{\mathrm{heur}}$ but, when more than one \textsc{cast\_spell} is legal, re-ranks them through the knowledge graph. Let $H$ be the agent's hand and $B$ its battlefield. For each candidate cast $c$,
 \begin{equation*}
@@ -602,27 +656,27 @@ decision tuning already makes Tev1 a stronger MTG player.
 
 \paragraph{Preference potential.} Goals use $V(\eta)=-\log p_{\mathrm{pref}}(\eta)$ from \eqref{eq:potential}, with costs for life/material differences, turn pressure and terminal outcomes. These coordinates make the goal specification inspectable, but its hand-set weights and incomplete state projection may still misvalue a position. Anchoring goals to game consequences avoids explicitly rewarding sensor readings; it is not a universal correctness guarantee.
 
-\paragraph{World-Model agent ($\pi^{\mathrm{WM}}$).} Plays through the V+M+C+JEPA stack of \Cref{sec:wm}. Every turn,
+\paragraph{World-Model agent ($\pi^{\mathrm{WM}}$).} Supports the V+M+C+JEPA design of \Cref{sec:wm}. With a qualified graph encoder, the intended observation representation is
 \begin{equation*}
 z_t = E_\phi(o_t,g_t),\quad
 g_t = \mathrm{Enc}_{\mathrm{KG}}(g,o_t),\quad
 h_t\text{ retains recurrent history}.
 \end{equation*}
-Two action-selection modes are available: a fast direct policy over the supplied legal actions, and dream search that compares predicted cumulative rewards from recurrent latent continuations, as in \eqref{eq:wm-rollout}. The JEPA head is trained separately; selecting a JEPA-trained checkpoint does not establish that this search unrolls the JEPA predictor. Imagined continuations are approximate and do not receive fresh engine legality checks.
+Two action-selection modes are available: a fast direct policy over the supplied legal actions, and dream search that compares predicted cumulative rewards from recurrent latent continuations, as in \eqref{eq:wm-rollout}. The native feasibility configuration supplies card embeddings and an explicit checkpoint, but not live relational retrieval. The JEPA head is trained separately; selecting a JEPA-trained checkpoint does not establish that this search unrolls the JEPA predictor or that its recurrent dynamics are trained. Imagined continuations are approximate and do not receive fresh engine legality checks.
 
 \paragraph{LLM-Fusion agent ($\pi^{\mathrm{fuse}}$).} A weighted-fusion baseline combining four scalar signals per legal action,
 \begin{equation*}
 \mathrm{score}(a) \;=\; \alpha_h\,s_{\mathrm{heur}}(a) \;+\; \alpha_g\,s_{\mathrm{KG}}(a) \;+\; \alpha_w\,s_{\mathrm{WM}}(a) \;+\; \alpha_\ell\,\log p_{\mathrm{LLM}}(a),
 \quad a^\star = \argmax_a \mathrm{score}(a),
 \end{equation*}
-with default weights $(\alpha_h, \alpha_g, \alpha_w, \alpha_\ell) = (0.15, 0.15, 0.40, 0.30)$. The LLM signal is skipped when one action dominates the heuristic-plus-WM signal by more than \texttt{obvious\_threshold} = $0.8$, which saves roughly $80\%$ of LLM calls in practice. Setting any single weight to zero recovers the corresponding ablation; the canonical four-arm study (LLM-only, WM-only, KG-only, all four) is wired up by \texttt{scripts/run\_matchups.py}.
+with default weights $(\alpha_h, \alpha_g, \alpha_w, \alpha_\ell) = (0.15, 0.15, 0.40, 0.30)$. The LLM signal is skipped when one action dominates the heuristic-plus-WM signal by more than a threshold of $0.8$. The skipped-call rate must be measured, not assumed. Setting a component's weight to zero defines a removal intervention only if the full condition actually activates that component; the native fusion feasibility run does not supply graph retrieval.
 
 \begin{algorithm}[H]
 \caption{LLM-Fusion decision (one priority window).}
 \label{alg:fusion}
 \begin{algorithmic}[1]
 \Require state $s_t$, legal actions $\mathcal{A}$, world model $(\mathrm{Enc}_V, M, C)$, KG $\mathcal{G}$, opponent model $b_t$, weights $(\alpha_h, \alpha_g, \alpha_w, \alpha_\ell)$
-\State $\mathbf{s}_h \gets \mathrm{HeuristicScores}(s_t, \mathcal{A})$ \Comment{$\sim$50\,\textmu s}
+\State $\mathbf{s}_h \gets \mathrm{HeuristicScores}(s_t, \mathcal{A})$
 \State $\mathbf{s}_g \gets \mathrm{KGScores}(s_t, \mathcal{A})$ \Comment{combo + synergy bonuses}
 \State $z_t \gets \mathrm{Enc}_V(s_t)$;\quad $\mathbf{s}_w \gets \mathrm{DreamSearch}(z_t, h_t, \mathcal{A}; K, D)$
 \If{$\mathrm{spread}(\mathbf{s}_h + \mathbf{s}_w) > \tau_{\mathrm{obvious}}$}
@@ -640,7 +694,7 @@ with default weights $(\alpha_h, \alpha_g, \alpha_w, \alpha_\ell) = (0.15, 0.15,
 \section{Implementation}
 \label{sec:impl}
 
-We keep implementation detail intentionally brief here because the scientific object of interest is the \emph{interaction} between symbolic structure and learned planning, not the package layout of the repository. The released artifact instantiates four coupled layers: a rules-correct simulator, an ontology-backed card graph, a latent world model trained from self-play trajectories, and an agent layer that can combine heuristic, graph, world-model, and LLM signals. The code is modular enough that each layer can be ablated independently, but the paper's main claim is about the resulting research design: MTG becomes a controlled setting for studying how symbolic priors, learned dynamics, and uncertainty-aware action selection cooperate.
+The scientific object of interest is the \emph{interaction} between symbolic structure and learned planning, not the package layout. The artifact supplies a native rules runtime, an ontology and card-data pipeline, trainable latent-model components, and selectors combining heuristic, model and language signals. These components do not yet constitute a qualified native training-and-retrieval loop. The proposed interventions isolate their contributions after activation and calibration have been verified: MTG provides a setting for studying how symbolic priors, learned dynamics and uncertainty-aware action selection cooperate.
 
 \paragraph{Reproducibility.} The current \texttt{phase-rs} benchmark records
 the repository and engine checkout revisions, the actual server identity
@@ -653,10 +707,187 @@ deterministic paired-game replays. Decklists are committed under
 for a fully paired comparison.
 
 % =============================================================================
-\section{Preliminary Evaluation}
+\section{Evaluation Design and Current Evidence}
 \label{sec:eval}
 
-We report preliminary results; a full benchmark suite (\Cref{sec:future}) is in development. The numerical results below are archived experiments from the earlier research cycle, not outcomes of the new protocol-v106 or Tev1 benchmark. The local Tev1 API smoke verifies interface compatibility only; no MTG playing-strength result for Tev1 is reported here.
+We distinguish measured native execution from the controlled experiments
+needed to establish learning and graph-mediated improvement. All empirical
+results in this section refer to the current native runtime. The research
+questions and ablations specify falsifiable comparisons; they are not
+presented as completed learning experiments.
+
+\subsection{Research questions and staged ablation design}
+\label{sec:learning-study}
+
+The central empirical claim to investigate is not merely that heterogeneous
+agents can execute legal actions. It is that agents can improve through
+experience, that different decision policies offer measurable
+effectiveness--cost trade-offs, and that strategic evidence mined from play
+can help later agents. We therefore separate five questions:
+\begin{enumerate}[leftmargin=1.6em,itemsep=3pt]
+  \item \textbf{RQ1 (policy comparison):} how do qualified playing policies
+  compare in outcomes, completion and inference cost under declared
+  deck/opponent conditions?
+  \item \textbf{RQ2 (parametric learning):} does training on native gameplay
+  improve held-out predictions and downstream play compared with the same
+  architecture before training?
+  \item \textbf{RQ3 (graph memory):} does training-induced strategic evidence
+  improve a frozen consumer beyond curated relations alone?
+  \item \textbf{RQ4 (complementarity):} do weight learning and graph learning
+  contribute independently, or is there an interaction?
+  \item \textbf{RQ5 (transfer):} can evidence from one producer policy improve
+  another policy on held-out decks, and does cumulative memory generalise?
+\end{enumerate}
+These are planned questions, not five established contributions. A null or
+harmful graph effect is a legitimate result; failure to activate the graph is
+an integration failure, not a null effect.
+
+\begin{table}[ht]
+\centering
+\small
+\begin{tabularx}{\linewidth}{lXXX}
+\toprule
+Question & Ablation conditions & Held fixed & Principal evidence \\
+\midrule
+RQ1: policy & Random, heuristic, chat, decision-tuned, model-based, control & Declared decks, opponent, information and inference budget & Outcome/completion effects and strength--cost frontier \\
+RQ2: weights & Initial; predictive; policy; joint training & Architecture, graph, experience and optimisation budget & Held-out prediction and play across training seeds \\
+RQ3: memory & None; curated; induced; shuffled graph & Consumer weights, card facts, retrieval/context budget & Induced-minus-curated effect and retrieval activation \\
+RQ4: interaction & $2\times3$ weights/graph factorial; focused component removal & Splits, opponent, candidate and compute budgets & Weight/graph difference-in-differences with uncertainty \\
+RQ5: transfer & Own; other; mixed producer; accumulated snapshots & Frozen consumer, experience exposure, extraction rules & Held-out deck-family and cross-producer effects \\
+\bottomrule
+\end{tabularx}
+\caption{Research-question-driven ablation overview. A policy-stack
+comparison is not an isolated mechanism ablation. Weight-learning and
+graph-learning conditions require qualified native training and retrieval;
+they are experimental specifications, not completed results.}
+\label{tab:study-ablations}
+\end{table}
+
+\paragraph{Study A: policies before mechanisms.}
+First qualify random/heuristic, general chat, decision-tuned, explicit-checkpoint
+model-based and control stacks against an unchanged native-AI anchor.
+Deployment comparisons disclose differing contexts and candidate generators;
+mechanism comparisons hold those inputs fixed. A claim about decision tuning
+requires a size-matched base/chat comparator, identical options and
+option-order controls. A KL-versus-EFE objective claim requires matched models,
+candidate sets, horizons and compute. Native-AI episodes are not an
+agent-versus-agent tournament: the latter needs a separately qualified
+multi-connection controller, independently filtered observations and
+seat/start-player balancing. Matchup tables and strength--cost frontiers
+are more informative than assuming a transitive Elo ranking.
+
+\paragraph{Tournament reporting and Buchholz.}
+In a future Swiss tournament, agents play only a subset of opponents, so
+equal match points can reflect different schedule difficulty. With three
+points for a win, one for a genuine draw and zero for a loss, let $P_j$
+be opponent $j$'s final match points. The Buchholz tiebreak for agent $i$ is
+\begin{equation}
+B_i=\sum_{r\in\mathcal{R}_i} P_{\operatorname{opp}(i,r)},
+\end{equation}
+where $\mathcal{R}_i$ contains its played rounds: an opponent encountered
+twice contributes twice. For example, opponents finishing with 6, 9 and
+12 points yield $B_i=27$. Among agents tied on their own points, a larger
+Buchholz value indicates a higher-scoring opponent schedule, not a larger
+win probability or an estimate of causal policy strength. Byes and forfeits
+need a declared convention; operational failures are not silently scored
+as genuine draws. Our proposed convention excludes unplayed rounds from
+this sum and reports them separately. Balanced head-to-head outcome tables
+and uncertainty remain the primary comparison; no current native Swiss
+standings are claimed.
+
+\paragraph{Study B: demonstrate learning rather than checkpoint loading.}
+Separate native games into training, validation and final test partitions
+before any extraction or optimisation. Compare initial weights, predictive
+training, policy training and a qualified joint-training condition using
+declared data/optimisation budgets. Replicate initialisation/training runs
+and evaluate prespecified training milestones; select checkpoints on validation,
+not the final holdout. Report both downstream game outcomes and prediction
+diagnostics: reward/terminal calibration, action sensitivity, latent collapse
+and multi-step error. Embedding errors from independently changing latent
+spaces are not directly comparable without a common evaluation representation.
+The current one-step JEPA objective and recurrent dream-search path are
+distinct; a JEPA-planning ablation needs a qualified connection between
+latent prediction, reward learning and action evaluation.
+
+\paragraph{Study C: an intervention on graph memory.}
+Freeze consumer weights and immutable card facts. Compare no relational
+retrieval ($K_{\mathrm{none}}$), curated relations ($K_{\mathrm{cur}}$),
+curated plus training-induced evidence ($K_{\mathrm{ind}}$), and curated plus
+type/degree/support-matched shuffled evidence ($K_{\mathrm{shuffle}}$).
+Hold non-relational card information, retrieval/token budgets and candidate
+actions fixed. The principal contrast is
+$K_{\mathrm{ind}}-K_{\mathrm{cur}}$; the shuffled arm controls extra graph
+volume and context. More triples or winning-deck co-occurrence alone do not
+demonstrate useful strategic knowledge.
+
+Induced evidence retains generating run/game/deck, extraction version,
+support/refutation and opportunity counts, with deck context to expose
+co-occurrence confounding. Retrieval traces identify which evidence was
+used and how it affected scoring. Blinded relation review and removal probes
+support mechanism interpretation, but observed associations remain defeasible.
+No test-game evidence is inserted before the locked evaluation finishes.
+
+\paragraph{Study D: a minimal factorial for complementarity.}
+Instead of every possible model combination, cross initial versus trained
+weights ($W_0,W_1$) with the three principal graph conditions:
+\begin{table}[ht]
+\centering
+\begin{tabular}{lccc}
+\toprule
+ & $K_{\mathrm{none}}$ & $K_{\mathrm{cur}}$ & $K_{\mathrm{ind}}$ \\
+\midrule
+Initial weights & $W_0/K_{\mathrm{none}}$ & $W_0/K_{\mathrm{cur}}$ & $W_0/K_{\mathrm{ind}}$ \\
+Trained weights & $W_1/K_{\mathrm{none}}$ & $W_1/K_{\mathrm{cur}}$ & $W_1/K_{\mathrm{ind}}$ \\
+\bottomrule
+\end{tabular}
+\caption{Planned $2\times3$ learning/graph factorial. Eligibility requires
+real training and graph interventions, not optional modules left inactive.}
+\label{tab:learning-factorial}
+\end{table}
+For a prespecified game-level estimand $Y$, the interaction is
+\begin{equation}
+\Delta_{\mathrm{int}}=
+[Y(W_1,K_{\mathrm{ind}})-Y(W_1,K_{\mathrm{cur}})]
+-[Y(W_0,K_{\mathrm{ind}})-Y(W_0,K_{\mathrm{cur}})].
+\end{equation}
+Report its uncertainty rather than declaring synergy from a high full-stack
+point estimate. Subsequently remove LLM reranking, graph retrieval, trained
+forecasts and planning one at a time in a qualified fusion consumer.
+Fixed-weight removal and validation-retuned removal answer different questions;
+equal-compute and natural deployment-cost comparisons are also separate.
+
+\paragraph{Study E: transfer and cumulative evidence.}
+Generate graphs from different producer policies under equal experience
+exposure and extraction rules. A frozen consumer receives its own-policy,
+another producer's, mixed-producer or curated-only graph. Evaluate held-out
+deck families with explicit card/deck overlap audits; multiple burn lists
+are not independent strategic archetypes. Freeze successive graph snapshots
+after training-only batches, use validation to monitor accumulation, and
+reserve an untouched final test for the locked final snapshot. Separate
+graph-only accumulation from joint weight/graph updates and replicate
+independent producer runs: successive snapshots from one run are correlated.
+
+\paragraph{Shared validity and publication boundaries.}
+Whole games, deck families and producer batches define splits; decision-row
+splitting leaks both trajectories and induced relations. Deployed retrieval
+must respect perspective filtering. Before strength runs, require at least
+20 calibration games per intended condition, at least 95\,\% completion,
+zero protocol/illegal-choice failures and audited action semantics.
+Prespecify principal contrasts, samples, exclusions and stopping rules.
+Report wins/completed, completion and wins/scheduled together, retaining
+genuine draws separately from operational failures. Cluster uncertainty over
+training/graph-producer runs as well as evaluation games and stratify by
+deck/opponent; correct the confirmatory contrast family for multiplicity.
+A roughly five-percentage-point two-arm effect near 50\,\% needs about 1,570
+independent games per arm for 80\,\% power at two-sided 5\,\%, before
+clustering or multiplicity; the factorial requires simulation-based power.
+These are planning requirements, not authorisation for an unlimited campaign.
+
+Component-activation and loaded-parameter audits are mandatory: a missing
+checkpoint, random initialisation, heuristic fallback or unused graph cannot
+be credited to the named full model. The core study must substantiate
+policy comparison, learning and graph memory; cross-agent accumulation and
+Commander are extensions only after their independent gates pass.
 
 \subsection{Decision-model benchmark protocol}
 \label{sec:decision-benchmark}
@@ -748,25 +979,67 @@ restrict its empirical claims rather than imply that the whole proposed
 architecture has been measured.
 
 \paragraph{Current feasibility evidence and interface repairs.}
-An October 5 Modern burn-mirror pilot attempted ten games across five policy
-stacks: eight reached terminal losses, while both KL games hit the 1,500-action
-cap. The traces exposed equal forecasts for cancellation and casting
-subdecisions, rather than a protocol rejection. The analytic model now
-distinguishes cancellation from a one-time pending-cast completion forecast,
-and resolves simple fixed-damage player/object targets from the native ability
-representation without changing the submitted legal action. A fresh two-game
-KL check reaches terminal losses in seven and eleven turns (203 decisions
-combined; no cancellations). These checks repair a concrete failure, but do
-not qualify card-/mode-exact dynamics, causal objective comparisons, or
-playing strength.
+After the interface repairs, a bounded native round-robin across burn,
+green creature aggro and blue-white control completed all 18 scheduled games:
+nine ordered deck matchups with one random and one heuristic episode each.
+Random won 2/9 and heuristic 3/9; all episodes had rules-terminal outcomes,
+with no incomplete cells and unchanged frozen input hashes. Four additional
+source-attributed historical deck mirrors also completed. These checks
+establish bounded execution across the selected fixtures, not comprehensive
+mechanics qualification or a reliable playing-strength difference.
 
-Full-session reconnect also now submits the exact server-issued generation
-and authenticated player credential and checks the restored seat and revision.
-A forced socket-close test restored the same native session; long Commander
-pods remain unqualified. The oracle refresh and ontology audits are offline
-file operations, not proof of a successful Neo4j import. No Fuseki service is
-configured, and current native pilots do not demonstrate live ontology-grounded
-decision making. The standalone resource paper evaluates the ontology separately.
+\paragraph{Current policy-stack execution.}
+A separate bounded campaign attempts twelve implemented conditions on a
+Modern mono-red burn mirror against \texttt{phase-ai} at \texttt{VeryEasy},
+with one scheduled game per condition, picker seed 7, a 1,500-action cap,
+a 135-second cooperative game deadline and a 150-second process deadline.
+The campaign uses the pinned protocol-106 runtime and an owned private
+server; source, checkpoint and deck hashes remain unchanged.
+\Cref{tab:native-policy-execution} reports all attempts, including failures.
+
+\begin{table}[ht]
+\centering
+\small
+\begin{tabularx}{\linewidth}{lclX}
+\toprule
+Condition & Completed / scheduled & Outcome & Qualification boundary \\
+\midrule
+Wire random & 1/1 & Loss & Uniform offered-action baseline \\
+Wire heuristic & 1/1 & Loss & Action-type tiers only \\
+Chat: Llama 3.2 1B & 1/1 & Loss & Fallback contribution unaudited \\
+Chat: Qwen2.5-Coder 1.5B & 1/1 & Loss & Fallback contribution unaudited \\
+Chat: Gemma4 E2B & 0/1 & Timeout & Game deadline; not a strength result \\
+Tev1 0.8B & 0/1 & HTTP error & 2,697-token prompt exceeds 2,050-token ceiling \\
+World model: direct & 1/1 & Loss & Checkpoint loading is not native learning \\
+World model: recurrent dream & 1/1 & Loss & Two rollouts, depth three; not JEPA-head planning \\
+LLM--model fusion & 1/1 & Loss & No graph supplied; activation unaudited \\
+KL control & 1/1 & Loss & Analytic forecasts and horizon planning \\
+EFE information proxy & 1/1 & Loss & One-step proxy; budget differs from KL \\
+EFE ambiguity proxy & 1/1 & Loss & One-step proxy; budget differs from KL \\
+\bottomrule
+\end{tabularx}
+\caption{Current native feasibility: ten of twelve scheduled games reach
+rules-terminal outcomes, all losses. Neither incomplete game is a draw.
+These single-game cells do not satisfy the calibration gate or establish
+a policy ranking, a language-model contribution, or learning improvement.}
+\label{tab:native-policy-execution}
+\end{table}
+
+The explicit model checkpoint was not trained on the native evaluation
+distribution, and permissive parameter loading requires a loaded-key audit
+before trained-model claims. No graph-memory intervention is active in this
+campaign. The two failed conditions remain visible rather than being removed
+from the denominator or replaced by easier fallback episodes. Thus these
+measurements demonstrate which stacks execute within the declared limits,
+not the effects specified by RQ2--RQ5.
+
+The analytic control model distinguishes cancellation from pending-cast
+completion and interprets simple fixed-damage targets. These approximations
+do not establish card-/mode-exact dynamics or a causal objective comparison.
+Long Commander pods and live ontology-grounded decisions remain unqualified.
+A read-only ontology snapshot supports resource queries independently of
+gameplay; resource validation is not evidence that a playing policy used
+graph relations.
 
 After pilot diagnostics, we predeclare comparisons and freeze a fresh holdout,
 including a fixed failure policy and sample size. Games are the analysis unit;
@@ -780,145 +1053,8 @@ at two-sided 5\,\% significance to detect that effect, before additional
 dependence or multiplicity. Pilot durations therefore inform both a power
 analysis and an explicit compute budget, not an automatic multi-day run.
 
-\subsection{Archived preliminary experiments}
-
-\paragraph{(i) Engine correctness.} The repository contains $\sim$50 pytest modules (513~passing tests, 27~skipped, 0~failures) covering combat, the stack, triggered/static/replacement/continuous abilities, watchers, face-down permanents, delayed triggered abilities, and end-to-end games. The whole-suite runtime is under 20~seconds on a single CPU.
-
-\paragraph{(ii) Knowledge-graph coverage.} The OWL ontology v1.1 declares 17 top-level classes and 24 object/data properties. After Scryfall ingestion of a representative Standard environment ($\sim$5{,}000 cards) the graph contains the cards, their oracle-text SBERT embeddings, and combo edges imported from Commander Spellbook.
-
-\paragraph{(iii) Self-play promotion loop.} The promotion loop of \Cref{alg:promotion} is exercised by two unit tests (\texttt{tests/test\_rl\_trainer.py}); both pass. End-to-end promotion behaviour --- whether champions stabilise after $\mathcal{O}(10)$ rounds of $N=20$ games --- is the next planned experiment and is not reported here.
-
-\paragraph{Checkpoint-benchmark status.} We ran a clean checkpoint evaluation using \path{scripts/benchmark_trained_agents.py} across four archived JEPA checkpoints (\texttt{jepa\_epoch\_10.pt}, \texttt{epoch\_30}, \texttt{epoch\_50}, \texttt{jepa\_final.pt}) against \texttt{random} and \texttt{heuristic} baselines (8~games per baseline per checkpoint, symmetric Mono-Red mirror, seed~77, \texttt{--max-turns}~30). Results are in \Cref{tab:checkpoint-eval}. The final checkpoint achieves 25\,\% win rate against both baselines, below the heuristic-vs-random parity level of $\sim$33\,\%, indicating that the world model still needs more training data or epochs to match the hand-tuned heuristic. The active-inference-inspired checkpoint selector identifies \texttt{jepa\_final.pt} as best by expected free energy (EFE~0.081; lower is better).
-
-\begin{table}[h]
-\centering
-\small
-\begin{tabular}{lrrr}
-\toprule
-Checkpoint & vs.\ random WR & vs.\ heuristic WR & EFE \\
-\midrule
-\texttt{jepa\_epoch\_10.pt} & 12.5\% & 0.0\%  & 0.455 \\
-\texttt{jepa\_epoch\_30.pt} & 12.5\% & 12.5\% & 0.401 \\
-\texttt{jepa\_epoch\_50.pt} & 25.0\% & 25.0\% & 0.105 \\
-\texttt{jepa\_final.pt}     & 25.0\% & 25.0\% & \textbf{0.081} \\
-\bottomrule
-\end{tabular}
-\caption{JEPA checkpoint evaluation on symmetric Mono-Red mirror match (8 games/baseline/checkpoint, seed~77, max-turns~30). Win rate against \texttt{random} and \texttt{heuristic} baselines. EFE is the active-inference-inspired selection score (lower is better).}
-\label{tab:checkpoint-eval}
-\end{table}
-
-\paragraph{(iv) Pairwise ablation against the heuristic baseline.}
-We use the in-tree \path{scripts/run_matchups.py} harness to play each candidate agent versus the strategy-aware \texttt{HeuristicAgent} on a fixed Modern matchup (Mono-Red Burn vs.\ Azorius Control), 16 games per cell with seat order swapped to remove going-first bias, \texttt{--max-turns}~30, seed~7. Results are summarised in \Cref{tab:ablation-1v1}. The KG-grounded heuristic and the LLM agent both clear 50\,\% against the baseline; the world-model agent ties; the LLM--WM--KG \emph{fusion} agent underperforms its own components, which we attribute to (a)~its much larger per-decision latency biasing toward conservative passes when the cost-aware short-circuit fires, and (b)~uncalibrated mixture weights $(\alpha_h,\alpha_g,\alpha_w,\alpha_\ell)$ in the additive scoring of \Cref{sec:agentzoo}. We record this result because it is the direct motivation for the reformulation in \Cref{sec:aif}: a weighted sum of four heterogeneous signals has four free parameters, no unit in which the terms are commensurable, and no principle for setting them. Belief-space KL control removes the choice --- the knowledge-graph, heuristic and language-model signals shape the passive prior $q$, and the price of deviating from it is fixed at $-\log q(a)$ rather than tuned.
-
-\begin{table}[h]
-\centering
-\small
-\begin{tabular}{lrrrr}
-\toprule
-Agent vs.\ heuristic & Wins & Win-rate & Avg.\ turns & Avg.\ s/game \\
-\midrule
-\texttt{kg\_heuristic}     & 9 / 16 & 56.3\% &  6.4 &   0.32 \\
-\texttt{llm} (Ollama)      & 9 / 16 & 56.3\% &  5.9 &   1.02 \\
-\texttt{world\_model}      & 8 / 16 & 50.0\% &  7.1 &   2.22 \\
-\texttt{llm\_fusion}       & 5 / 16 & 31.3\% &  7.8 & 114.46 \\
-\bottomrule
-\end{tabular}
-\caption{Pairwise win-rate of each candidate agent versus the strategy-aware \texttt{HeuristicAgent} on a single Modern matchup (Mono-Red Burn vs.\ Azorius Control), 16 games per agent, seat-swapped, seed~7. Average wall time is per game on a single CPU; the LLM agent uses an Ollama-hosted Llama-3 model with \texttt{keep\_alive} caching.}
-\label{tab:ablation-1v1}
-\end{table}
-
-\paragraph{(v) Multi-agent round-robin (Standard, Swiss).}
-We additionally ran a 7-agent Swiss tournament on the same Modern environment, 6 rounds, with Buchholz tiebreak (\Cref{tab:swiss}). The hand-tuned \texttt{HeuristicAgent} is currently undefeated; \texttt{ActiveInferenceAgent} and \texttt{LLMFusionAgent} share second place. The lower-bound \texttt{RandomAgent} sits at the expected level. The world-model and bare-LLM standings reflect the harness pre-fix --- the snapshot of the corrected harness (1v1, \Cref{tab:ablation-1v1}) is the more reliable measurement, and a re-run of the multi-agent round-robin under the patched runner is queued in \Cref{sec:future}.
-
-\begin{table}[h]
-\centering
-\small
-\begin{tabular}{rlrrr}
-\toprule
-Rank & Agent              & W--D--L & Pts & Buchholz \\
-\midrule
-1 & \texttt{heuristic}        & 6--0--0 & 18 & --- \\
-2 & \texttt{active\_inference}& 4--0--2 & 12 & 45 \\
-3 & \texttt{llm\_fusion}      & 4--0--2 & 12 & 42 \\
-4 & \texttt{kg\_heuristic}    & 2--0--2 &  6 & --- \\
-5 & \texttt{random}           & 1--0--4 &  3 & --- \\
-6 & \texttt{llm} (pre-fix)    & 1--0--4 &  3 & --- \\
-7 & \texttt{world\_model} (pre-fix) & 0--0--4 & 0 & --- \\
-\bottomrule
-\end{tabular}
-\caption{Standard 7-agent Swiss tournament, 6 rounds, seed~7. \texttt{llm} and \texttt{world\_model} rows reflect the runner before the auto-concede fix described in \S\ref{sec:eval-debug} and are recorded here for transparency; their corrected pairwise numbers appear in \Cref{tab:ablation-1v1}.}
-\label{tab:swiss}
-\end{table}
-
-\paragraph{(vi) Commander pod.}
-A 4-seat 8-round EDH pod (Krenko / Atraxa / Urza / Meren cores, seat rotations to remove turn-order bias) gave the standings in \Cref{tab:pod}: the KG-grounded heuristic was the clear winner, with \texttt{LLMFusionAgent} third despite its high per-turn cost. With only 4 distinct decks the pod is too small to draw strong conclusions, but it demonstrates that the system runs Commander games to completion at the expected $\sim$8--12 turn length without crashing.
-
-\begin{table}[h]
-\centering
-\small
-\begin{tabular}{rlrr}
-\toprule
-Rank & Agent           & Wins & Pts \\
-\midrule
-1 & \texttt{kg\_heuristic} & 3 & 11 \\
-2 & \texttt{random}        & 2 &  8 \\
-3 & \texttt{llm\_fusion}   & 1 &  5 \\
-4 & \texttt{heuristic}     & 0 &  2 \\
-\bottomrule
-\end{tabular}
-\caption{Commander 4-seat pod, 8 rounds with seat rotations, seed~7. Sample size is small (8 games) and the deck pool is fixed at 4 cores --- treat as a smoke test for end-to-end EDH play, not a strength claim.}
-\label{tab:pod}
-\end{table}
-
-\paragraph{(vii) Debugging note: harness-induced auto-concede.}
-\label{sec:eval-debug}
-An earlier overnight run reported the LLM and world-model agents losing all 16 ablation games on turn~1. Investigation traced the cause to the rules engine always exposing \texttt{ActionType.CONCEDE} as a legal action (a debug affordance, see \texttt{rules\_engine.get\_legal\_actions}). The Llama-3 prompt enumerated the legal-action indices but omitted \texttt{CONCEDE} from the rendered options, so a stray ``1'' in the model's response collapsed onto the concede slot; the world-model controller, with effectively random initial weights, sampled the same slot stochastically. Filtering \texttt{CONCEDE} out of the candidate set inside both \texttt{LLMAgent.decide\_action} and \texttt{WorldModelAgent.decide\_action} restored normal play and produced the numbers in \Cref{tab:ablation-1v1}. We regard this as an instructive small example of how an under-specified action interface --- not the policy itself --- can dominate apparent agent quality, and have added a regression test to \texttt{tests/test\_agents/}.
-
-\paragraph{(viii) JEPA world-model ablation.}
-\label{sec:eval-ablation}
-We trained four JEPA variants for 30 epochs each on 120 freshly collected self-play trajectories (Modern Burn vs.\ Azorius Control) and evaluated each against four fixed baselines (8 games each), using \texttt{scripts/benchmark\_trained\_agents.py}. Results are in \Cref{tab:jepa-ablation}.
-
-\begin{table}[h]
-\centering
-\small
-\begin{tabular}{lrrrrr}
-\toprule
-Variant & vs heuristic & vs random & vs llm & vs active\_inf & Mean WR \\
-\midrule
-\texttt{full} (KG $+$ free-bits) & 0.38 & 0.50 & 0.50 & 0.38 & 0.44 \\
-\texttt{no\_kl} ($\beta_J{=}0$) & 0.50 & 0.50 & 0.50 & 0.38 & \textbf{0.47} \\
-\texttt{small} (KG-dim 64) & 0.38 & 0.38 & 0.38 & 0.50 & 0.41 \\
-\texttt{no\_kg} & 0.50 & 0.25 & 0.25 & 0.38 & 0.34 \\
-\bottomrule
-\end{tabular}
-\caption{Archived JEPA checkpoint-variant ablation: 30 training epochs, 120 self-play trajectories (seed~20260428), and 8 evaluation games per baseline. The \texttt{no\_kg} point estimate is lowest; disabling encoder KL regularisation ($\beta_J=0$) gives a slightly higher mean than the full variant. These small samples do not establish a graph benefit or a cause for the difference. Because dream search uses separate recurrent dynamics, this is not a controlled comparison of JEPA rollout accuracy.}
-\label{tab:jepa-ablation}
-\end{table}
-
-\paragraph{(ix) Cross-seed robustness.}
-To test sensitivity to random initialisation we ran the same four-agent comparison (\texttt{heuristic}, \texttt{kg\_heuristic}, \texttt{world\_model}, \texttt{active\_inference}) for 72 games each across five random seeds ($\{11, 23, 47, 101, 20260428\}$, 360 total games). Agent rankings are stable to within $\pm 2$\,pp across all seeds: \texttt{kg\_heuristic} leads at $26.4\,\%$ mean win rate, \texttt{heuristic} second at $24.4\,\%$, \texttt{world\_model} third at $24.2\,\%$, \texttt{active\_inference} fourth at $25.0\,\%$. The compressed range ($<6$\,pp between first and fourth) is expected given the domain: at $\leq 60$~turns on Modern, games resolve quickly on mana efficiency more than on strategic depth.
-
-\begin{table}[h]
-\centering
-\small
-\begin{tabular}{lrrrrrl}
-\toprule
-Agent & s=11 & s=23 & s=47 & s=101 & s=main & Mean \\
-\midrule
-\texttt{kg\_heuristic}    & 27.8 & 26.4 & 25.0 & 27.8 & 25.0 & \textbf{26.4} \\
-\texttt{active\_inference}& 22.2 & 23.6 & 23.6 & 20.8 & 26.4 & 23.3 \\
-\texttt{heuristic}        & 25.0 & 29.2 & 29.2 & 30.6 & 25.0 & 27.8 \\
-\texttt{world\_model}     & 25.0 & 20.8 & 22.2 & 20.8 & 23.6 & 22.5 \\
-\bottomrule
-\end{tabular}
-\caption{Win-rate (\%) per seed, 72 games per seed per agent, Modern matchup. ``s=main'' is seed~20260428.}
-\label{tab:robustness}
-\end{table}
-
-\paragraph{(x) LLM model-size sweep.}
-Stream~C evaluated three small Ollama-hosted models --- \texttt{llama3.2:1b}, \texttt{qwen2.5-coder:1.5b}, and \texttt{gemma3:4b} --- each playing 8 games against \texttt{heuristic} on the same Modern matchup (seed~20260428). All three finish at exactly $50\,\%$, with mean game lengths of $6.75$, $7.25$, and $7.0$ turns respectively and per-game wall times under $1$\,s. We interpret this as a clean negative: within the $1$--$4$\,B parameter range, model capacity does not differentiate play quality when actions are constrained to the engine's legal set and no chain-of-thought is enabled. The apparent ceiling suggests that action-selection quality, not language quality, is the bottleneck --- consistent with our decision to move strategic reasoning into the world model and use the LLM only as a soft prior over the legal set.
-
-\paragraph{(xi) Planned: objective ablation for the control formulation.}
+\subsection{Controlled objective and ontology interventions}
+\paragraph{Objective ablation for the control formulation.}
 \label{sec:eval-aif-ablation}
 The claim of \Cref{sec:aif} --- that belief-space KL control is the right objective and the two conventional EFE factorisations are not --- is an empirical claim in our domain, and we state the experiment that tests it rather than asserting the conclusion. All three objectives are exposed by one picker interface. However, the current KL arm performs horizon planning while the legacy EFE arms use one-step scoring. The shared belief, transition model and preference potential do not remove this planning-budget confound. The implemented interleaved episode sweep is consequently a policy-stack pilot; an objective-only ablation requires a common continuation set, horizon and computational budget. Picker seeds alone also do not seed the native engine or opponent AI.
 
@@ -930,7 +1066,7 @@ Three measurements are planned against \texttt{phase-ai} at fixed difficulty:
 \end{enumerate}
 The existing legacy arms are proxy baselines, not full theoretical observation-channel implementations. A controlled result must qualify their correspondence to the equations before generalising to Active Inference. No separation would also be informative, but could reflect limited horizons, model errors or inadequate probes rather than establishing equivalence of the objectives.
 
-\paragraph{(xii) Planned: ontology-conditioned evaluation.}
+\paragraph{Ontology-conditioned evaluation.}
 The ontology is validated structurally and against its own competency questions \citep{neuburger2026ontology}, but the \emph{agent-facing} value of the symbolic layer is not yet measured. Two follow-ups are queued. First, a reasoning benchmark generated from the ontology itself by backward-chaining proof search in the manner of \citet{vanschependom2026synthology}, which gives controlled multi-hop depth and proof-based negatives for free. Second, submission of the generated artefact to a public competency-question-driven ontology benchmark \citep{cq4oe2026} as an additional baseline, since our construction combines author-directed, LLM-assisted conceptual modelling with deterministic normative vocabulary extraction rather than an autonomous generation pipeline.
 
 We deliberately do not claim ``state of the art'' numbers: we know of no comparable public baseline that plays full-Comprehensive-Rules MTG, and the contribution of this report is the system itself, plus the ontology and the released self-play infrastructure.
@@ -963,17 +1099,13 @@ or replace, the learned-dynamics and control claims of this paper.
 \section{Future Work}
 \label{sec:future}
 
-The following items are tracked in \texttt{IMPLEMENTATION\_PLAN.md} and constitute the near-term roadmap:
+The controlled studies in \Cref{sec:learning-study} motivate the following
+extensions:
 \begin{enumerate}[leftmargin=1.2em, itemsep=1pt]
   \item \textbf{Controlled decision-model evaluation.} Complete the matched-context, matched-shortlist and size-matched comparisons of \Cref{sec:decision-benchmark}; instrument chat fallback, seed the native engine/AI and rotate seats. Then evaluate Tev1 as a critic over world-model candidates separately from its direct-selector baseline.
-  \item \textbf{Strategy-aware and agent-driven mulligan policy.} The current keep/bottom heuristic is a single deterministic land-count rule shared by all agents. We are moving the decision through the agent interface (\texttt{MTGAgent.decide\_mulligan}, \texttt{MTGAgent.bottom\_cards}) so that aggressive, control, combo, and reactive strategies---and ultimately learned policies---can evaluate their own opening hands. JEPA-conditioned mulligan selection (rolling out a few imagined turns from each candidate hand) is the longer-term target.
-  \item \textbf{Priority-loop driven instants in the sync simulator.} The sync \texttt{GameSimulator} currently advances combat without exposing an instant-speed window to the non-active player; threading the existing \texttt{priority\_loop} into combat steps will let counterspells and combat tricks fire mid-attack.
-  \item \textbf{Trained-agent benchmark.} \emph{Completed} (\Cref{sec:eval-ablation,tab:jepa-ablation}): four JEPA variants benchmarked against four baselines with active-inference checkpoint selection; \texttt{no\_kl} ranked first (EFE~$=-0.034$). Next: scale to $\geq$500~self-play trajectories and repeat to assess whether the KL term becomes beneficial with sufficient data.
-  \item \textbf{Active-inference checkpoint selection.} The EFE-based selector was used in vivo for the ablation above (\Cref{sec:eval-ablation}). Extend from post-hoc ranking to an in-training promotion rule where candidates are selected during the self-play loop rather than only at evaluation time.
-  \item \textbf{Ablation matrix.} The four-variant JEPA sweep (\Cref{tab:jepa-ablation}) is a first step. Remaining: toggleable dream / opponent-model components with paired-game ELO comparison.
-  \item \textbf{Neural reasoner training.} A supervised + RL fine-tune of a graph-conditioned reasoner (\texttt{NeuralReasonerAgent}) replacing the SBERT card embedding with end-to-end GraphSAGE embeddings.
-  \item \textbf{Parallel self-play.} \texttt{asyncio.gather}-based parallel game execution to lift trajectory throughput, plus restoring \texttt{pytest-asyncio} so the async runner is exercised in CI.
-  \item \textbf{Belief-state visualisation.} JSON export and a Streamlit panel for the particle-filter posterior over the opponent's hand.
+  \item \textbf{Native learning and component interventions.} Train and calibrate latent dynamics, reward and policy components on frozen native trajectories with independent training seeds. Evaluate the weight/graph factorial and leave-component-out fusion under activation audits, before attributing an effect to JEPA, a graph or a language model.
+  \item \textbf{Deck-diversity generalisation.} A larger study should cover distinct strategic demands: tempo, midrange, control, ramp, graveyard recursion, artifact synergy, prison and multi-card combo, rather than mainly variations on burn. Include multiple independently constructed lists per family and hold out complete construction families; audit shared cards and combo packages to prevent near-duplicate leakage. Measure within-family piloting, unseen-list adaptation and unseen-playstyle transfer separately, with equal exposure across producers and per-archetype outcomes rather than only a pooled win rate. Cross-format and Commander transfer should be separate experiments because legality, starting life, deck size and multiplayer incentives also change. The present seven-list pool contains related burn variants and cannot substantiate this broad generalisation claim.
+  \item \textbf{Strategy-aware opening decisions.} Compare archetype-sensitive keep/bottom policies under matched information and mulligan rules; evaluate learned forecasts only after their opening-hand calibration is established.
   \item \textbf{Commander politics.} Threat assessment across $N{>}2$ opponents, including a multi-agent extension of the active-inference objective, and the Commander variant of the mulligan (free first mulligan).
   \item \textbf{Ontology evolution and ABox migration.} Migrate the Scryfall importer onto the v2.0 role/situation and quality/region patterns so the expressive gain reaches the populated graph, then wire the framework into a human-in-the-loop ontology-evolution toolchain \citep{ontology_extender, garijo2026maseo} so the schema is updated semi-automatically per Standard rotation, with humans adjudicating debated axioms. The retrieval-scoped extension strategy of \citet{lippolis2026ontoextend} --- retrieve the relevant ontology fragment per competency question rather than stuffing the whole TBox into context --- is the approach we intend to follow.
   \item \textbf{Promotion of induced evidence.} Define and evaluate the gate by which an \texttt{mtg:InducedSynergy} with sufficient support may be promoted to a curated \texttt{synergisesWith} edge, including how to represent and surface disagreement between runs \citep{ehrenmuller2026sock}. This is the point at which the curated/induced boundary becomes a policy question rather than a schema question.
@@ -983,9 +1115,9 @@ The following items are tracked in \texttt{IMPLEMENTATION\_PLAN.md} and constitu
 % =============================================================================
 \section{Conclusion}
 \label{sec:concl}
-We have presented a research framework for combining native rules execution, structured knowledge and learned planning in Magic: The Gathering. The repository implements candidate components and a completion-aware native evaluation interface, but does not yet demonstrate the complete ontology/KG/JEPA learning architecture end-to-end. The present evidence consists of resource validation, archived experiments and bounded native feasibility checks. Controlled strength comparisons, live graph grounding and multiplayer qualification remain explicit gates. We hope the framework provides a useful experimental substrate without mistaking architectural ambition for a measured result.
+We have presented a research framework for combining native rules execution, structured knowledge and learned planning in Magic: The Gathering. The system implements candidate components and a completion-aware native evaluation interface, but does not yet demonstrate the complete ontology/KG/JEPA learning architecture end-to-end. Current evidence consists of resource validation and bounded native execution measurements. The self-contained study design separates policy comparison, parametric learning, graph memory, their interaction and cross-agent transfer. Controlled strength comparisons, live graph grounding and multiplayer qualification remain prerequisites for empirical learning claims.
 
-\paragraph{Reproducibility statement.} All code, the OWL ontology, sample decklists, training scripts, and this report are available under MIT at \url{https://github.com/cuteredpwnda/opposition-agents-playing-mtg}.
+\paragraph{Reproducibility statement.} Code, the OWL ontology, sample decklists, training scripts and this report are available at \url{https://github.com/cuteredpwnda/opposition-agents-playing-mtg}. Project-authored materials use the repository's MIT license; third-party decks and dependencies retain their accompanying licenses and attribution. Experimental manifests identify source revisions, deck and checkpoint hashes, configuration and retained failure records.
 
 % =============================================================================
 \section*{Acknowledgments}

@@ -158,7 +158,24 @@ def _make_picker(args: argparse.Namespace, seed: int):
         if not agent_name:
             raise ValueError("agent picker requires a name, e.g. agent:heuristic")
         # seat id is corrected by AgentActionPicker at runtime.
-        agent = make_agent(agent_name, player_id="seat0", seed=seed)
+        options = {}
+        checkpoint = getattr(args, "agent_checkpoint", None)
+        if checkpoint:
+            if agent_name not in {"world_model", "fusion", "llm_fusion"}:
+                raise ValueError("--agent-checkpoint requires a world-model or fusion agent")
+            if not Path(checkpoint).is_file():
+                raise ValueError(f"Checkpoint does not exist: {checkpoint}")
+            options["checkpoint"] = checkpoint
+        if agent_name == "world_model":
+            options.update(
+                mode=args.agent_mode, device=args.agent_device,
+                deterministic=args.agent_deterministic,
+                dream_rollouts=args.dream_rollouts, dream_depth=args.dream_depth,
+            )
+        elif agent_name in {"fusion", "llm_fusion"}:
+            options.update(llm_model=args.ollama_model, dream_rollouts=args.dream_rollouts,
+                           dream_depth=args.dream_depth)
+        agent = make_agent(agent_name, player_id="seat0", seed=seed, **options)
         return AgentActionPicker(agent=agent, name=f"phase_rs_agent:{agent_name}")
     raise ValueError(f"unsupported picker: {args.picker}")
 
@@ -172,6 +189,10 @@ def _load_our_deck(args: argparse.Namespace) -> dict:
 def run(args: argparse.Namespace) -> int:
     if args.games < 1 or args.max_retries < 1 or args.max_actions < 1:
         raise ValueError("games, max-retries and max-actions must be positive")
+    if args.dream_rollouts < 1 or args.dream_depth < 1:
+        raise ValueError("dream-rollouts and dream-depth must be positive")
+    if args.agent_checkpoint and not Path(args.agent_checkpoint).is_file():
+        raise ValueError(f"Checkpoint does not exist: {args.agent_checkpoint}")
     if not 1 <= args.max_message_mib <= 64:
         raise ValueError("max-message-mib must be between 1 and 64")
     if args.max_turns is not None and args.max_turns < 1:
@@ -205,6 +226,14 @@ def run(args: argparse.Namespace) -> int:
         "config": vars(args),
         "objectives": objectives,
         "repository_commit": _revision(REPO_ROOT),
+        "agent_checkpoint_sha256": (
+            hashlib.sha256(Path(args.agent_checkpoint).read_bytes()).hexdigest()
+            if args.agent_checkpoint else None
+        ),
+        "agent_qualification": (
+            "Archived checkpoint/native semantics and component activation require auditing"
+            if args.picker.startswith("agent:") else None
+        ),
         "phase_rs_commit": _revision(DEFAULT_SUBMODULE),
         "protocol_version": PROTOCOL_VERSION,
         "deck_sha256": hashlib.sha256(
@@ -361,6 +390,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--ollama-model", default="gemma4:e2b")
     parser.add_argument("--ollama-url", default="http://localhost:11434")
+    parser.add_argument("--agent-checkpoint", default=None,
+                        help="Explicit checkpoint for agent:world_model or agent:fusion")
+    parser.add_argument("--agent-mode", choices=["direct", "dream_search"], default="direct")
+    parser.add_argument("--agent-device", default="cpu")
+    parser.add_argument("--agent-deterministic", action="store_true")
+    parser.add_argument("--dream-rollouts", type=int, default=8)
+    parser.add_argument("--dream-depth", type=int, default=10)
     add_tev1_arguments(parser)
     parser.add_argument(
         "--ai-difficulty",

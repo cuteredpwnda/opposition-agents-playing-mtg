@@ -20,6 +20,21 @@ def test_shared_repository_references_resolve():
     assert all(count > 0 for count in counts.values())
 
 
+def test_manuscripts_are_self_contained_and_report_current_native_evidence():
+    from scripts.validate_paper_references import ROOT
+
+    for name in PAPERS:
+        source = (ROOT / "paper" / f"{name}.tex").read_text(encoding="utf-8")
+        assert ".md" not in source
+        assert "October 5" not in source
+    agents = (ROOT / "paper" / "opposition_agents_mtg.tex").read_text(encoding="utf-8")
+    assert "Archived preliminary experiments" not in agents
+    assert "tab:study-ablations" in agents
+    assert "tab:baseline-policies" in agents
+    assert "Buchholz" in agents
+    assert "Deck-diversity generalisation" in agents
+
+
 def test_uncited_reading_is_checked_by_bibtex(monkeypatch, tmp_path):
     from subprocess import CompletedProcess
     from unittest.mock import Mock

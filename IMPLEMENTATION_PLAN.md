@@ -219,6 +219,53 @@ items stay for traceability.
 
 ### Done
 
+- [x] **Self-contained scientific evaluation and native-stack repair** —
+      removed historical Python-engine strength tables and dated work-log
+      narratives from the agents paper; no manuscript refers to Markdown
+      documentation. Added native `phase-ai` versus wire/Python baseline
+      definitions, disclosed internal-state/filtered-observation asymmetry,
+      research-question ablation overview, Buchholz formula/example and
+      future held-out deck/playstyle generalisation. Title-page dates remain.
+      Native structured stack entries now preserve source/controller/kind;
+      malformed shapes fail explicitly and scalar fixtures remain supported.
+      The repaired direct/dream/fusion rerun completes 3/3 terminal losses
+      with unchanged hashes in `runs/model_qualification/20261005_172439_615033`.
+      This establishes execution, not trained-dynamics or graph improvement.
+      The qualification harness includes both wire baselines, explicit native
+      difficulty, bounded replicates and selected-condition repair reruns.
+      The full current twelve-condition local campaign in
+      `runs/model_qualification/20261005_172945_548058` attempts all cells:
+      10/12 rules-terminal losses, zero unstarted conditions, unchanged hashes.
+      Gemma4 hits the game deadline; Tev1 explicitly rejects a 2,697-token
+      prompt above 2,050. The manuscript reports all twelve without treating
+      failures as draws. These are not qualified RQ2--RQ5 learning results.
+
+- [x] **Research-question learning/graph ablation protocol (Oct 5)** —
+      `docs/AGENT_LEARNING_STUDY.md` and the agents manuscript define RQ1
+      policy comparison, RQ2 parametric learning, RQ3 play-built graph memory,
+      RQ4 their interaction and RQ5 cross-producer transfer/accumulation.
+      Staged studies separate deployment from mechanism comparisons, initial/
+      predictive/policy/joint learning, frozen-policy graph interventions with
+      shuffled controls, a minimal 2×3 factorial and cross-agent evidence.
+      Whole-game/deck-family splits, component activation, experience/compute
+      controls, clustered uncertainty, power and stopping rules are explicit.
+      README, paper README, runbook and section 6 link the protocol; the plan
+      remains the eligibility tracker. All review PDFs rebuild with resolved
+      citations/references. This is a planned study, not new performance claims.
+
+- [x] **Explicit model-stack pilot wiring and sourced-deck smokes (Oct 5)** —
+      four sourced heuristic mirrors complete 4/4 terminal games at
+      `runs/paper_pilot/20261005_171021_549088`, with unchanged input hashes;
+      this does not qualify all card semantics or show strength. The ablation
+      CLI accepts checkpoint/direct-dream/device/deterministic/rollout options;
+      the world-model factory forwards the latter instead of losing them.
+      `scripts/run_model_qualification.py` bounds a sequential ten-condition
+      chat/Tev1/model/fusion/control investigation with owned private server,
+      explicit failure/subprocess timeout recording and component limitations.
+      Related harness tests pass; installed models and legacy checkpoint are
+      available. Native learned dynamics, KG and Tev1-planner combinations
+      remain unqualified and are not labelled implemented full-study arms.
+
 - [x] **PR #2 Copilot review fixes and local baseline campaign (Oct 5)** —
       removed tracked `.phase-rs-server.lock` and ignored runtime locks;
       Unix acquisition now polls to a monotonic deadline, closes timed-out
@@ -1558,6 +1605,21 @@ relations; define shared foundational dependencies and test aggregate-graph
 equivalence plus each module's pinned import closure. Do not infer independent
 reasoner certification from editor groupings. This remains queued.
 
+#### K12 — Research-question-driven learning and graph intervention qualification
+
+The detailed protocol is [docs/AGENT_LEARNING_STUDY.md](docs/AGENT_LEARNING_STUDY.md).
+Implement native multi-seat Python control and controlled RNG/seat assignment
+before RQ1 policy-v-policy comparisons; qualify matched native-AI information
+access before interpreting algorithm effects. Audit checkpoint loaded-key coverage,
+native state features, planner/model use and chat fallback before RQ2 training
+comparisons. Build training-only induced graph snapshots with exposure,
+refutation and producer provenance, then wire audited query/consumer
+interventions (building on K4/K10) before RQ3/RQ4's initial/trained weights
+by none/curated/induced graph factorial. Freeze deck-family/game splits,
+independent training seeds and final-test boundaries before RQ5 cross-producer
+transfer or cumulative-evidence curves. These execution gates remain queued;
+the written protocol and terminal feasibility pilots do not satisfy them.
+
 #### H1 — Continuous-effects layer system (CR 613) ✅ Implemented
 
 **Why**: power/toughness, type-changing, ability-granting, controller-
@@ -2860,6 +2922,28 @@ tests/
 ---
 
 ## 6. Benchmark & Evaluation Plan
+
+### Research-question study: learning, policies and play-built graph memory
+
+The scientific protocol is specified in
+[docs/AGENT_LEARNING_STUDY.md](docs/AGENT_LEARNING_STUDY.md) and mirrored in
+the agents paper's research-question/ablation subsection. This plan remains
+the authoritative implementation and eligibility tracker.
+
+| RQ | Core study | Required implementation before confirmatory runs |
+|---|---|---|
+| RQ1: compare playing agents | Anchor opponent plus balanced qualified-policy head-to-head; strength/cost/failure effects | Native two-policy controller, seat/start controls and component/fallback audits |
+| RQ2: demonstrate learning | Native fixed-data learning curves, repeated training seeds and frozen holdout | Native training/action semantics, trained dynamics/reward/policy coverage and predictive diagnostics |
+| RQ3: evaluate play-built graph | Frozen consumer: non-relational facts / curated / induced / shuffled evidence | Split-safe trace induction, exposure/refutation provenance and verified native retrieval |
+| RQ4: isolate complementarity | Initial/trained weights × none/curated/induced relations (2×3), then component removals | Qualified RQ2/RQ3 interventions and shared inference budgets |
+| RQ5: transfer/accumulation | Cross-producer graphs and versioned memory on held-out deck families | Independent producer runs, equal experience, leakage-free snapshots and consumer activation |
+
+Do not launch the full Cartesian zoo as a proxy for these questions. First
+qualify mechanisms, then preregister contrasts and sample/power budgets.
+Training, validation and final test are split by deck families and whole
+games; no holdout traces become graph evidence before evaluation. An API smoke,
+random-initialised learner or inactive KG is not an eligible scientific arm.
+Null/harmful effects are reportable; integration failures are distinct.
 
 ### Current execution plan — phase-rs-first (Oct 2026)
 

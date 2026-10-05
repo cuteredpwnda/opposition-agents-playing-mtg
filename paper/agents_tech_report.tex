@@ -67,7 +67,7 @@ traces each agent emits.  All cited paths are workspace-relative.
 \tableofcontents
 \bigskip
 
-\section*{Runtime status for the October 2026 review}
+\section*{Native runtime configuration}
 
 The current native target is phase-rs 0.102.0, protocol 106 \cite{phase2026engine},
 from \url{https://github.com/phase-rs/phase}. The bridge sends
@@ -583,7 +583,7 @@ Symptoms: long think times or fallback-only behaviour.
 
 Checklist:
 \begin{itemize}[leftmargin=1.2em, itemsep=1pt]
-      \item Verify Ollama endpoint and model are available (see \texttt{docs/OLLAMA\_SETUP.md}).
+      \item Verify that the configured Ollama endpoint responds and that the selected model is installed.
       \item Lower \texttt{top\_n} and increase \texttt{obvious\_threshold} to reduce LLM calls under load.
       \item Confirm timeout fallback path returns a legal action and records the fallback reason in reasoning traces.
 \end{itemize}
@@ -811,15 +811,12 @@ Neo4j outage can never block play.
 \section{Where to look next}
 \begin{itemize}[leftmargin=*]
   \item Companion paper: \path{paper/opposition_agents_mtg.tex}.
-  \item Single source of truth: \path{IMPLEMENTATION_PLAN.md}.
-  \item Control objective: \path{src/agents/kl_control.py}, reviewed in
-        \path{docs/ACTIVE_INFERENCE.md}.
+  \item Control objective implementation: \path{src/agents/kl_control.py}.
   \item Ontology: \path{data/ontology/mtg-ontology-v2.0.ttl},
         validated by \path{scripts/validate_ontology.py}.
   \item Competency questions: \path{data/competency_questions.yaml}.
-  \item Engine docs: \texttt{ARCHITECTURE.md}, \texttt{DEVELOPMENT.md}.
-  \item World-model design: \texttt{docs/WORLD\_MODEL\_DESIGN.md}.
-  \item Opponent modelling:   \path{docs/OPPONENT_MODELING_WITH_DECKLIST.md}.
+  \item Native rules engine and built-in opponent: \cite{phase2026engine}.
+  \item World-model implementation: \path{src/world_model/}.
 \end{itemize}
 
 % =========================================================================

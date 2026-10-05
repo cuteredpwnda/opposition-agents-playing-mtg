@@ -25,7 +25,6 @@ from src.engine_legacy.game_state import (
     Zone,
 )
 
-
 PHASE_TO_ENGINE_ACTION: dict[str, ActionType] = {
     "PassPriority": ActionType.PASS_PRIORITY,
     "Pass": ActionType.PASS_PRIORITY,
@@ -226,14 +225,29 @@ def phase_state_to_game_state(state: dict[str, Any]) -> GameState:
 
     stack_items: list[StackItem] = []
     for raw in state.get("stack") or []:
-        oid = str(raw)
-        obj = objects.get(oid) or objects.get(raw) or {}
-        controller = obj.get("controller")
+        if isinstance(raw, dict):
+            source = raw.get("source_id")
+            if source is None:
+                raise ValueError("Native stack entry is missing source_id")
+            oid = str(source)
+            obj = objects.get(oid) or {}
+            controller = raw.get("controller", obj.get("controller"))
+            kind = raw.get("kind")
+            if not isinstance(kind, dict) or not isinstance(kind.get("type"), str):
+                raise ValueError("Native stack entry requires a tagged kind")
+            is_spell = kind["type"] == "Spell"
+        elif isinstance(raw, (str, int)) and not isinstance(raw, bool):
+            oid = str(raw)
+            obj = objects.get(oid) or objects.get(raw) or {}
+            controller = obj.get("controller")
+            is_spell = True
+        else:
+            raise ValueError("Native stack entry must be an object or legacy object ID")
         stack_items.append(
             StackItem(
                 source_card_id=oid,
                 controller_id=seat_player_id(int(controller)) if controller is not None else "",
-                is_spell=True,
+                is_spell=is_spell,
                 card_data={"name": obj.get("name") or obj.get("card_name") or oid},
             )
         )

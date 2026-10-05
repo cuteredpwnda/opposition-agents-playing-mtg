@@ -354,7 +354,7 @@ A consumer needing deterministic ground truth recovers it by filtering on status
 
 The evaluation distinguishes three kinds of evidence. For \textbf{RQ1}, we measure whether the concepts required by each competency question are represented and execute the available schema-level query checks. For \textbf{RQ2}, we assess direct source attribution and type-line conformance against declared card corpora. For \textbf{RQ3}, we distinguish logical consistency and satisfiability from profile conformance and closed-world data validity. These criteria are complementary: a consistent ontology can be incomplete, and an OWL entailment can supply a classification whose omission a data validator should report.
 
-The materials are the September 25, 2026 rules revision, the October 5 Scryfall oracle snapshot and checksum-pinned snapshots of the external vocabularies. Source checksums, queries and raw validation results accompany the resource. OWLAPI profile analysis and HermiT provide logical diagnostics; SHACL \citep{w3c2017shacl} and the type-line parser evaluate explicit data constraints. Neither operational deployment nor agent win rate is a criterion for semantic resource quality.
+The materials are the September 25, 2026 rules revision, a frozen Scryfall oracle snapshot and checksum-pinned snapshots of the external vocabularies. Source revision dates and checksums, queries and raw validation results accompany the resource. OWLAPI profile analysis and HermiT provide logical diagnostics; SHACL \citep{w3c2017shacl} and the type-line parser evaluate explicit data constraints. Neither operational deployment nor agent win rate is a criterion for semantic resource quality.
 
 \subsection{Representational coverage and provenance}
 
@@ -381,7 +381,7 @@ CQ coverage                     & 32/32 & card types              &      15 \\
 \textbf{1{,}193 triples} & & \textbf{5{,}059 factual triples} & \\
 \bottomrule
 \end{tabular}
-\caption{October 5 inventory. Left: the curated, LLM-assisted schema; 74 class subjects include anonymous expressions, while 62 local classes are named. Right: the factual vocabulary \texttt{mtg-cr-types.ttl}; the parsed rule count describes the source, not redistributed rule-text individuals. Older combined derivation counts are not measurements of this release.}
+\caption{Resource inventory for the evaluated snapshot. Left: the curated, LLM-assisted schema; 74 class subjects include anonymous expressions, while 62 local classes are named. Right: the factual vocabulary \texttt{mtg-cr-types.ttl}; the parsed rule count describes the source, not redistributed rule-text individuals.}
 \label{tab:stats}
 \end{table}
 
@@ -392,7 +392,7 @@ Two focused ABox probes against the local schema exercise its object/event disjo
 \subsection{Declared corpus conformance}
 \label{sec:corpus}
 
-The October 5 Scryfall snapshot contains 38{,}706 oracle records. The primary card corpora are selected by the snapshot's format legality fields, retaining \texttt{legal} and \texttt{restricted} statuses and reporting every exclusion. Commander sticker sheets are explicitly excluded by the exact type line \texttt{Stickers}, not by layout: Scryfall labels them \texttt{normal}. Exclusion precedence is auxiliary type, then format legality. There are 50 sticker sheets in the complete source (48 Commander-eligible).
+The frozen Scryfall snapshot contains 38{,}706 oracle records. The primary card corpora are selected by the snapshot's format legality fields, retaining \texttt{legal} and \texttt{restricted} statuses and reporting every exclusion. Commander sticker sheets are explicitly excluded by the exact type line \texttt{Stickers}, not by layout: Scryfall labels them \texttt{normal}. Exclusion precedence is auxiliary type, then format legality. There are 50 sticker sheets in the complete source (48 Commander-eligible).
 
 \begin{table}[h]
 \centering

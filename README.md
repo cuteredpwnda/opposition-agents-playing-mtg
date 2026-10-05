@@ -60,6 +60,11 @@ audits, reliability gates, prespecified held-out cells, appropriate power,
 failure accounting and reproducible analysis; see the
 [experiment runbook](docs/EXPERIMENTS.md).
 
+The [research-question ablation protocol](docs/AGENT_LEARNING_STUDY.md)
+centres on **policy comparison, parametric learning, play-built graph memory,
+their interaction and cross-agent transfer**. Its core learning/graph study
+uses a controlled 2×3 factorial, not every possible named model combination.
+
 ### What you can do with this repo today
 
 | You want to… | Read | Run |

@@ -106,6 +106,9 @@ def _make_world_model(player_id: str, **kw: Any) -> MTGAgent:
         kg_encoder=kw.pop("kg_encoder", None),
         name=kw.pop("name", "WorldModelAgent"),
         mode=kw.pop("mode", "direct"),
+        deterministic=kw.pop("deterministic", False),
+        dream_rollouts=kw.pop("dream_rollouts", 8),
+        dream_depth=kw.pop("dream_depth", 10),
         device=kw.pop("device", "cpu"),
     )
 
@@ -203,4 +206,3 @@ __all__ = [
     "make_agent",
     "list_agents",
 ]
-

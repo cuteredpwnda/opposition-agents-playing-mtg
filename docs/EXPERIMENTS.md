@@ -10,6 +10,10 @@ machine-readable summaries.  Use ``Get-Content -Wait <path>`` to follow.
 
 ## Current supported benchmark — phase-rs (October 2026)
 
+For the scientific questions, controls and staged learning/graph factorial,
+see [the agent learning study](AGENT_LEARNING_STUDY.md). This runbook describes
+execution, not a replacement for that protocol or the plan's status tracker.
+
 The older sections below describe the legacy Python-engine experiments.
 Several entry points moved to `scripts_legacy/`; do not use the weekend
 campaign as the current phase-rs benchmark. The authoritative execution
@@ -134,6 +138,75 @@ counts and eligibility boundaries are in the
 Reacquire with `python -m scripts.fetch_benchmark_decks`.
 Native qualification of these additions must precede strength comparisons.
 Do not confuse 49 matchup configurations with 49 qualified experimental cells.
+
+### Model-stack qualification before the learning study
+
+The bounded model pilot attempts wire random/heuristic, installed chat models, Tev1, explicit-checkpoint
+world-model direct/dream modes, explicit-checkpoint LLM fusion and the three
+analytic objective stacks. It owns a private server, retains subprocess logs,
+attempted-condition summaries and unstarted conditions, and checks source/
+checkpoint/deck hashes after the run.
+
+```powershell
+.\.venv\Scripts\python.exe -m scripts.run_model_qualification `
+    --checkpoint checkpoints\jepa\jepa_final.pt `
+    --models llama3.2:1b qwen2.5-coder:1.5b gemma4:e2b `
+    --budget-seconds 1800 --condition-seconds 150
+```
+
+This schedules twelve conditions at one game each, with a hard per-process limit.
+`--games N` schedules replicates sharing the condition deadline;
+increase `--condition-seconds` accordingly, subject to the campaign budget.
+`--ai-difficulty` selects the native anchor explicitly.
+`--only world_model_direct world_model_dream_search fusion` permits a
+bounded repair rerun without overwriting earlier failure evidence.
+The archived checkpoint is **not native-trained evidence**. A completed
+fusion episode does not prove all components were used; graph grounding is
+not supplied by this command. Tev1+world-model prior/critic and JEPA-head
+dreaming remain unwired/unqualified combinations, recorded as blocked rather
+than fabricated arms. No timed-out or fallback-driven condition establishes
+a strength result. Read the model manifest's qualification limitations.
+
+The ablation CLI now accepts `--agent-checkpoint`, `--agent-mode`,
+`--agent-device`, `--agent-deterministic`, `--dream-rollouts` and
+`--dream-depth`. Explicit missing checkpoints fail rather than silently
+initialising a replacement. Checkpoint fingerprints accompany configs.
+Loaded-key coverage, fallback and model-service identity still require
+further audit before confirmatory use.
+
+### What the built-in opponent does
+
+`phase-ai` is upstream's Rust tactical evaluator/search policy, not our
+uniform wire-random or action-type wire-heuristic picker. At the pinned
+revision, VeryEasy disables tree search but retains tactical scoring and
+temperature-4 softmax decisions; Medium enables depth-2 beam/rollout search
+with 24 nodes, branching cap 5 and one depth-1 rollout sample, bounded by
+a 1.5-second interactive search deadline. Dedicated decision paths can
+choose deterministically. Presets load fixed, turn-dependent fitted evaluation
+weights; the opponent does not learn from this campaign.
+
+The upstream AI accepts internal `GameState`, and shipped search presets
+disable hidden-zone resampling (`determinization_samples=0`). Our policies
+receive perspective-filtered observations. Treat native-AI games as
+anchor-opponent deployment comparisons, not matched-information rankings.
+The paper's baseline and ablation tables state this distinction explicitly.
+
+### Recorded current local execution
+
+`runs/model_qualification/20261005_172945_548058` attempts all twelve
+conditions after the structured-stack repair. **10/12 rules-terminal games,
+all ten losses**, zero unstarted conditions, and unchanged frozen input hashes.
+Random, heuristic, Llama 3.2 1B, Qwen2.5-Coder 1.5B, direct/recurrent model,
+explicit-model fusion and all three analytic objective stacks finish.
+Gemma4 E2B reaches the cooperative game timeout; Tev1 receives an explicit
+HTTP 400 for a 2,697-token prompt above its 2,050-token ceiling.
+
+One game per condition is feasibility evidence only. These cells do not
+satisfy the 20-game/95%-completion calibration gate. The ten losses are
+not a policy ranking. Native-trained components, graph interventions,
+matched information/compute, model contribution/fallback audits and true
+multi-policy control remain K12 prerequisites; this campaign cannot launch
+or substantiate unwired RQ2--RQ5 arms.
 
 ### Tev1 decision-model baseline
 
