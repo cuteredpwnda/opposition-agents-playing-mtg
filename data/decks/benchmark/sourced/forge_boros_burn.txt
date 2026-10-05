@@ -1,0 +1,31 @@
+# Historical Forge deck facts; not a current metagame or strength claim.
+# Source: https://raw.githubusercontent.com/Card-Forge/forge/69b963e4e519e75b3f9953ac2b57301aea6cd48b/forge-gui/res/quest/world/Kaladesh/duels/82.dck
+# Source project: Card-Forge/forge, GPL-3.0; see LICENSE.forge.txt.
+Mainboard
+4 Eidolon of the Great Revel
+4 Goblin Guide
+2 Grim Lavamancer
+4 Monastery Swiftspear
+4 Boros Charm
+4 Lightning Bolt
+3 Lightning Helix
+4 Searing Blaze
+3 Skullcrack
+4 Lava Spike
+4 Rift Bolt
+1 Arid Mesa
+4 Bloodstained Mire
+1 Copperline Gorge
+4 Inspiring Vantage
+2 Mountain
+3 Sacred Foundry
+1 Stomping Ground
+4 Wooded Foothills
+Sideboard
+1 Deflecting Palm
+4 Destructive Revelry
+3 Kor Firewalker
+2 Molten Rain
+3 Path to Exile
+1 Relic of Progenitus
+1 Skullcrack

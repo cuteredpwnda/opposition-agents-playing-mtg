@@ -126,6 +126,15 @@ The authoritative details and outstanding gates are in
 No currently available command alone turns the entire proposed architecture
 into a validated full-results study.
 
+**Downloaded coverage:** `--deck-pool modern-expanded` adds four pinned,
+source-attributed historical Forge lists (Boros/Atarka burn, Eldrazi Tron,
+Affinity), for seven decks and 49 ordered matchups. Source license, hashes,
+counts and eligibility boundaries are in the
+[sourced-deck README](../data/decks/benchmark/sourced/README.md).
+Reacquire with `python -m scripts.fetch_benchmark_decks`.
+Native qualification of these additions must precede strength comparisons.
+Do not confuse 49 matchup configurations with 49 qualified experimental cells.
+
 ### Tev1 decision-model baseline
 
 The dedicated `--picker tev1` uses `/v1/systemone`, not the chat picker.

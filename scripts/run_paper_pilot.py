@@ -29,6 +29,10 @@ MODERN_DIVERSE_DECKS = (
     Path("data") / "decks" / "benchmark" / "modern_green_stompy.txt",
     Path("data") / "decks" / "benchmark" / "modern_azorius_control.txt",
 )
+MODERN_SOURCED_DECKS = tuple(
+    Path("data") / "decks" / "benchmark" / "sourced" / f"{name}.txt"
+    for name in ("forge_boros_burn", "forge_atarka_burn", "forge_eldrazi_tron", "forge_affinity")
+)
 
 
 @dataclass(frozen=True)
@@ -51,6 +55,8 @@ def build_matchups(args: argparse.Namespace) -> list[Matchup]:
         return [Matchup(paths[0], tuple(paths[1:]))]
     paths = (
         [Path(p).resolve() for p in custom] if custom
+        else [REPO_ROOT / p for p in (*MODERN_DIVERSE_DECKS, *MODERN_SOURCED_DECKS)]
+        if pool == "modern-expanded"
         else [REPO_ROOT / p for p in MODERN_DIVERSE_DECKS] if pool == "modern-diverse"
         else [REPO_ROOT / MODERN_DIVERSE_DECKS[0]]
     )
@@ -69,7 +75,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--games", type=int, default=3, help="Replicates per arm and matchup")
     parser.add_argument("--format", choices=["Modern", "Commander"], default="Modern")
     decks = parser.add_mutually_exclusive_group()
-    decks.add_argument("--deck-pool", choices=["default", "modern-diverse"], default="default")
+    decks.add_argument("--deck-pool", choices=["default", "modern-diverse", "modern-expanded"],
+                       default="default")
     decks.add_argument("--deck-files", nargs="+", type=Path, help="Explicit Modern deck pool")
     parser.add_argument("--matchups", choices=["mirrors", "round-robin"], default="mirrors",
                         help="Round-robin includes mirrors and both host/opponent orientations")

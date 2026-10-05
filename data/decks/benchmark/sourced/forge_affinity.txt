@@ -1,0 +1,32 @@
+# Historical Forge deck facts; not a current metagame or strength claim.
+# Source: https://raw.githubusercontent.com/Card-Forge/forge/69b963e4e519e75b3f9953ac2b57301aea6cd48b/forge-gui/res/quest/world/Magic_Origins/duels/100.dck
+# Source project: Card-Forge/forge, GPL-3.0; see LICENSE.forge.txt.
+Mainboard
+4 Arcbound Ravager
+4 Etched Champion
+2 Hangarback Walker
+3 Memnite
+4 Ornithopter
+4 Signal Pest
+4 Vault Skirge
+4 Cranial Plating
+4 Darksteel Citadel
+2 Ghostfire Blade
+4 Mox Opal
+2 Welding Jar
+4 Galvanic Blast
+4 Thoughtcast
+1 Academy Ruins
+4 Blinkmoth Nexus
+4 Glimmervoid
+3 Inkmoth Nexus
+Sideboard
+2 Blood Moon
+1 Dismember
+2 Dispatch
+1 Ghirapur Aether Grid
+2 Spell Pierce
+2 Spellskite
+2 Thoughtseize
+1 Torpor Orb
+2 Wear // Tear

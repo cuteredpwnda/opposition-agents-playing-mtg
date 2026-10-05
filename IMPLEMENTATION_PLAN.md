@@ -219,6 +219,21 @@ items stay for traceability.
 
 ### Done
 
+- [x] **Public publication PR and sourced deck coverage (Oct 5)** —
+      verified accumulated work committed as `82eaec3` and pushed to
+      `feat/phase-rs-engine`; PR #2 targets protected `main`. Direct push and
+      normal merge are blocked by the required approving write-access review;
+      protections were not bypassed. Post-merge experiments remain waiting,
+      not claimed run. Four historical Forge lists are acquired at pinned
+      revision with source hashes, GPL notice/license, oracle eligibility and
+      preserved 60/61-card counts in `data/decks/benchmark/sourced/`.
+      `scripts/fetch_benchmark_decks.py` reproducibly extracts deck facts,
+      not descriptive content; `modern-expanded` selects seven decks/49
+      ordered matchups. Source-card native qualification remains pending.
+      Acquisition/parser/manifest/pool and related pilot tests pass 46 cases;
+      Ruff passes. These complement the 329-pass publication suite (3 optional
+      rule-text skips); the runbook retains feasibility gates.
+
 - [x] **Varied native deck pilots and clearer dual-control wording (Oct 5)** —
       `scripts/run_paper_pilot.py` retains the default burn mirror and adds
       `--deck-pool modern-diverse`, explicit `--deck-files`, mirrors/ordered
@@ -1307,6 +1322,14 @@ items stay for traceability.
     - `scripts/train_pipeline.py`
 
 ### Queue — High Priority
+
+**Publication gate (Oct 5):** PR #2 is public and awaits the protected-main
+requirement of one approving reviewer with write access. Merge normally after
+approval; do not bypass protection. Only after that merge, run the bounded
+three-deck baseline round-robin (18 games at one replicate, 1800-second cap)
+and selected sourced-deck qualification mirrors. Record unstarted/incomplete
+cells and stop advancement when completion or semantics gates fail. These
+are feasibility experiments, not the full powered study.
 
 The K-series tracks current research/runtime blockers and evaluation work.
 The completed H-series below records the legacy Python engine's structural
