@@ -10,6 +10,7 @@ dist/
 build/
 .venv/
 .tools/
+.phase-rs-server.lock
 venv/
 
 # Debug and test output

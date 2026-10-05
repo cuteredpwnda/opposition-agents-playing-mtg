@@ -326,7 +326,11 @@ async def run_game(
         # Acquire lock to prevent multiple processes from starting their own servers
         server_lock_fd = acquire_server_lock(timeout=5.0)
         if server_lock_fd is not None:
-            owned_server = PhaseServerProcess().start()
+            try:
+                owned_server = PhaseServerProcess().start()
+            except Exception:
+                release_server_lock(server_lock_fd)
+                raise
             cfg = PhaseServerConfig(
                 uri=owned_server.uri,
                 headers=cfg.headers,
@@ -357,14 +361,12 @@ async def run_game(
             max_turns=max_turns,
         )
     finally:
-        # Clean up server lock
-        if server_lock_fd is not None:
-            release_server_lock(server_lock_fd)
-        # Only stop a server we spun up implicitly (autostart_server=True).
-        # When the caller passed an explicit ``server_process`` we leave
-        # lifecycle to them.
-        if autostart_server and owned_server is not None and server_process is None:
-            owned_server.stop()
+        try:
+            if autostart_server and owned_server is not None and server_process is None:
+                owned_server.stop()
+        finally:
+            if server_lock_fd is not None:
+                release_server_lock(server_lock_fd)
 
 
 async def _play(

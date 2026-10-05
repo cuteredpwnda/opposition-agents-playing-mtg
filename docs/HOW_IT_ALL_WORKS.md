@@ -3,7 +3,9 @@
 > **Engine status (May 2026):** **Phase-rs (Rust) is the authoritative runtime engine.** 
 > Python agents play via WebSocket bridge (adapter.py), with structured JSONL trace collection.
 > Training is phase-rs-first: collect traces → post-process → JEPA training → dream → evaluation.
-> Games run end-to-end, fully deterministic with seed threading. The Python engine in `src/engine/` 
+> Seeds control Python picker RNG only: native shuffle and AI RNG are not seeded
+> by the bridge, so a seed does not reproduce an entire native game.
+> The Python engine in `src/engine/`
 > remains for back-compat but is not the training target. See [docs/PHASE_RS_INTEGRATION.md](PHASE_RS_INTEGRATION.md)
 > for setup and protocol details.
 

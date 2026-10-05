@@ -5,24 +5,60 @@
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
 [![Status: Experimental](https://img.shields.io/badge/status-experimental-orange.svg)](#known-limitations)
 
-A research framework that combines **knowledge-graph-grounded JEPA world models**, **active-inference LLM agents**, and the **phase-rs Rust MTG engine** to study reasoning under uncertainty in the most combinatorially complex commercial card game.
+A research framework for **neuro-symbolic decision making under partial
+observability** in Magic: The Gathering. It combines a provenance-aware
+ontology, Python action selectors, latent world-model research and the
+**phase-rs Rust rules runtime**.
 
-> **Status (May 2026):** The **phase-rs engine is now the authoritative runtime** for new training/evaluation work. Python agents play end-to-end games via WebSocket bridge (adapter.py), generating structured JSONL traces for offline policy learning. Training pipeline is phase-rs-first: collect traces → JEPA → dream training → evaluation. See [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) and [docs/PHASE_RS_INTEGRATION.md](docs/PHASE_RS_INTEGRATION.md) for current status.
+> **October 2026 status:** phase-rs is pinned to protocol **106**. Python
+> selectors drive one native seat through the WebSocket bridge. An 18-game
+> three-deck baseline campaign completes, but this is feasibility evidence,
+> not a powered comparison. Native KG grounding, learned rollout qualification,
+> decision-model input budgets and controlled objective ablations remain
+> separate gates. [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) is the
+> source of truth; older examples below include legacy Python-engine paths.
 
-> If you use this project in academic work, please cite the [tech report](paper/opposition_agents_mtg.tex) (see [Citation](#citation)).
+> Review the [research drafts and build instructions](paper/README.md).
+> These manuscripts are not yet submission-ready performance claims.
 
 ## TL;DR
 
-We treat **Magic: The Gathering** — the most combinatorially complex commercial card game (≥10⁸⁰⁰ states, ~28k unique cards, partial observability, unbounded action space) — as a testbed for **neuro-symbolic reasoning under uncertainty**. The framework couples four ideas that are usually studied in isolation:
+The project separates five components rather than assuming that combining
+their names establishes an evaluated agent:
 
-1. **Phase-rs Rust engine as primary runtime** (state-based actions, stack/priority, triggers, replacement effects) — full Comprehensive Rules implementation with 30k+ cards. Python agents drive the phase-rs seat via WebSocket bridge, ensuring we control observations handed to agents.
-2. **A Neo4j knowledge graph** built from an OWL 2 ontology of cards/keywords/archetypes/combos, queried by agents for symbolic strategic reasoning (combo detection, archetype inference, GraphRAG context).
-3. **Structured JSONL trace collection from phase-rs games** — decision events, legal actions, game outcomes — fed into offline JEPA training for world models.
-4. **A V+M+C+JEPA world model** — a Set-Transformer + VAE state encoder, an MDN-LSTM dynamics model, a controller, and a JEPA latent predictor — trained on self-play trajectories for imagination-based planning.
-5. **Active-Inference LLM agents** that fuse symbolic graph queries, latent rollouts, and free-energy-minimising action selection, with a per-opponent belief module that does **exact** library/hand inference when decklists are public.
-6. **A collective graph-memory loop** where many agents contribute append-only evidence (from self-play traces and outcomes) into a shared knowledge layer, so strategic knowledge accumulates across games rather than being reset per run.
+1. **Rules execution:** phase-rs supplies legal actions, transitions and
+   terminal outcomes. The bridge handles formats, reconnects and bounded runs;
+   card count is not a rules-correctness certificate.
+2. **Symbolic resources:** a DOLCE-aligned ontology separates source-grounded
+   facts from induced strategic evidence. Schema reasoning, SHACL, competency
+   queries, read-only SPARQL serving and Workbench exports have distinct checks.
+3. **Action selection:** random/heuristic baselines, analytic belief-space
+   KL control, general chat LLMs and Tev1 decision-tuned option selectors.
+   Tev1 preferences are not calibrated win probabilities.
+4. **Latent prediction:** JEPA learns one-step next-embedding targets with
+   a stopped encoder branch and standard-normal regularisation. Current
+   dream search uses a separate recurrent dynamics/reward path; archived
+   checkpoints are not proof of accurate native long-horizon planning.
+5. **Proposed cumulative learning:** trace-derived graph evidence and
+   champion/challenger training are research directions. Cross-run strategic
+   improvement and end-to-end native learning have not yet been demonstrated.
 
-A champion-vs-challenger self-play loop with ELO promotion drives improvement. The full pipeline is described in the [tech report](paper/opposition_agents_mtg.tex) ([build instructions](paper/README.md)).
+### Current evidence and paper gates
+
+| Area | Evidence available | Not yet established |
+|---|---|---|
+| Native bridge | Protocol 106, reconnect/failure tests, terminal Modern games | Seeded native replay and controlled seat rotation |
+| Baseline deck coverage | 18/18 terminal games across nine ordered matchups; random 2/9 wins, heuristic 3/9 | Policy ranking; at least 20 calibration games per intended condition still needed |
+| Deck pool | Three development decks plus four source-attributed historical Forge lists | Native qualification of all sourced mechanics and current metagame representativeness |
+| Ontology | Consistent import-resolved schema, focused probes, 14 read-only SPARQL checks | Full populated-graph reasoning, external modelling review and agent grounding |
+| LLM/decision models | Local inference interfaces and explicit Tev1 error accounting | Matched-context comparisons, calibration and full-game token-budget reliability |
+| JEPA/fusion | Local implementation and archived checkpoints | Frozen native-trained models, matched ablations and verified component activation |
+
+The local baseline campaign has **one replicate per matchup**. Do not interpret
+its 2/9 versus 3/9 wins as an advantage. Full results require input/semantics
+audits, reliability gates, prespecified held-out cells, appropriate power,
+failure accounting and reproducible analysis; see the
+[experiment runbook](docs/EXPERIMENTS.md).
 
 ### What you can do with this repo today
 
@@ -37,9 +73,13 @@ A champion-vs-challenger self-play loop with ELO promotion drives improvement. T
 | Track a real Commander opponent's hand exactly | [docs/OPPONENT_MODELING_WITH_DECKLIST.md](docs/OPPONENT_MODELING_WITH_DECKLIST.md) | see snippet below |
 | Read the science behind it | [paper/opposition_agents_mtg.tex](paper/opposition_agents_mtg.tex) | `cd paper && latexmk -pdf` |
 
-## phase-rs engine (primary runtime, May 2026)
+## phase-rs engine (primary runtime, protocol 106)
 
-**Phase-rs is now the authoritative runtime engine for all training and evaluation work.** We integrate with the [phase-rs/phase][phase] Rust MTG engine (30k+ cards, full layers/replacement/stack, built-in difficulty-scaled AI) via a WebSocket bridge in [`src/integrations/phase_rs/`](src/integrations/phase_rs). Python agents drive the phase-rs seat by:
+**phase-rs is the authoritative runtime for native training and evaluation.**
+We integrate with [phase-rs/phase][phase] through
+[`src/integrations/phase_rs/`](src/integrations/phase_rs). The native compiled
+database has 35,879 name-keyed definitions in the frozen October snapshot,
+not 35,879 independently tested implementations. Python selectors drive one seat by:
 
 1. **Translating** legal actions from phase-rs wire format → internal `Action` objects (adapter.py)
 2. **Picking** actions using native MTGAgent implementations (RandomAgent, HeuristicAgent, LLMAgent, WorldModelAgent, etc.)
@@ -75,9 +115,9 @@ and [DMCA.md](DMCA.md) for full details.
 
 This project builds an agentic framework where multiple AI agents compete in Magic: The Gathering games on the phase-rs Rust engine, using:
 
-- **Game Runtime**: phase-rs (Rust) — full Comprehensive Rules with 30k+ cards, all layers/replacement/stack mechanics. Python agents drive the session via WebSocket bridge in `src/integrations/phase_rs/`.
+- **Game Runtime**: phase-rs (Rust), with Python selecting engine-authored options; study-card mechanics require separate qualification.
 - **Bridge Architecture**: 
-  - `client.py` — WebSocket protocol (v6+)
+  - `client.py` — pinned WebSocket protocol 106
   - `adapter.py` — GameAction ↔ Action translation
   - `agent_bridge.py` — AsyncActionPicker for native MTGAgent
   - `runner.py` — Trace collection + reconnect/resume logic
@@ -479,22 +519,10 @@ Agent types implement this differently:
 
 ## Performance Characteristics
 
-**Speed**:
-- Legal action generation: 5-10ms (50-200 actions)
-- SBA checking: 1-2ms
-- Combo detection (KB query): 10-50ms
-- Full LLM decision: 1-5s (includes API latency)
-
-**Scalability**:
-- Card database: 30,000+ Scryfall cards
-- Combo database: 5,000+ known combos
-- Supports 2-4 player games
-- Self-play: 64 parallel games per iteration
-
-**Accuracy**:
-- Legal action generation: 100% (rules-compliant)
-- Combo detection: 95%+ (known combos)
-- Archetype inference: 70-80% (based on cards seen)
+No general accuracy or speed guarantee is established. Native run summaries
+record decision latency, game duration, completion and failure reasons.
+Report model/context, hardware, warm-up and planning budgets with measurements;
+do not infer performance from supported card counts or an API smoke.
 
 ## Usage
 
@@ -686,6 +714,23 @@ draw_probs = opponent.get_draw_probabilities(num_cards=1)
 
 ## Benchmarks
 
+**Current native entry points:** use the completion-aware runbook, not the
+legacy suite below, for new paper evidence.
+
+```powershell
+# Bounded three-deck baseline round-robin: 18 scheduled games.
+.\.venv\Scripts\python.exe -m scripts.run_paper_pilot `
+    --format Modern --deck-pool modern-diverse --matchups round-robin `
+    --arms random heuristic --games 1 --budget-seconds 1800
+```
+
+The sourced `modern-expanded` pool has seven decks and 49 ordered matchups.
+This is a list of available configurations, not 49 qualified study conditions.
+Each run retains manifests, traces and incomplete outcomes. Native shuffle
+and opponent RNG are **not** seeded by the Python picker seed.
+
+### Legacy Python-engine benchmarks
+
 The repo ships with a reproducible benchmark harness ([src/training/benchmark_suite.py](src/training/benchmark_suite.py)) that pits any set of agents against each other across six standard archetype decks ([src/training/archetype_decks.py](src/training/archetype_decks.py)): mono-red aggro, mono-blue control, mono-green ramp, mono-white weenie, mono-black midrange, and Izzet burn. It records per-game CSV (`games.csv`) plus aggregate `summary.json` with win-rates, average decision-time per agent, and incremental ELO updates.
 
 ### Run the default benchmark locally
@@ -717,7 +762,9 @@ In short: **the benchmark suite and all symbolic agents run fine on this laptop 
 
 ### Default LLM
 
-The default Ollama model has been switched to **`gemma4:e2b`** (Gemma 4 "edge 2B" variant) across [src/agents/llm_agent.py](src/agents/llm_agent.py), [src/agents/llm_fusion_agent.py](src/agents/llm_fusion_agent.py), [src/engine/llm_orchestration.py](src/engine/llm_orchestration.py), and the example scripts. It gives noticeably stronger reasoning than the previous tag at the same VRAM budget. Pull it with `ollama pull gemma4:e2b`.
+The default tag is **`gemma4:e2b`** in the chat/fusion configuration.
+Use `--ollama-model` to select an installed model for a native chat pilot.
+No size-matched MTG advantage is established by choosing this default.
 
 ## Configuration
 
@@ -870,10 +917,15 @@ Project repository: <https://github.com/cuteredpwnda/opposition-agents-playing-m
 
 ## Known Limitations
 
-- No network play (local game simulation only)
-- Limited CR coverage (basic spells, creatures, simple abilities)
-- No GUI (CLI-based or API-based)
-- Tournament rules not implemented (no mulligan management, etc.)
+- One Python-controlled native seat; Commander opponents are native AI.
+- Native RNG and seat rotation are not controlled for paired experiments.
+- Tev1 full-game contexts can exceed the local endpoint's 2050-token ceiling.
+- Chat/fusion fallback and component activation must be audited before causal claims.
+- Existing world-model checkpoints originate from legacy training; native
+  predictive calibration and learned-planning qualification remain pending.
+- Full KG-backed and induced-learning comparisons are not established.
+- Historical snippets below the current overview may exercise legacy paths;
+  follow the native runbook and implementation plan for new experiments.
 
 ## Roadmap
 

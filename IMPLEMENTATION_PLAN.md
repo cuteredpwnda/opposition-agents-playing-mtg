@@ -219,6 +219,23 @@ items stay for traceability.
 
 ### Done
 
+- [x] **PR #2 Copilot review fixes and local baseline campaign (Oct 5)** —
+      removed tracked `.phase-rs-server.lock` and ignored runtime locks;
+      Unix acquisition now polls to a monotonic deadline, closes timed-out
+      descriptors and preserves the shared inode on release. The runner stops
+      its owned server before releasing the lock, including failure cleanup.
+      Focused lock/lifecycle regressions cover contention and start/play/stop
+      failures. Restored two swallowed test function boundaries in
+      `tests/test_game_execution.py` and replaced `assert True` with observable
+      turn/game postconditions in `tests/test_combat_game.py`. Integration
+      README and overview now describe protocol 106/native authority and
+      picker-only RNG seeding accurately. Native/test regression suite:
+      144 passed. User authorised experiments before merge: local
+      `runs/paper_pilot/20261005_164747_259275` completes 18/18 terminal games
+      across nine ordered three-deck matchups (random 2/9 wins, heuristic 3/9),
+      no incomplete cells, unchanged hashes, about 21.4 minutes of game time.
+      This is one replicate per matchup, not ranking or powered evidence.
+
 - [x] **Public publication PR and sourced deck coverage (Oct 5)** —
       verified accumulated work committed as `82eaec3` and pushed to
       `feat/phase-rs-engine`; PR #2 targets protected `main`. Direct push and
@@ -1325,9 +1342,10 @@ items stay for traceability.
 
 **Publication gate (Oct 5):** PR #2 is public and awaits the protected-main
 requirement of one approving reviewer with write access. Merge normally after
-approval; do not bypass protection. Only after that merge, run the bounded
-three-deck baseline round-robin (18 games at one replicate, 1800-second cap)
-and selected sourced-deck qualification mirrors. Record unstarted/incomplete
+approval; do not bypass protection. The user subsequently authorised local
+experiments before merge: the bounded three-deck baseline round-robin now
+completes 18/18 games. Continue selected sourced-deck qualification mirrors.
+Record unstarted/incomplete
 cells and stop advancement when completion or semantics gates fail. These
 are feasibility experiments, not the full powered study.
 

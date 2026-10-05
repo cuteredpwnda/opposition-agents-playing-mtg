@@ -1,64 +1,49 @@
-# phase-rs integration (experimental)
+# phase-rs runtime integration
 
-Thin adapter to drive the [phase-rs](https://github.com/phase-rs/phase)
-Rust/WASM MTG rules engine from our Python ``Agent`` interface.
+[phase-rs](https://github.com/phase-rs/phase) is the authoritative rules
+runtime for native training traces and evaluation. Python agents select from
+engine-authored legal choices through the WebSocket bridge; the legacy Python
+engine remains a compatibility path, not the native rules authority.
 
-**Status**: scaffold only. Protocol discovery is the first sub-task — see
-``IMPLEMENTATION_PLAN.md`` queue entry *"phase-rs engine adapter"*. The
-Python engine in ``src/engine/`` remains the authoritative substrate for
-training, evaluation, and the trajectory pipeline.
+## Current contract
 
-## Why this exists
+The repository pins revision `1191bba65048c83fbbd5a56dfd5f419ee0ead67a`,
+protocol **106**. The client validates the handshake and translates tagged
+wire envelopes, runner budgets/failures, viewer interactions and reconnect
+credentials. Complete format configurations come from the pinned registry.
+Contract and runner tests live in `tests/integrations/phase_rs/`.
 
-phase-rs implements layers, replacement effects, and 34k+ cards from
-MTGJSON — areas where our engine is partial. Using it as an *oracle*
-backend lets us:
-
-1. Run differential tests: replay a recorded action trace through both
-   engines and diff the resulting state.
-2. Side-step mechanics our engine does not yet model when an experiment
-   needs them, without blocking on our own implementation.
-
-This is **not** a switch away from our engine. Agents stay in Python;
-only the rules layer is swapped behind an adapter.
-
-## Transport
-
-WebSocket via ``phase-server`` was chosen first because it requires no
-Rust toolchain in our repo — we just point at a running
-``cargo serve`` instance (or the public preview) and speak JSON.
+Build the pinned release `phase-server` using the MSVC instructions in
+[the integration guide](../../../docs/PHASE_RS_INTEGRATION.md), then run from
+the repository root:
 
 ```powershell
-# In a phase-rs checkout:
-cargo serve   # binds 127.0.0.1:8080 by default — confirm in their docs
+.\.venv\Scripts\python.exe -m scripts.run_phase_rs_ablation `
+    --picker heuristic --format Modern `
+    --our-deck-file data\decks\modern\modern_mono_red_burn.txt `
+    --ai-deck-file data\decks\modern\modern_mono_red_burn.txt `
+    --ai-difficulty VeryEasy --games 1 --autostart
 ```
 
-Then from Python:
+An existing local server uses `ws://127.0.0.1:9374/ws` by default. Supply
+`--uri` and omit `--autostart` to connect explicitly. Implicit startup is
+process-locked; caller-supplied server processes retain caller ownership.
+The local lock file is runtime state and must not be committed.
 
-```python
-from src.integrations.phase_rs import PhaseServerClient, PhaseServerConfig
+## Boundaries
 
-cfg = PhaseServerConfig(uri="ws://127.0.0.1:8080/ws")
-async with PhaseServerClient(cfg) as client:
-    ...  # protocol calls — see TODOs in client.py
-```
+- Picker seeds do **not** seed native shuffle or AI RNG; complete deterministic
+  replay and controlled seat rotation remain pending.
+- Only one Python-controlled seat is currently driven per game; Commander
+  pods use three native opponents. Terminal pod qualification is separate.
+- Completion-aware reports retain caps and operational failures as incomplete
+  runs, not draws. An API smoke or legal move is not a playing-strength result.
+- Tev1, KG grounding and learned native dynamics have separate evaluation
+  gates; see [the plan](../../../IMPLEMENTATION_PLAN.md#6-benchmark--evaluation-plan)
+  and [experiment runbook](../../../docs/EXPERIMENTS.md).
 
-## What's missing
+## Attribution
 
-The message schema is not yet pinned down. The phase-rs README documents
-the high-level architecture (Axum + WebSocket, discriminated unions
-serialised via ``serde`` + ``tsify``) but the on-the-wire envelope
-shapes need to be read out of ``crates/phase-server/src/`` and the
-``fixtures/adapter-contract`` directory. Until that is done, ``client.py``
-exposes only connection plumbing.
-
-See also their LLM-card-contribution flow at
-<https://raw.githubusercontent.com/phase-rs/phase/main/docs/AI-CONTRIBUTOR.md>
-— this is the other half of the work tracked in the plan file.
-
-## License & attribution
-
-phase-rs is dual-licensed MIT / Apache-2.0; both are compatible with this
-repository. phase-rs is a non-commercial fan project — see their
-``DMCA.md`` / ``NOTICE`` files. We never bundle their card data; the
-adapter expects a running phase-rs instance to provide it.
+phase-rs is dual-licensed MIT / Apache-2.0. See the upstream notices and
+repository [NOTICE](../../../NOTICE.md). Downloaded card data remains separate
+from the bridge source; acquire it following the pinned runtime instructions.
