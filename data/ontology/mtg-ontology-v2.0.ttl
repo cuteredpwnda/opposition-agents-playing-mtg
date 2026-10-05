@@ -19,7 +19,8 @@
 # v1.0–v1.2 were a flat, largely untyped vocabulary: `owl:Class` declarations
 # with `rdfs:label`, a handful of `rdfs:domain`/`rdfs:range` assertions, and
 # instances typed directly against classes that were themselves used as
-# individuals (a punning pattern that pushed the artefact out of OWL 2 DL).
+# individuals, obscuring the intended cross-level semantics. Class/individual
+# punning is permitted in OWL 2 DL; datatype/object-property punning is not.
 #
 # v2.0 rebuilds the TBox on three commitments:
 #
@@ -67,7 +68,7 @@
                 <http://www.w3.org/ns/prov-o#> ,
                 <http://www.w3.org/2004/02/skos/core> ,
                 <http://www.w3.org/2006/time#> ;
-    rdfs:comment "OWL 2 DL profile. Validated with scripts/validate_ontology.py."@en .
+    rdfs:comment "Designed for OWL 2 DL. Logical qualification and dependency-profile results are reported separately."@en .
 
 # =============================================================================
 # 0. Annotation vocabulary — provenance and epistemic status
@@ -293,7 +294,7 @@ mtg:CardType a owl:Class ;
         objects. Modelled as a Concept, not as a class, because types change
         during a game (an animated land) — a subsumption axiom cannot be
         retracted, a classification can."""@en ;
-    mtg:rationale "v1.x used CardType both as a class and as individuals, which is OWL 2 DL punning and defeated the reasoner; classification via dul:isClassifiedBy is the correct pattern and is also the truthful one." ;
+    mtg:rationale "Separates classification concepts from the objects they classify; permitted class/individual punning alone does not provide a semantic bridge between those levels." ;
     mtg:derivedFromCQ "CQ-CARD-05" ;
     mtg:crRule "205.2" ;
     mtg:epistemicStatus "curated" .
@@ -724,12 +725,12 @@ mtg:MonarchRole   a mtg:GameRole ; rdfs:label "Monarch"@en ;   mtg:crRule "720" 
 
 ### --- Turn structure -----------------------------------------------------
 
-mtg:precedes a owl:ObjectProperty , owl:TransitiveProperty , owl:AsymmetricProperty , owl:IrreflexiveProperty ;
+mtg:precedes a owl:ObjectProperty , owl:TransitiveProperty ;
     rdfs:subPropertyOf dul:precedes ;
     rdfs:domain dul:Event ;
     rdfs:range dul:Event ;
     rdfs:label "precedes"@en ;
-    rdfs:comment "Transitive, asymmetric, irreflexive — the ordering of steps, phases and turns."@en ;
+    rdfs:comment "Transitive ordering of steps, phases and turns. Acyclicity is checked with SHACL; OWL 2 DL forbids asymmetry/irreflexivity axioms on transitive properties."@en ;
     mtg:derivedFromCQ "CQ-MECH-01" ;
     mtg:epistemicStatus "curated" .
 
@@ -901,11 +902,11 @@ mtg:manaCostString a owl:DatatypeProperty , owl:FunctionalProperty ;
     mtg:crRule "202" ;
     mtg:epistemicStatus "curated" .
 
-mtg:scryfallId a owl:DatatypeProperty , owl:FunctionalProperty , owl:InverseFunctionalProperty ;
+mtg:scryfallId a owl:DatatypeProperty , owl:FunctionalProperty ;
     rdfs:domain mtg:CardPrinting ;
     rdfs:range xsd:string ;
     rdfs:label "Scryfall ID"@en ;
-    rdfs:comment "Inverse-functional: the Scryfall UUID identifies a printing globally."@en ;
+    rdfs:comment "Functional identifier: the CardPrinting datatype key identifies a printing by its Scryfall UUID."@en ;
     mtg:epistemicStatus "curated" .
 
 mtg:regionValue a owl:DatatypeProperty ;

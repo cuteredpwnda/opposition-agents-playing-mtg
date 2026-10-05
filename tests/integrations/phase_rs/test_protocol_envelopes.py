@@ -13,11 +13,15 @@ update`` — if a field is renamed, the test fails with a clear message.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
 
 from src.integrations.phase_rs.client import (
+    PROTOCOL_VERSION,
+    ActionFailed,
+    ActionRejected,
     GameStarted,
     StateUpdate,
     parse_envelope,
@@ -85,3 +89,53 @@ def test_parse_game_action_envelope() -> None:
     msg_type, data = parse_envelope(payload)
     assert msg_type == "ChooseLegend"
     assert "keep" in data
+
+
+def test_protocol_version_matches_vendored_engine() -> None:
+    source = (
+        REPO_ROOT / "external" / "phase-rs" / "crates"
+        / "lobby-broker" / "src" / "protocol.rs"
+    ).read_text(encoding="utf-8")
+    version = re.search(r"pub const PROTOCOL_VERSION: u32 = (\d+);", source)
+    assert version is not None, "Upstream protocol version declaration changed"
+    assert PROTOCOL_VERSION == int(version.group(1))
+
+
+def test_structured_action_rejection() -> None:
+    message = parse_server_message({
+        "type": "ActionRejected",
+        "data": {"rejection": {
+            "message": "Not your priority",
+            "code": "not_your_priority",
+            "disposition": "unavailable",
+            "related_object_ids": [3],
+        }},
+    })
+    assert isinstance(message, ActionRejected)
+    assert message.reason == "Not your priority"
+    assert message.is_retryable
+    assert message.related_object_ids == [3]
+
+
+@pytest.mark.parametrize("message_type", ["ActionFailed", "RequestRejected"])
+def test_operational_failure(message_type: str) -> None:
+    message = parse_server_message({
+        "type": message_type,
+        "data": {"message": "Processing failed", "reason": "Processing failed"},
+    })
+    assert isinstance(message, ActionFailed)
+    assert message.message == "Processing failed"
+
+
+def test_ai_driver_fault_is_not_incidental_traffic() -> None:
+    message = parse_server_message({
+        "type": "AiDriverFault",
+        "data": {"fault": {
+            "id": 7,
+            "after_state_revision": 3,
+            "cause": {"ActionSafetyCapReached": {"limit": 200}},
+        }},
+    })
+    assert isinstance(message, ActionFailed)
+    assert message.reason == "ai_driver_fault"
+    assert "ActionSafetyCapReached" in message.message

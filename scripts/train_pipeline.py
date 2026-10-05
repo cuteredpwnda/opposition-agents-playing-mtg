@@ -136,10 +136,14 @@ async def stage_2_build_kg() -> bool:
 
         logger.info("Initialising n10s + ontologyâ€¦")
         setup = N10sSetup()
-        await setup.full_setup()
+        try:
+            await setup.full_setup()
+        finally:
+            await setup.close()
         logger.info("n10s setup complete")
     except Exception as e:
-        logger.warning("n10s setup skipped: %s", e)
+        logger.error("n10s setup failed; refusing an unqualified KG import: %s", e)
+        return False
 
     # Scryfall import
     try:
@@ -849,4 +853,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

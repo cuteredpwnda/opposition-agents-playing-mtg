@@ -41,6 +41,7 @@ detects and handles both.
 | `LLMFusionAgent` | `src/agents/llm_fusion_agent.py` | Combines an LLM critic with the world model's value estimate; LLM picks among the top-N world-model candidates. |
 | `ActiveInferenceAgent` | `src/agents/active_inference_agent.py` | Legacy keyword-scored EFE. Superseded by the KL-control picker below; kept for back-compat. |
 | `KLControlActionPicker` | `src/integrations/phase_rs/kl_control_picker.py` | **Belief-space KL control** — the canonical discretisation of Active Inference (= path-integral MPC). Control cost against a passive prior plus expected terminal potential, planned closed-loop over a belief. No epistemic bonus, no ambiguity term. See [docs/ACTIVE_INFERENCE.md](docs/ACTIVE_INFERENCE.md). |
+| `Tev1ActionPicker` | `src/integrations/phase_rs/tev1_picker.py` | Experimental local decision-tuned Qwen3.5 model via Ollama 0.35+ `/v1/systemone`. At most 24 seeded heuristic candidates and a card-aware context; logs probabilities, coverage and latency. No random fallback. Full-game evaluation is blocked on the observed 2050-token input ceiling (K6). |
 | `HierarchicalAgent` | `src/agents/hierarchical_agent.py` | High-level "plan" (e.g. *race*, *stabilise*, *combo*) selected by an outer policy; low-level move chosen by an inner policy. |
 
 ## Collective Intelligence Layer
@@ -61,7 +62,7 @@ determinism and immutable source card data.
 **All agents now run on phase-rs (Rust engine)** via the WebSocket bridge. The fastest way to watch agents play:
 
 ```powershell
-# 4-player Commander pod on phase-rs (deterministic)
+# 4-player pod: one Python seat + three native AI seats; picker seed only
 .\.venv\Scripts\python.exe examples\play_edh_pod.py --max-turns 6 --seed 7 --model none
 
 # Same with Ollama LLM in seat 0
@@ -76,6 +77,11 @@ determinism and immutable source card data.
 # Cartesian sweep (picker x difficulty x deck)
 .\.venv\Scripts\python.exe scripts\phase_rs_rollout_sweep.py --pickers random agent:heuristic --difficulties VeryEasy Medium --games-per-cell 3 --autostart
 ```
+
+`play_edh_pod.py` is restored as a native Commander wrapper. Pass `--autostart`
+or start the native server first. An explicit six-turn smoke records `turn_cap`;
+it is not a completed pod or a draw. Full pod qualification and the publication
+campaign are documented in [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md).
 
 Output:
 
@@ -117,8 +123,8 @@ Legacy note: `python examples/demo_game_simple.py` still works on the Python eng
 
 ## Determinism
 
-All agents that take a seed **must** use it for any RNG they own. The
-runner threads a single seed through `random.Random(seed).randint(...)`
-draws so a given `(seed, decklists, agent-types)` triple replays
-identically on phase-rs. If your agent calls `random.random()` without a seeded
-`Random` instance you have introduced a bug.
+All agents that take a seed **must** use it for any RNG they own. The Python picker RNG is seeded, but the current bridge does not seed native
+shuffle/AI RNG or provide deterministic engine replay. Do not claim that a
+`(seed, decklists, agent-types)` triple reproduces a native game. Engine RNG
+controls and seat rotation remain research gates. If your agent calls
+`random.random()` without a seeded `Random` instance you have introduced a bug.

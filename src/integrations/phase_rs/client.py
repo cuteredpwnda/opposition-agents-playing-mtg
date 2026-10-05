@@ -1,4 +1,4 @@
-"""WebSocket client for phase-rs ``phase-server`` (protocol v6).
+"""WebSocket client for phase-rs ``phase-server`` (protocol v106).
 
 Schema source: ``external/phase-rs/crates/server-core/src/protocol.rs``.
 
@@ -27,9 +27,10 @@ from typing import Any, AsyncIterator
 logger = logging.getLogger(__name__)
 
 
-# Mirror of PROTOCOL_VERSION in server-core/src/protocol.rs. Bump when the
+# Mirror of PROTOCOL_VERSION in lobby-broker/src/protocol.rs, re-exported by
+# server-core/src/protocol.rs. Bump when the
 # upstream constant changes; mismatched clients are rejected at handshake.
-PROTOCOL_VERSION = 75
+PROTOCOL_VERSION = 106
 
 # Our identity advertised to phase-server. The version string is informational;
 # only ``protocol_version`` gates compatibility.
@@ -54,6 +55,11 @@ class PhaseServerConfig:
     stream_timeout_s: float | None = None
     client_version: str = DEFAULT_CLIENT_VERSION
     build_commit: str = DEFAULT_BUILD_COMMIT
+    max_message_bytes: int = 2 * 1024 * 1024
+
+    def __post_init__(self) -> None:
+        if not 1024 <= self.max_message_bytes <= 64 * 1024 * 1024:
+            raise ValueError("max_message_bytes must be between 1 KiB and 64 MiB")
 
 
 @dataclass
@@ -64,10 +70,28 @@ class ServerHello:
     mode: str  # "Full" | "LobbyOnly"
 
 
+@dataclass(frozen=True)
+class FullSessionKey:
+    game_code: str
+    generation: int
+
+    def __post_init__(self) -> None:
+        if not self.game_code or type(self.generation) is not int or self.generation < 1:
+            raise ValueError("Full session key requires a game code and positive generation")
+
+
+def _full_session_key(data: dict[str, Any]) -> FullSessionKey | None:
+    key = data.get("full_key")
+    if key is None:
+        return None
+    return FullSessionKey(game_code=key["game_code"], generation=key["generation"])
+
+
 @dataclass
 class GameCreated:
     game_code: str
     player_token: str
+    full_key: FullSessionKey | None = None
 
 
 @dataclass
@@ -87,6 +111,7 @@ class GameStarted:
     state_revision: int
     player_token: str | None
     raw: dict[str, Any]
+    full_key: FullSessionKey | None = None
 
 
 @dataclass
@@ -103,6 +128,7 @@ class StateUpdate:
     viewer_interaction: dict[str, Any]
     state_revision: int
     raw: dict[str, Any]
+    full_key: FullSessionKey | None = None
 
 
 @dataclass
@@ -122,8 +148,8 @@ class ActionRejected:
 
     @property
     def is_retryable(self) -> bool:
-        """``Transient`` rejections can be retried with a different action."""
-        return self.disposition in {"Transient", "Retryable"}
+        """Unavailable/stale choices may be retried after receiving fresh state."""
+        return self.disposition in {"unavailable", "stale"}
 
 
 @dataclass
@@ -131,6 +157,7 @@ class ActionFailed:
     """Operational failure while processing one submitted action/interaction."""
 
     message: str
+    reason: str = "action_failed"
 
 
 class PhaseServerError(RuntimeError):
@@ -177,7 +204,10 @@ def parse_server_message(
             mode=data["mode"],
         )
     if msg_type == "GameCreated":
-        return GameCreated(game_code=data["game_code"], player_token=data["player_token"])
+        return GameCreated(
+            game_code=data["game_code"], player_token=data["player_token"],
+            full_key=_full_session_key(data),
+        )
     if msg_type == "GameStarted":
         return GameStarted(
             state=data["state"],
@@ -193,6 +223,7 @@ def parse_server_message(
             state_revision=int(data.get("state_revision", 0)),
             player_token=data.get("player_token"),
             raw=payload,
+            full_key=_full_session_key(data),
         )
     if msg_type == "StateUpdate":
         return StateUpdate(
@@ -208,6 +239,7 @@ def parse_server_message(
             viewer_interaction=dict(data.get("viewer_interaction", {})),
             state_revision=int(data.get("state_revision", 0)),
             raw=payload,
+            full_key=_full_session_key(data),
         )
     if msg_type == "GameOver":
         return GameOver(winner=data.get("winner"), reason=str(data.get("reason", "")))
@@ -224,7 +256,13 @@ def parse_server_message(
         return ActionRejected(reason=str(data.get("reason", "")))
     if msg_type in ("ActionFailed", "RequestRejected"):
         return ActionFailed(
-            message=str(data.get("message") or data.get("reason") or msg_type)
+            message=str(data.get("message") or data.get("reason") or msg_type),
+            reason="request_rejected" if msg_type == "RequestRejected" else "action_failed",
+        )
+    if msg_type == "AiDriverFault":
+        return ActionFailed(
+            message=f"AI driver fault: {json.dumps(data['fault'], sort_keys=True)}",
+            reason="ai_driver_fault",
         )
     return (msg_type, data)
 
@@ -233,7 +271,7 @@ def parse_server_message(
 
 
 class PhaseServerClient:
-    """Async context-managed WebSocket client speaking phase-server protocol v6.
+    """Async context-managed WebSocket client speaking phase-server protocol v106.
 
     Typical use::
 
@@ -269,12 +307,16 @@ class PhaseServerClient:
         self._ws = await websockets.connect(
             self.config.uri,
             additional_headers=list(self.config.headers.items()) or None,
-            max_size=2 * 1024 * 1024,  # phase-rs StateUpdate can be large
+            max_size=self.config.max_message_bytes,
         )
         logger.debug("phase-rs: connected to %s", self.config.uri)
         return self
 
     async def __aexit__(self, exc_type, exc, tb) -> None:
+        await self.close()
+
+    async def close(self) -> None:
+        """Close the current transport; the client may open a replacement."""
         if self._ws is not None:
             await self._ws.close()
             self._ws = None
@@ -334,10 +376,27 @@ class PhaseServerClient:
                 raise PhaseServerError(str(data.get("message", "server error")))
             if actual_type == "ActionRejected":
                 raise PhaseServerError(f"action rejected: {msg.reason}")  # type: ignore[union-attr]
+            if isinstance(msg, ActionFailed):
+                raise PhaseServerError(f"{msg.reason}: {msg.message}")
             logger.debug("phase-rs: skipping %s while waiting for %s", actual_type, msg_type)
         raise TimeoutError(f"did not receive {msg_type} within {max_skip + 1} frames")
 
     # -- protocol helpers -------------------------------------------------
+
+    async def reconnect(
+        self, game_code: str, player_token: str, full_key: FullSessionKey,
+    ) -> GameStarted:
+        """Attach this socket to the exact server-issued Full session."""
+        if full_key.game_code != game_code or not player_token:
+            raise ValueError("Reconnect requires matching session identity and player token")
+        await self._send("Reconnect", {
+            "game_code": game_code, "player_token": player_token,
+            "full_key": {"game_code": full_key.game_code, "generation": full_key.generation},
+        })
+        started = await self.expect("GameStarted")
+        if not isinstance(started, GameStarted) or started.full_key != full_key:
+            raise PhaseServerError("Reconnect did not restore the requested Full session")
+        return started
 
     async def handshake(self) -> ServerHello:
         """Receive ``ServerHello``, send ``ClientHello``, return server hello.
@@ -371,8 +430,13 @@ class PhaseServerClient:
         ai_difficulty: str = "Medium",
         ai_deck_name: str | None = None,
         format_name: str | None = None,
+        ai_decks: list[dict[str, Any]] | None = None,
     ) -> GameCreated:
-        """Create a 2-player game with one AI opponent on seat 1.
+        """Create a game with a human-controlled host and native AI opponents.
+
+        ``ai_decks`` supplies explicit decks for seats 1 onward. Omit it to
+        retain the two-player named-starter path. Commander pods need real
+        100-card lists, not the engine's 60-card starters.
 
         ``ai_difficulty`` is one of ``VeryEasy``, ``Easy``, ``Medium``,
         ``Hard``, ``VeryHard`` (see ``AiDifficulty`` in
@@ -408,11 +472,31 @@ class PhaseServerClient:
                 }
             ],
         }
+        if ai_decks is not None:
+            if not ai_decks or any(not deck.get("main_deck") for deck in ai_decks):
+                raise ValueError("Supply at least one nonempty explicit AI deck")
+            payload["player_count"] = len(ai_decks) + 1
+            payload["ai_seats"] = [
+                {
+                    "seatIndex": seat,
+                    "difficulty": ai_difficulty,
+                    "deckName": None,
+                    "deck": {"type": "DeckList", "data": ai_deck},
+                }
+                for seat, ai_deck in enumerate(ai_decks, start=1)
+            ]
+        from src.integrations.phase_rs.format_config import format_config
+
         # Add format_config if specified (e.g., for Commander games)
         if format_name:
-            payload["format_config"] = {
-                "format": format_name,
-            }
+            payload["format_config"] = format_config(format_name)
+
+        rules = payload.get("format_config") or format_config("Standard")
+        if not rules["min_players"] <= payload["player_count"] <= rules["max_players"]:
+            raise ValueError(
+                f"{rules['format']} requires {rules['min_players']}.."
+                f"{rules['max_players']} players, got {payload['player_count']}"
+            )
         await self._send("CreateGameWithSettings", payload)
         created = await self.expect("GameCreated")
         assert isinstance(created, GameCreated)

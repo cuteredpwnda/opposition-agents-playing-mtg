@@ -1,0 +1,636 @@
+{
+  "phase_rs_commit": "1191bba65048c83fbbd5a56dfd5f419ee0ead67a",
+  "protocol_version": 106,
+  "configs": {
+    "Standard": {
+      "format": "Standard",
+      "starting_life": 20,
+      "min_players": 2,
+      "max_players": 2,
+      "deck_size": {
+        "type": "Minimum",
+        "data": 60
+      },
+      "singleton": false,
+      "command_zone": false,
+      "commander_damage_threshold": null,
+      "range_of_influence": null,
+      "team_based": false,
+      "uses_commander": false,
+      "supplies_fixed_deck": false,
+      "sideboard_policy": {
+        "type": "Limited",
+        "data": 15
+      },
+      "default_deck_copy_limit": {
+        "type": "UpTo",
+        "data": 4
+      },
+      "allow_debug_actions": false
+    },
+    "Pioneer": {
+      "format": "Pioneer",
+      "starting_life": 20,
+      "min_players": 2,
+      "max_players": 2,
+      "deck_size": {
+        "type": "Minimum",
+        "data": 60
+      },
+      "singleton": false,
+      "command_zone": false,
+      "commander_damage_threshold": null,
+      "range_of_influence": null,
+      "team_based": false,
+      "uses_commander": false,
+      "supplies_fixed_deck": false,
+      "sideboard_policy": {
+        "type": "Limited",
+        "data": 15
+      },
+      "default_deck_copy_limit": {
+        "type": "UpTo",
+        "data": 4
+      },
+      "allow_debug_actions": false
+    },
+    "Modern": {
+      "format": "Modern",
+      "starting_life": 20,
+      "min_players": 2,
+      "max_players": 2,
+      "deck_size": {
+        "type": "Minimum",
+        "data": 60
+      },
+      "singleton": false,
+      "command_zone": false,
+      "commander_damage_threshold": null,
+      "range_of_influence": null,
+      "team_based": false,
+      "uses_commander": false,
+      "supplies_fixed_deck": false,
+      "sideboard_policy": {
+        "type": "Limited",
+        "data": 15
+      },
+      "default_deck_copy_limit": {
+        "type": "UpTo",
+        "data": 4
+      },
+      "allow_debug_actions": false
+    },
+    "Premodern": {
+      "format": "Premodern",
+      "starting_life": 20,
+      "min_players": 2,
+      "max_players": 2,
+      "deck_size": {
+        "type": "Minimum",
+        "data": 60
+      },
+      "singleton": false,
+      "command_zone": false,
+      "commander_damage_threshold": null,
+      "range_of_influence": null,
+      "team_based": false,
+      "uses_commander": false,
+      "supplies_fixed_deck": false,
+      "sideboard_policy": {
+        "type": "Limited",
+        "data": 15
+      },
+      "default_deck_copy_limit": {
+        "type": "UpTo",
+        "data": 4
+      },
+      "allow_debug_actions": false
+    },
+    "Legacy": {
+      "format": "Legacy",
+      "starting_life": 20,
+      "min_players": 2,
+      "max_players": 2,
+      "deck_size": {
+        "type": "Minimum",
+        "data": 60
+      },
+      "singleton": false,
+      "command_zone": false,
+      "commander_damage_threshold": null,
+      "range_of_influence": null,
+      "team_based": false,
+      "uses_commander": false,
+      "supplies_fixed_deck": false,
+      "sideboard_policy": {
+        "type": "Limited",
+        "data": 15
+      },
+      "default_deck_copy_limit": {
+        "type": "UpTo",
+        "data": 4
+      },
+      "allow_debug_actions": false
+    },
+    "Vintage": {
+      "format": "Vintage",
+      "starting_life": 20,
+      "min_players": 2,
+      "max_players": 2,
+      "deck_size": {
+        "type": "Minimum",
+        "data": 60
+      },
+      "singleton": false,
+      "command_zone": false,
+      "commander_damage_threshold": null,
+      "range_of_influence": null,
+      "team_based": false,
+      "uses_commander": false,
+      "supplies_fixed_deck": false,
+      "sideboard_policy": {
+        "type": "Limited",
+        "data": 15
+      },
+      "default_deck_copy_limit": {
+        "type": "UpTo",
+        "data": 4
+      },
+      "allow_debug_actions": false
+    },
+    "Historic": {
+      "format": "Historic",
+      "starting_life": 20,
+      "min_players": 2,
+      "max_players": 2,
+      "deck_size": {
+        "type": "Minimum",
+        "data": 60
+      },
+      "singleton": false,
+      "command_zone": false,
+      "commander_damage_threshold": null,
+      "range_of_influence": null,
+      "team_based": false,
+      "uses_commander": false,
+      "supplies_fixed_deck": false,
+      "sideboard_policy": {
+        "type": "Limited",
+        "data": 15
+      },
+      "default_deck_copy_limit": {
+        "type": "UpTo",
+        "data": 4
+      },
+      "allow_debug_actions": false
+    },
+    "Timeless": {
+      "format": "Timeless",
+      "starting_life": 20,
+      "min_players": 2,
+      "max_players": 2,
+      "deck_size": {
+        "type": "Minimum",
+        "data": 60
+      },
+      "singleton": false,
+      "command_zone": false,
+      "commander_damage_threshold": null,
+      "range_of_influence": null,
+      "team_based": false,
+      "uses_commander": false,
+      "supplies_fixed_deck": false,
+      "sideboard_policy": {
+        "type": "Limited",
+        "data": 15
+      },
+      "default_deck_copy_limit": {
+        "type": "UpTo",
+        "data": 4
+      },
+      "allow_debug_actions": false
+    },
+    "Pauper": {
+      "format": "Pauper",
+      "starting_life": 20,
+      "min_players": 2,
+      "max_players": 2,
+      "deck_size": {
+        "type": "Minimum",
+        "data": 60
+      },
+      "singleton": false,
+      "command_zone": false,
+      "commander_damage_threshold": null,
+      "range_of_influence": null,
+      "team_based": false,
+      "uses_commander": false,
+      "supplies_fixed_deck": false,
+      "sideboard_policy": {
+        "type": "Limited",
+        "data": 15
+      },
+      "default_deck_copy_limit": {
+        "type": "UpTo",
+        "data": 4
+      },
+      "allow_debug_actions": false
+    },
+    "Freeform": {
+      "format": "Freeform",
+      "starting_life": 20,
+      "min_players": 2,
+      "max_players": 2,
+      "deck_size": {
+        "type": "Minimum",
+        "data": 0
+      },
+      "singleton": false,
+      "command_zone": false,
+      "commander_damage_threshold": null,
+      "range_of_influence": null,
+      "team_based": false,
+      "uses_commander": false,
+      "supplies_fixed_deck": false,
+      "sideboard_policy": {
+        "type": "Limited",
+        "data": 15
+      },
+      "default_deck_copy_limit": {
+        "type": "Unlimited"
+      },
+      "allow_debug_actions": false
+    },
+    "Commander": {
+      "format": "Commander",
+      "starting_life": 40,
+      "min_players": 2,
+      "max_players": 6,
+      "deck_size": {
+        "type": "Exactly",
+        "data": 100
+      },
+      "singleton": true,
+      "command_zone": true,
+      "commander_damage_threshold": 21,
+      "range_of_influence": null,
+      "team_based": false,
+      "uses_commander": true,
+      "supplies_fixed_deck": false,
+      "sideboard_policy": {
+        "type": "Forbidden"
+      },
+      "default_deck_copy_limit": {
+        "type": "UpTo",
+        "data": 1
+      },
+      "allow_debug_actions": false
+    },
+    "DuelCommander": {
+      "format": "DuelCommander",
+      "starting_life": 30,
+      "min_players": 2,
+      "max_players": 2,
+      "deck_size": {
+        "type": "Exactly",
+        "data": 100
+      },
+      "singleton": true,
+      "command_zone": true,
+      "commander_damage_threshold": 21,
+      "range_of_influence": null,
+      "team_based": false,
+      "uses_commander": true,
+      "supplies_fixed_deck": false,
+      "sideboard_policy": {
+        "type": "Forbidden"
+      },
+      "default_deck_copy_limit": {
+        "type": "UpTo",
+        "data": 1
+      },
+      "allow_debug_actions": false
+    },
+    "PauperCommander": {
+      "format": "PauperCommander",
+      "starting_life": 40,
+      "min_players": 2,
+      "max_players": 6,
+      "deck_size": {
+        "type": "Exactly",
+        "data": 100
+      },
+      "singleton": true,
+      "command_zone": true,
+      "commander_damage_threshold": 21,
+      "range_of_influence": null,
+      "team_based": false,
+      "uses_commander": true,
+      "supplies_fixed_deck": false,
+      "sideboard_policy": {
+        "type": "Forbidden"
+      },
+      "default_deck_copy_limit": {
+        "type": "UpTo",
+        "data": 1
+      },
+      "allow_debug_actions": false
+    },
+    "TinyLeaders": {
+      "format": "TinyLeaders",
+      "starting_life": 20,
+      "min_players": 2,
+      "max_players": 2,
+      "deck_size": {
+        "type": "Exactly",
+        "data": 50
+      },
+      "singleton": true,
+      "command_zone": true,
+      "commander_damage_threshold": null,
+      "range_of_influence": null,
+      "team_based": false,
+      "uses_commander": false,
+      "supplies_fixed_deck": false,
+      "sideboard_policy": {
+        "type": "Limited",
+        "data": 10
+      },
+      "default_deck_copy_limit": {
+        "type": "UpTo",
+        "data": 1
+      },
+      "allow_debug_actions": false
+    },
+    "Oathbreaker": {
+      "format": "Oathbreaker",
+      "starting_life": 20,
+      "min_players": 2,
+      "max_players": 4,
+      "deck_size": {
+        "type": "Exactly",
+        "data": 60
+      },
+      "singleton": true,
+      "command_zone": true,
+      "commander_damage_threshold": null,
+      "range_of_influence": null,
+      "team_based": false,
+      "uses_commander": false,
+      "supplies_fixed_deck": false,
+      "sideboard_policy": {
+        "type": "Forbidden"
+      },
+      "default_deck_copy_limit": {
+        "type": "UpTo",
+        "data": 1
+      },
+      "allow_debug_actions": false
+    },
+    "Brawl": {
+      "format": "Brawl",
+      "starting_life": 25,
+      "min_players": 2,
+      "max_players": 2,
+      "deck_size": {
+        "type": "Exactly",
+        "data": 60
+      },
+      "singleton": true,
+      "command_zone": true,
+      "commander_damage_threshold": 21,
+      "range_of_influence": null,
+      "team_based": false,
+      "uses_commander": true,
+      "supplies_fixed_deck": false,
+      "sideboard_policy": {
+        "type": "Forbidden"
+      },
+      "default_deck_copy_limit": {
+        "type": "UpTo",
+        "data": 1
+      },
+      "allow_debug_actions": false
+    },
+    "HistoricBrawl": {
+      "format": "HistoricBrawl",
+      "starting_life": 25,
+      "min_players": 2,
+      "max_players": 2,
+      "deck_size": {
+        "type": "Exactly",
+        "data": 100
+      },
+      "singleton": true,
+      "command_zone": true,
+      "commander_damage_threshold": 21,
+      "range_of_influence": null,
+      "team_based": false,
+      "uses_commander": true,
+      "supplies_fixed_deck": false,
+      "sideboard_policy": {
+        "type": "Forbidden"
+      },
+      "default_deck_copy_limit": {
+        "type": "UpTo",
+        "data": 1
+      },
+      "allow_debug_actions": false
+    },
+    "CommanderDraft": {
+      "format": "CommanderDraft",
+      "starting_life": 40,
+      "min_players": 3,
+      "max_players": 8,
+      "deck_size": {
+        "type": "Minimum",
+        "data": 60
+      },
+      "singleton": false,
+      "command_zone": true,
+      "commander_damage_threshold": 21,
+      "range_of_influence": null,
+      "team_based": false,
+      "uses_commander": true,
+      "supplies_fixed_deck": false,
+      "sideboard_policy": {
+        "type": "Forbidden"
+      },
+      "default_deck_copy_limit": {
+        "type": "Unlimited"
+      },
+      "allow_debug_actions": false
+    },
+    "FreeformCommander": {
+      "format": "FreeformCommander",
+      "starting_life": 40,
+      "min_players": 2,
+      "max_players": 4,
+      "deck_size": {
+        "type": "Minimum",
+        "data": 0
+      },
+      "singleton": false,
+      "command_zone": true,
+      "commander_damage_threshold": 21,
+      "range_of_influence": null,
+      "team_based": false,
+      "uses_commander": true,
+      "supplies_fixed_deck": false,
+      "sideboard_policy": {
+        "type": "Forbidden"
+      },
+      "default_deck_copy_limit": {
+        "type": "Unlimited"
+      },
+      "allow_debug_actions": false
+    },
+    "FreeForAll": {
+      "format": "FreeForAll",
+      "starting_life": 20,
+      "min_players": 2,
+      "max_players": 6,
+      "deck_size": {
+        "type": "Minimum",
+        "data": 60
+      },
+      "singleton": false,
+      "command_zone": false,
+      "commander_damage_threshold": null,
+      "range_of_influence": null,
+      "team_based": false,
+      "uses_commander": false,
+      "supplies_fixed_deck": false,
+      "sideboard_policy": {
+        "type": "Unlimited"
+      },
+      "default_deck_copy_limit": {
+        "type": "Unlimited"
+      },
+      "allow_debug_actions": false
+    },
+    "TwoHeadedGiant": {
+      "format": "TwoHeadedGiant",
+      "starting_life": 30,
+      "min_players": 4,
+      "max_players": 4,
+      "deck_size": {
+        "type": "Minimum",
+        "data": 60
+      },
+      "singleton": false,
+      "command_zone": false,
+      "commander_damage_threshold": null,
+      "range_of_influence": null,
+      "team_based": true,
+      "uses_commander": false,
+      "supplies_fixed_deck": false,
+      "sideboard_policy": {
+        "type": "Unlimited"
+      },
+      "default_deck_copy_limit": {
+        "type": "Unlimited"
+      },
+      "allow_debug_actions": false
+    },
+    "Archenemy": {
+      "format": "Archenemy",
+      "starting_life": 20,
+      "min_players": 2,
+      "max_players": 6,
+      "deck_size": {
+        "type": "Minimum",
+        "data": 60
+      },
+      "singleton": false,
+      "command_zone": true,
+      "commander_damage_threshold": null,
+      "range_of_influence": null,
+      "team_based": false,
+      "archenemy_player": 0,
+      "uses_commander": false,
+      "supplies_fixed_deck": false,
+      "sideboard_policy": {
+        "type": "Unlimited"
+      },
+      "default_deck_copy_limit": {
+        "type": "UpTo",
+        "data": 4
+      },
+      "allow_debug_actions": false
+    },
+    "Planechase": {
+      "format": "Planechase",
+      "starting_life": 20,
+      "min_players": 2,
+      "max_players": 4,
+      "deck_size": {
+        "type": "Minimum",
+        "data": 60
+      },
+      "singleton": false,
+      "command_zone": false,
+      "commander_damage_threshold": null,
+      "range_of_influence": null,
+      "team_based": false,
+      "uses_commander": false,
+      "supplies_fixed_deck": false,
+      "sideboard_policy": {
+        "type": "Unlimited"
+      },
+      "default_deck_copy_limit": {
+        "type": "UpTo",
+        "data": 4
+      },
+      "allow_debug_actions": false
+    },
+    "Limited": {
+      "format": "Limited",
+      "starting_life": 20,
+      "min_players": 2,
+      "max_players": 2,
+      "deck_size": {
+        "type": "Minimum",
+        "data": 40
+      },
+      "singleton": false,
+      "command_zone": false,
+      "commander_damage_threshold": null,
+      "range_of_influence": null,
+      "team_based": false,
+      "uses_commander": false,
+      "supplies_fixed_deck": false,
+      "sideboard_policy": {
+        "type": "Unlimited"
+      },
+      "default_deck_copy_limit": {
+        "type": "Unlimited"
+      },
+      "allow_debug_actions": false
+    },
+    "Momir": {
+      "format": "Momir",
+      "starting_life": 20,
+      "min_players": 2,
+      "max_players": 2,
+      "deck_size": {
+        "type": "Exactly",
+        "data": 60
+      },
+      "singleton": false,
+      "command_zone": true,
+      "commander_damage_threshold": null,
+      "range_of_influence": null,
+      "team_based": false,
+      "uses_commander": false,
+      "supplies_fixed_deck": true,
+      "sideboard_policy": {
+        "type": "Forbidden"
+      },
+      "default_deck_copy_limit": {
+        "type": "Unlimited"
+      },
+      "allow_debug_actions": false
+    }
+  }
+}

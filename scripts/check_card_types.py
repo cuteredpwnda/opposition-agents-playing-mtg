@@ -29,19 +29,60 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from dataclasses import asdict
 from pathlib import Path
+from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from src.integrations.scryfall_bulk import file_sha256  # noqa: E402
 from src.knowledge.type_line import (  # noqa: E402
+    DERIVED_TTL,
     load_type_system,
     parse_type_line,
     report_over_cards,
 )
 
 DEFAULT_CARDS = REPO_ROOT / "data" / "scryfall" / "oracle-cards.json"
+
+
+def select_corpus(
+    cards: list[dict[str, Any]], format_name: str | None,
+    excluded_layouts: tuple[str, ...] = (),
+    excluded_type_lines: tuple[str, ...] = (),
+) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    """Separate declared format eligibility from type-parser conformance."""
+    if format_name is None and not excluded_layouts and not excluded_type_lines:
+        return cards, {}
+    eligible = []
+    excluded: dict[str, int] = {}
+    for card in cards:
+        type_line = card.get("type_line")
+        if type_line in excluded_type_lines:
+            reason = f"auxiliary_type:{type_line}"
+            excluded[reason] = excluded.get(reason, 0) + 1
+            continue
+        layout = card.get("layout")
+        if layout in excluded_layouts:
+            reason = f"layout:{layout}"
+            excluded[reason] = excluded.get(reason, 0) + 1
+            continue
+        if format_name is None:
+            eligible.append(card)
+            continue
+        legalities = card.get("legalities")
+        if not isinstance(legalities, dict) or format_name not in legalities:
+            raise ValueError(f"Missing {format_name} legality for {card.get('name', '?')}")
+        status = legalities[format_name]
+        if status in {"legal", "restricted"}:
+            eligible.append(card)
+        elif status in {"not_legal", "banned"}:
+            excluded[status] = excluded.get(status, 0) + 1
+        else:
+            raise ValueError(f"Unknown {format_name} legality {status!r}")
+    return eligible, excluded
 
 # Hand-written probes that must parse correctly regardless of card data.
 # These are the cases that motivated the type-system rebuild.
@@ -90,6 +131,22 @@ def main() -> int:
     ap.add_argument("--cards", type=Path, default=DEFAULT_CARDS)
     ap.add_argument("--probes-only", action="store_true")
     ap.add_argument(
+        "--format", choices=["modern", "commander", "vintage"],
+        help="Audit cards legal/restricted in this format; default: all records.",
+    )
+    ap.add_argument(
+        "--output-json", type=Path, help="Persist corpus counts and conformance results.",
+    )
+    ap.add_argument(
+        "--exclude-layout", action="append", default=[],
+        choices=["token", "double_faced_token", "emblem", "art_series"],
+        help="Explicitly exclude an auxiliary-object layout; repeatable.",
+    )
+    ap.add_argument(
+        "--exclude-type-line", action="append", default=[], choices=["Stickers"],
+        help="Explicitly exclude sticker sheets, which Scryfall labels layout=normal.",
+    )
+    ap.add_argument(
         "--fail-on-violation",
         action="store_true",
         help="Exit non-zero if any CR 205.3d violation or unknown token is found.",
@@ -122,10 +179,33 @@ def main() -> int:
         return 0 if not args.fail_on_violation else 2
 
     cards = json.loads(args.cards.read_text(encoding="utf-8"))
-    report = report_over_cards(cards, ts)
+    try:
+        eligible, excluded = select_corpus(
+            cards, args.format, tuple(args.exclude_layout), tuple(args.exclude_type_line),
+        )
+    except ValueError as exc:
+        print(exc, file=sys.stderr)
+        return 2
+    report = report_over_cards(eligible, ts)
     print("Card pool")
     print("-" * 72)
+    print(f"scope                 {args.format or 'all records'}")
+    print(f"source records        {len(cards)}")
+    print(f"eligible records      {len(eligible)}")
+    print(f"excluded records      {sum(excluded.values())} {excluded}")
     print(report.summary())
+    if args.output_json:
+        args.output_json.parent.mkdir(parents=True, exist_ok=True)
+        args.output_json.write_text(json.dumps({
+            "schema_version": 1, "scope": args.format or "all",
+            "cards_sha256": file_sha256(args.cards),
+            "vocabulary_sha256": file_sha256(DERIVED_TTL),
+            "source_records": len(cards), "eligible_records": len(eligible),
+            "excluded_layouts": args.exclude_layout,
+            "excluded_type_lines": args.exclude_type_line,
+            "excluded_by_legality": excluded, "probe_failures": probe_failures,
+            "report": asdict(report),
+        }, indent=2), encoding="utf-8")
 
     if args.fail_on_violation and (
         probe_failures or report.with_violations or report.with_unknown

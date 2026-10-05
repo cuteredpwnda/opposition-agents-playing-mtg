@@ -12,8 +12,11 @@ just chooses one ``legal_actions`` index per turn.
 from __future__ import annotations
 
 import asyncio
+import copy
 import json
 import logging
+import math
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -57,16 +60,16 @@ def _is_our_turn_to_act(
 
 def _our_simultaneous_round_key(
     waiting_for: Any, our_seat: int
-) -> tuple[str, int] | None:
-    """Return a (waiting_for_type, our_mulligan_count) key identifying the
+) -> tuple[str, int, str] | None:
+    """Return a (waiting_for_type, our_mulligan_count, phase_type) key identifying the
     *current* simultaneous-decision round for our seat.
 
     The server keeps a player in ``pending`` after they submit (until both
     decide). Within one round the ``waiting_for`` JSON can mutate (e.g. the
     other player's ``chosen`` field flips) without the round actually
-    advancing. The only stable per-round identifier from our seat's POV is
-    our entry's ``mulligan_count`` (increments per mulligan round) combined
-    with the waiting_for type (MulliganDecision vs MulliganBottomCards).
+    advancing. Protocol v106 also moves from choosing Keep to BottomCards
+    inside the same MulliganDecision variant and mulligan count. Include
+    that per-seat phase so bottoming is not suppressed as a duplicate Keep.
 
     Returns ``None`` if waiting_for is not a simultaneous type or our seat
     is not in pending.
@@ -90,7 +93,9 @@ def _our_simultaneous_round_key(
             mc = int(mc)
         except (TypeError, ValueError):
             mc = 0
-        return (wf_type, mc)
+        phase = entry.get("phase")
+        phase_type = str(phase.get("type", "")) if isinstance(phase, dict) else ""
+        return (wf_type, mc, phase_type)
     return None
 
 
@@ -217,8 +222,9 @@ def _trace_state_snippet(state: dict[str, Any], our_seat: int) -> dict[str, Any]
 
     return snippet
 
-from src.integrations.phase_rs.agent_bridge import ActionPicker, RandomActionPicker
+from src.integrations.phase_rs.agent_bridge import ActionPicker, PickerError, RandomActionPicker
 from src.integrations.phase_rs.client import (
+    ActionFailed,
     ActionRejected,
     GameOver,
     GameStarted,
@@ -266,13 +272,18 @@ async def run_game(
     server_process: PhaseServerProcess | None = None,
     reconnect_attempts: int = 2,
     format_name: str | None = None,
+    ai_decks: list[dict[str, Any]] | None = None,
+    max_game_seconds: float | None = None,
+    max_turns: int | None = None,
 ) -> GameRunResult:
-    """Play one game against a phase-ai opponent and return the result.
+    """Play one game against native phase-ai opponents and return the result.
 
     ``deck`` is the JSON ``DeckData`` our seat will use (see
     ``src.integrations.phase_rs.decks``). ``ai_deck_name`` selects one of
     phase-rs's built-in starter decks for the AI seat -- the server resolves
     the card list internally, so we don't need to know its contents.
+    ``ai_decks`` instead supplies explicit decks for seats 1 onward, allowing
+    a four-player Commander pod with three native AI opponents.
 
     ``max_actions`` is a hard cap so a misbehaving picker can't spin
     forever; the loop exits with ``reason="action_cap"`` if hit.
@@ -286,6 +297,12 @@ async def run_game(
     don't kill anything on exit. See :class:`PhaseServerProcess`.
     """
     picker = picker or RandomActionPicker()
+    if max_game_seconds is not None and (
+        not math.isfinite(max_game_seconds) or max_game_seconds <= 0
+    ):
+        raise ValueError("max_game_seconds must be finite and positive")
+    if max_turns is not None and max_turns < 1:
+        raise ValueError("max_turns must be positive")
     cfg = config or PhaseServerConfig()
     log: list[str] = []
 
@@ -303,6 +320,7 @@ async def run_game(
             stream_timeout_s=cfg.stream_timeout_s,
             client_version=cfg.client_version,
             build_commit=cfg.build_commit,
+            max_message_bytes=cfg.max_message_bytes,
         )
     elif autostart_server:
         # Acquire lock to prevent multiple processes from starting their own servers
@@ -316,6 +334,7 @@ async def run_game(
                 stream_timeout_s=cfg.stream_timeout_s,
                 client_version=cfg.client_version,
                 build_commit=cfg.build_commit,
+                max_message_bytes=cfg.max_message_bytes,
             )
         else:
             log.append("could not acquire server lock; attempting to connect to existing server")
@@ -333,6 +352,9 @@ async def run_game(
             log=log,
             reconnect_attempts=reconnect_attempts,
             format_name=format_name,
+            ai_decks=ai_decks,
+            max_game_seconds=max_game_seconds,
+            max_turns=max_turns,
         )
     finally:
         # Clean up server lock
@@ -357,12 +379,16 @@ async def _play(
     log: list[str],
     reconnect_attempts: int = 2,
     format_name: str | None = None,
+    ai_decks: list[dict[str, Any]] | None = None,
+    max_game_seconds: float | None = None,
+    max_turns: int | None = None,
 ) -> GameRunResult:
     # Never block forever in the streaming loop. If the server goes quiet
     # unexpectedly (dropped GameOver, stale socket, etc.), attempt to
     # reconnect and resume; if all reconnection attempts fail, end cleanly.
     # Default 180s allows phase-ai time to chain many decisions per turn.
     stream_timeout_s = cfg.stream_timeout_s if cfg.stream_timeout_s is not None else 180.0
+    deadline = time.perf_counter() + max_game_seconds if max_game_seconds is not None else None
 
     async with PhaseServerClient(cfg) as client:
         hello = await client.handshake()
@@ -374,20 +400,30 @@ async def _play(
             ai_difficulty=ai_difficulty,
             ai_deck_name=ai_deck_name,
             format_name=format_name,
+            ai_decks=ai_decks,
         )
         log.append(f"game created: code={created.game_code}")
 
         started = await client.expect("GameStarted")
         assert isinstance(started, GameStarted)
+        full_key = started.full_key or created.full_key
+        if created.full_key is not None and full_key != created.full_key:
+            raise PhaseServerError("GameStarted session identity differs from GameCreated")
         our_seat = started.your_player
         log.append(f"game started: our_seat={our_seat} opp={started.opponent_name!r}")
 
         latest_state: dict[str, Any] = started.state
+        state_revision = started.state_revision
         legal_actions: list[dict[str, Any]] = _dedup_legal_actions(list(started.legal_actions))
         trace: list[dict[str, Any]] = [
             {
                 "event": "game_started",
+                "server_version": hello.server_version,
+                "server_build_commit": hello.build_commit,
+                "protocol_version": hello.protocol_version,
                 "our_seat": our_seat,
+                "player_count": 2 if ai_decks is None else len(ai_decks) + 1,
+                "max_message_bytes": cfg.max_message_bytes,
                 "turn": int(started.state.get("turn_number", 0)),
                 "phase": str(started.state.get("phase", "Unknown")),
                 "legal_action_types": [str(a.get("type", "")) for a in legal_actions],
@@ -400,9 +436,37 @@ async def _play(
         # For simultaneous-decision rounds (mulligan), record the per-seat
         # round key at submit-time so we don't re-submit before the round
         # advances. See _our_simultaneous_round_key.
-        submitted_round_key: tuple[str, int] | None = None
+        submitted_round_key: tuple[str, int, str] | None = None
 
         while True:
+            waiting = latest_state.get("waiting_for") or {}
+            if isinstance(waiting, dict) and waiting.get("type") == "GameOver":
+                winner = (waiting.get("data") or {}).get("winner")
+                log.append(f"game over (restored state): winner={winner}")
+                trace.append({
+                    "event": "game_over", "winner": winner, "reason": "game_rules",
+                    "turn": int(latest_state.get("turn_number", 0)),
+                    "state": _trace_state_snippet(latest_state, our_seat),
+                })
+                return GameRunResult(
+                    winner_seat=winner, reason="game_rules", our_seat=our_seat,
+                    turns_observed=turns_observed, actions_sent=actions_sent,
+                    final_state=latest_state, log=log, trace=trace,
+                )
+            if (deadline is not None and time.perf_counter() >= deadline) or (
+                max_turns is not None and int(latest_state.get("turn_number", 0)) > max_turns
+            ):
+                reason = (
+                    "game_timeout" if deadline is not None and time.perf_counter() >= deadline
+                    else "turn_cap"
+                )
+                log.append(f"{reason}: stopped at the configured experiment budget")
+                trace.append({"event": reason, "turn": latest_state.get("turn_number", 0)})
+                return GameRunResult(
+                    winner_seat=None, reason=reason, our_seat=our_seat,
+                    turns_observed=turns_observed, actions_sent=actions_sent,
+                    final_state=latest_state, log=log, trace=trace,
+                )
             # If it's our turn to act (the server only sends legal_actions
             # when we have priority / a decision), send one.
             # For simultaneous mulligan states the server broadcasts the
@@ -443,12 +507,20 @@ async def _play(
                         if extra.state.get("turn_number", 0) != latest_state.get("turn_number", 0):
                             turns_observed += 1
                         latest_state = extra.state
+                        state_revision = extra.state_revision
                         legal_actions = _dedup_legal_actions(list(extra.legal_actions))
                         wf = extra.state.get("waiting_for") or {}
                         if isinstance(wf, dict) and wf.get("type") == "GameOver":
                             winner_data = wf.get("data") or {}
                             winner = winner_data.get("winner") if isinstance(winner_data, dict) else None
                             log.append(f"game over (from state, drain): winner={winner}")
+                            trace.append({
+                                "event": "game_over",
+                                "winner": winner,
+                                "reason": "game_rules",
+                                "turn": int(latest_state.get("turn_number", 0)),
+                                "state": _trace_state_snippet(latest_state, our_seat),
+                            })
                             early_exit_result = GameRunResult(
                                 winner_seat=winner,
                                 reason="game_rules",
@@ -462,9 +534,30 @@ async def _play(
                             break
                     elif isinstance(extra, GameOver):
                         log.append(f"game over (drain): winner={extra.winner}")
+                        trace.append({
+                            "event": "game_over",
+                            "winner": extra.winner,
+                            "reason": extra.reason,
+                            "turn": int(latest_state.get("turn_number", 0)),
+                            "state": _trace_state_snippet(latest_state, our_seat),
+                        })
                         early_exit_result = GameRunResult(
                             winner_seat=extra.winner,
-                            reason="game_over",
+                            reason=extra.reason,
+                            our_seat=our_seat,
+                            turns_observed=turns_observed,
+                            actions_sent=actions_sent,
+                            final_state=latest_state,
+                            log=log,
+                            trace=trace,
+                        )
+                        break
+                    elif isinstance(extra, ActionFailed):
+                        log.append(f"{extra.reason}: {extra.message}")
+                        trace.append({"event": extra.reason, "message": extra.message})
+                        early_exit_result = GameRunResult(
+                            winner_seat=None,
+                            reason=extra.reason,
                             our_seat=our_seat,
                             turns_observed=turns_observed,
                             actions_sent=actions_sent,
@@ -496,6 +589,10 @@ async def _play(
                         break
                 if early_exit_result is not None:
                     return early_exit_result
+                if (deadline is not None and time.perf_counter() >= deadline) or (
+                    max_turns is not None and int(latest_state.get("turn_number", 0)) > max_turns
+                ):
+                    continue
                 # After drain, re-check that it's still our turn.
                 if not (legal_actions and _is_our_turn_to_act(
                     latest_state.get("waiting_for"), our_seat, legal_actions
@@ -516,10 +613,33 @@ async def _play(
                             log=log,
                             trace=trace,
                         )
-                    if hasattr(picker, "pick_async"):
-                        idx = await picker.pick_async(legal_actions, latest_state, our_seat)  # type: ignore[attr-defined]
-                    else:
-                        idx = picker.pick(legal_actions, latest_state, our_seat)
+                    decision_started = time.perf_counter()
+                    try:
+                        if hasattr(picker, "pick_async"):
+                            idx = await picker.pick_async(legal_actions, latest_state, our_seat)  # type: ignore[attr-defined]
+                        else:
+                            idx = picker.pick(legal_actions, latest_state, our_seat)
+                    except PickerError as exc:
+                        log.append(f"{exc.reason}: {exc}")
+                        trace.append({
+                            "event": exc.reason,
+                            "message": str(exc),
+                            "decision_time_sec": time.perf_counter() - decision_started,
+                            "picker_reasoning": copy.deepcopy(
+                                getattr(picker, "last_reasoning", None)
+                            ),
+                        })
+                        return GameRunResult(
+                            winner_seat=None,
+                            reason=exc.reason,
+                            our_seat=our_seat,
+                            turns_observed=turns_observed,
+                            actions_sent=actions_sent,
+                            final_state=latest_state,
+                            log=log,
+                            trace=trace,
+                        )
+                    decision_time = time.perf_counter() - decision_started
                     if not 0 <= idx < len(legal_actions):
                         raise ValueError(
                             f"picker {picker.name} returned index {idx} "
@@ -536,6 +656,10 @@ async def _play(
                             "chosen_index": idx,
                             "chosen_type": str(chosen.get("type", "")),
                             "chosen_action": chosen,
+                            "decision_time_sec": decision_time,
+                            "picker_reasoning": copy.deepcopy(
+                                getattr(picker, "last_reasoning", None)
+                            ),
                             "legal_action_types": [str(a.get("type", "")) for a in legal_actions],
                             "state": _trace_state_snippet(latest_state, our_seat),
                         }
@@ -553,7 +677,10 @@ async def _play(
             # incidental traffic (events, timer ticks). Use the streaming
             # timeout so AI thinking pauses don't trigger spurious TimeoutErrors.
             try:
-                msg = await client.recv(timeout=stream_timeout_s)
+                remaining = stream_timeout_s
+                if deadline is not None:
+                    remaining = max(0.001, min(remaining, deadline - time.perf_counter()))
+                msg = await client.recv(timeout=remaining)
             except (
                 asyncio.TimeoutError,
                 ConnectionResetError,
@@ -561,66 +688,82 @@ async def _play(
                 ConnectionClosedError,
                 OSError,
             ) as e:
-                # Stream timeout or connection errors: phase-ai's turn may have chained many
-                # decisions, or the network connection dropped. Attempt to reconnect and resume.
+                if deadline is not None and time.perf_counter() >= deadline:
+                    # Return through the budget guard, never through reconnect.
+                    continue
                 exc_name = type(e).__name__
+                stream_error = str(e)
                 log.append(
-                    f"stream error ({exc_name}) after {stream_timeout_s:.1f}s; "
+                    f"stream error ({exc_name}: {stream_error}) "
+                    f"with {stream_timeout_s:.1f}s timeout; "
                     f"attempting reconnect"
                 )
-                for attempt in range(1, reconnect_attempts + 1):
+                attempts_allowed = reconnect_attempts if full_key is not None else 0
+                if full_key is None:
+                    log.append("cannot reconnect: server did not issue a Full session key")
+                for attempt in range(1, attempts_allowed + 1):
                     log.append(
                         f"reconnect attempt {attempt}/{reconnect_attempts}"
                     )
                     try:
-                        # Close old connection and open a new one, then attempt
-                        # to resume the existing game using the player token.
-                        player_token = client.config.headers.get("X-Player-Token")
-                        game_code = None  # Would need to track this from GameCreated
-                        
                         await client.close()
-                        await asyncio.sleep(0.5)
-                        new_client = PhaseServerClient(cfg)
-                        await new_client.__aenter__()
-                        # Handshake to verify connection is live.
-                        await new_client.handshake()
-                        logger.debug(
-                            "phase-rs: reconnect attempt %d established new connection",
-                            attempt,
-                        )
-                        # Patch the client in the outer context so we can keep looping.
-                        client = new_client  # noqa: F841 - reassign for next iteration
-                        log.append(f"reconnected successfully (attempt {attempt})")
+
+                        async def restore_session() -> GameStarted:
+                            await client.__aenter__()
+                            await client.handshake()
+                            assert full_key is not None
+                            return await client.reconnect(
+                                created.game_code, created.player_token, full_key,
+                            )
+
+                        timeout = cfg.request_timeout_s * 3
+                        if deadline is not None:
+                            timeout = max(0.001, min(timeout, deadline - time.perf_counter()))
+                        resumed = await asyncio.wait_for(restore_session(), timeout=timeout)
+                        if resumed.your_player != our_seat:
+                            raise PhaseServerError("Reconnect restored a different controlled seat")
+                        if resumed.state_revision < state_revision:
+                            raise PhaseServerError("Reconnect restored a stale state revision")
+                        if resumed.state.get("turn_number") != latest_state.get("turn_number"):
+                            turns_observed += 1
+                        latest_state = resumed.state
+                        state_revision = resumed.state_revision
+                        legal_actions = _dedup_legal_actions(list(resumed.legal_actions))
+                        log.append(f"session restored (attempt {attempt})")
                         trace.append(
                             {
                                 "event": "reconnect_success",
                                 "attempt": attempt,
                                 "turn": int(latest_state.get("turn_number", 0)),
+                                "state_revision": state_revision,
                                 "state": _trace_state_snippet(latest_state, our_seat),
                             }
                         )
-                        # Note: Full game state recovery is not yet implemented.
-                        # The server may continue from where it left off if the
-                        # websocket transport itself handles it. Otherwise the
-                        # game is lost and we should implement a proper rejoin.
-                        break  # Success; continue main loop
-                    except Exception as e:
-                        logger.debug(
-                            "phase-rs: reconnect attempt %d failed: %s", attempt, e
-                        )
-                        await asyncio.sleep(0.5)
+                        break
+                    except (
+                        asyncio.TimeoutError, ConnectionError, ConnectionClosedError,
+                        OSError, PhaseServerError,
+                    ) as reconnect_error:
+                        log.append(f"reconnect attempt {attempt} failed: {reconnect_error}")
+                        trace.append({
+                            "event": "reconnect_failure", "attempt": attempt,
+                            "error": str(reconnect_error),
+                        })
+                        if deadline is not None and time.perf_counter() >= deadline:
+                            break
                 else:
                     # All reconnection attempts failed.
                     log.append(
-                        f"stream timeout and all {reconnect_attempts} reconnect attempts failed"
+                        f"stream timeout; {attempts_allowed} session restore attempts failed"
                     )
                     trace.append(
                         {
                             "event": "stream_timeout_final",
+                            "error": stream_error,
                             "turn": int(latest_state.get("turn_number", 0)),
                             "phase": str(latest_state.get("phase", "Unknown")),
                             "timeout_s": stream_timeout_s,
-                            "reconnect_attempts": reconnect_attempts,
+                            "reconnect_attempts": attempts_allowed,
                             "state": _trace_state_snippet(latest_state, our_seat),
                         }
                     )
@@ -634,11 +777,12 @@ async def _play(
                         log=log,
                         trace=trace,
                     )
-                continue  # Reconnect succeeded; try to recv() again
+                continue
             if isinstance(msg, StateUpdate):
                 if msg.state.get("turn_number", 0) != latest_state.get("turn_number", 0):
                     turns_observed += 1
                 latest_state = msg.state
+                state_revision = msg.state_revision
                 # legal_actions arrives whenever it is *our* seat's turn to
                 # choose. An empty list means the AI seat has priority — keep
                 # looping until phase-server sends us another decision.
@@ -684,6 +828,19 @@ async def _play(
                 )
                 return GameRunResult(
                     winner_seat=msg.winner,
+                    reason=msg.reason,
+                    our_seat=our_seat,
+                    turns_observed=turns_observed,
+                    actions_sent=actions_sent,
+                    final_state=latest_state,
+                    log=log,
+                    trace=trace,
+                )
+            elif isinstance(msg, ActionFailed):
+                log.append(f"{msg.reason}: {msg.message}")
+                trace.append({"event": msg.reason, "message": msg.message})
+                return GameRunResult(
+                    winner_seat=None,
                     reason=msg.reason,
                     our_seat=our_seat,
                     turns_observed=turns_observed,

@@ -6,12 +6,31 @@ and a per-difficulty AI opponent. We vendor it as a git submodule under
 `external/phase-rs/` and talk to it from Python via a small adapter in
 `src/integrations/phase_rs/`.
 
-> **Status — May 2026:** Adapter beachhead on branch `feat/phase-rs-engine`.
-> A `RandomActionPicker` finishes games against phase-rs's AI end-to-end
-> over WebSocket. Full state translation (so `HeuristicAgent`,
-> `WorldModelAgent`, `ActiveInferenceAgent` can drive phase-rs) is in
-> progress — tracked in [IMPLEMENTATION_PLAN.md](../IMPLEMENTATION_PLAN.md)
-> under the "phase-rs engine adapter" queue entry.
+> **Status — October 5, 2026:** Pinned to `1191bba65`, protocol v106.
+> Release build, refreshed native data, and a complete live Modern game
+> with `HeuristicActionPicker` are verified. Tev1 0.8B's local decision API
+> works, but full-game pilots exceed the native 2050-token input ceiling.
+> Controlled strength measurements remain pending. Native viewer
+> interactions remain queued; keyed reconnect is now live-verified in
+> [IMPLEMENTATION_PLAN.md](../IMPLEMENTATION_PLAN.md).
+
+### Session restore and casting-model limits
+
+The client retains the server-issued `full_key` (game code + generation) and
+player credential. A stream reconnect sends the native `Reconnect` message and
+requires a matching `GameStarted`, controlled seat and non-stale state revision
+before recording success. It restores legal actions/terminal state and keeps
+credentials out of traces. A handshake alone is not session recovery. A forced
+native socket closure has been verified; this does not qualify stalled native
+AI progression or long Commander pods.
+
+KL casting subdecisions forecast one pending-cast completion rather than treating
+mode/target choices as identical to cancellation. In two-player snapshots,
+simple fixed-damage targets use native effect and player/object identities;
+multiplayer snapshots retain coarse forecasts because the latent opponent-life
+minimum cannot represent a particular opponent's life. Other effects remain coarse.
+Two fresh mirror games completed after the repair, both losses. This is a
+functional repair, not a card-/mode-exact transition or strength result.
 
 ## Why phase-rs
 
@@ -41,7 +60,9 @@ differential-conformance check.
 ```
 
 Protocol source: [`external/phase-rs/crates/server-core/src/protocol.rs`][protocol].
-Wire version: `PROTOCOL_VERSION = 6`. Our parser is validated against
+Wire version: `PROTOCOL_VERSION = 106` (upstream `1191bba65`, October 2026;
+the constant now lives in `lobby-broker/src/protocol.rs` and is re-exported
+by `server-core`). Our parser is validated against
 phase-rs's own `fixtures/adapter-contract/*.json` files via
 `tests/integrations/phase_rs/test_protocol_envelopes.py`.
 
@@ -64,7 +85,8 @@ Run a Python-controlled seat vs phase-ai in another terminal:
 
 ```powershell
 .\.venv\Scripts\python.exe examples\play_phase_rs.py `
-    --deck "Red Deck Wins" --picker random --seed 7
+    --deck "Blue Control" --picker random --seed 7 --format Modern `
+    --our-deck-file data\decks\modern\modern_mono_red_burn.txt
 ```
 
 Useful flags:
@@ -72,28 +94,42 @@ Useful flags:
 | Flag | Default | What it does |
 |---|---|---|
 | `--deck NAME` | `"Red Deck Wins"` | Starter-deck name for the AI seat (one of phase-rs's bundled decks). If you pass a path with `--our-deck-file`, this still drives the opponent. |
-| `--our-deck-file PATH` | unset | Path to a `data/decks/*.txt` decklist for our seat. |
-| `--picker {random,prefer-nonpass,heuristic,ollama}` | `prefer-nonpass` | Which `ActionPicker` to install in our seat. `ollama` queries a local LLM for action indices. |
+| `--our-deck-file PATH` | unset | Path to a `data/decks/*.txt` decklist for our seat; required for a valid live host deck. |
+| `--format NAME` | unset (Standard) | Both host and AI decks must be legal in this format. |
+| `--picker {random,prefer-nonpass,heuristic,tev1,ollama}` | `prefer-nonpass` | Which `ActionPicker` to install. `tev1` uses the local decision API; `ollama` uses chat/generation. |
 | `--picker agent:<name>` | unset | Run one of our native `src/agents` implementations through the phase-rs bridge (for example `agent:heuristic`). |
 | `--ollama-model NAME` | `gemma4:e2b` | Ollama model tag for `--picker ollama`. |
 | `--ollama-url URL` | `http://localhost:11434` | Ollama HTTP endpoint for `--picker ollama`. |
+| `--tev1-model NAME` | `tev1:0.8b` | Installed decision model for `--picker tev1` (Ollama 0.35+). |
+| `--tev1-candidates N` | `24` | Shortlist cap, between 2 and 24; seeded heuristic tiers with pass retained. |
+| `--tev1-timeout N` | `120` | Decision API timeout in seconds; errors are explicit incomplete runs. |
 | `--ai-difficulty NAME` | `Medium` | One of `VeryEasy`, `Easy`, `Medium`, `Hard`, `VeryHard`. |
 | `--uri URI` | `ws://127.0.0.1:9374/ws` | phase-server WebSocket URI. |
 | `--autostart` | off | Starts a local `phase-server` subprocess automatically (or adopts an already-running one on the same port). |
 | `--seed N` | `7` | RNG seed for the picker. |
 | `--max-actions N` | `2000` | Safety cap. |
+| `--ai-deck-file PATH` | unset | Repeat for explicit native AI decks; three repetitions plus a host Commander list create a four-player pod. |
+| `--max-game-seconds N` | unset | Cooperative wall-clock game limit; incomplete if reached. |
+| `--max-turns N` | unset | Global native turn-number cap, not pod rounds; incomplete in benchmark output. |
+| `--max-message-mib N` | `16` in CLIs | Bounded transport frame limit; Python config retains a 2 MiB default. |
 
 For batched experiments against phase-rs AI, use:
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\run_phase_rs_ablation.py `
-  --games 8 --picker ollama --ai-difficulty Hard --autostart
+  --games 8 --picker ollama --ai-difficulty Hard `
+  --our-deck-file data\decks\modern\modern_mono_red_burn.txt `
+  --format Modern --ai-deck "Blue Control" --autostart
 ```
 
 This emits `summary.json` + `games.jsonl` under `runs/phase_rs_ablation/<timestamp>/`.
 Each game also writes a structured trace JSONL file under
 `runs/phase_rs_ablation/<timestamp>/traces/` (decision events, legal action
 types, chosen action type, terminal reason).
+See [EXPERIMENTS.md](EXPERIMENTS.md) for the three-objective sweep,
+configuration provenance, full Commander commands, bounded publication pilot
+and schema-v2 completion-aware metrics. See
+[RESEARCH_PIPELINES.md](RESEARCH_PIPELINES.md) for the decision/control diagrams.
 
 For rollout grids (picker x difficulty x deck), use:
 
@@ -125,6 +161,45 @@ translator tracked in `IMPLEMENTATION_PLAN.md`.
 
 No GUI is required — the browser/Tauri client is for human players. The
 server can run headless and our agents only need the WebSocket.
+
+## Engine update checklist
+
+1. Build the pinned server using the MSVC discovery command under K1 in
+   [IMPLEMENTATION_PLAN.md](../IMPLEMENTATION_PLAN.md).
+2. If old cached card data no longer deserializes, let the server refresh it
+   through its signed bootstrap. For this release, set
+   `PHASE_DATA_MANIFEST_URL=https://data.phase-rs.dev/desktop/release-server-v0.102.0.json`
+   in the environment of the server you launch. The native bootstrap verifies
+   hashes and quarantines incompatible data as `.unusable`; do not edit card JSON.
+3. Regenerate `src/integrations/phase_rs/format_defaults.json` after engine
+   updates. Protocol v106 requires complete `FormatConfig` payloads: passing
+   only `{"format": "Modern"}` is rejected. The snapshot is exported from
+   `GameFormat::registry()`, not guessed Python defaults.
+
+The exporter needs the engine `.rlib` and **the exact serde_json dependency
+linked into that engine**, not whichever serde_json file is newest. Inspect
+the engine with `rustc -Z ls=root <engine-rlib>` in the pinned nightly toolchain.
+After the current release build, the verified libraries are:
+
+```powershell
+# Run in the repository root with the same initialized MSVC environment.
+.\.venv\Scripts\python.exe -m scripts.export_phase_rs_formats `
+  --engine-rlib external\phase-rs\target\release\deps\libengine-996fedad16fa4767.rlib `
+  --serde-json-rlib external\phase-rs\target\release\deps\libserde_json-5f0d4f6fc327e23f.rlib
+```
+
+Library hashes change with builds; rediscover them instead of reusing stale
+paths. The exporter uses release-compatible thin LTO and emits revision/protocol
+provenance. Commit the regenerated snapshot with the submodule update.
+
+4. Run the protocol/format tests and a complete live game. The October smoke
+   used Modern burn versus `Blue Control` at VeryEasy and finished in 14 turns
+   and 150 controlled actions. This verifies integration, not playing strength.
+
+The engine exposes only five named AI starter decks: `Red Deck Wins`,
+`White Weenie`, `Blue Control`, `Green Stompy`, and `Azorius Flyers`.
+Names are not a guarantee of format legality: several contain Legacy-only
+cards. Python's exported list is checked against the engine source.
 
 ## phase-rs's built-in AI (the opponent)
 

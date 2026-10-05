@@ -1,0 +1,379 @@
+\begin{thebibliography}{47}
+\providecommand{\natexlab}[1]{#1}
+\providecommand{\url}[1]{\texttt{#1}}
+\expandafter\ifx\csname urlstyle\endcsname\relax
+  \providecommand{\doi}[1]{doi: #1}\else
+  \providecommand{\doi}{doi: \begingroup \urlstyle{rm}\Url}\fi
+
+\bibitem[Assran et~al.(2023)]{assran2023ijepa}
+Mahmoud Assran et~al.
+\newblock Self-supervised learning from images with a joint-embedding
+  predictive architecture.
+\newblock In \emph{IEEE/CVF Conference on Computer Vision and Pattern
+  Recognition}, 2023.
+\newblock URL \url{https://arxiv.org/abs/2301.08243}.
+
+\bibitem[Balestriero et~al.(2025)Balestriero, Van~Assel, BuGhanem, and
+  Maes]{balestriero2025stable}
+Randall Balestriero, Hugues Van~Assel, Sami BuGhanem, and Lucas Maes.
+\newblock {stable-pretraining-v1}: Foundation model research made simple.
+\newblock arXiv:2511.19484, 2025.
+\newblock URL \url{https://arxiv.org/abs/2511.19484}.
+\newblock Software: \url{https://github.com/galilai-group/stable-pretraining}.
+
+\bibitem[Borgo et~al.(2022)Borgo, Ferrario, Gangemi, Guarino, Masolo, Porello,
+  Sanfilippo, and Vieu]{borgo2022dolce}
+Stefano Borgo, Roberta Ferrario, Aldo Gangemi, Nicola Guarino, Claudio Masolo,
+  Daniele Porello, Emilio~M. Sanfilippo, and Laure Vieu.
+\newblock {DOLCE}: A descriptive ontology for linguistic and cognitive
+  engineering.
+\newblock \emph{Applied Ontology}, 17\penalty0 (1):\penalty0 45--69, 2022.
+\newblock \doi{10.3233/AO-210259}.
+
+\bibitem[Brown and Sandholm(2018)]{brown2018superhuman}
+Noam Brown and Tuomas Sandholm.
+\newblock Superhuman {AI} for heads-up no-limit poker: {Libratus} beats top
+  professionals.
+\newblock \emph{Science}, 359\penalty0 (6374):\penalty0 418--424, 2018.
+\newblock \doi{10.1126/science.aao1733}.
+
+\bibitem[Cowling et~al.(2012)Cowling, Ward, and Powley]{cowling2012ensemble}
+Peter~I. Cowling, Colin~D. Ward, and Edward~J. Powley.
+\newblock Ensemble determinization in {Monte Carlo} tree search for the
+  imperfect information card game {Magic: The Gathering}.
+\newblock \emph{IEEE Transactions on Computational Intelligence and AI in
+  Games}, 2012.
+\newblock \doi{10.1109/TCIAIG.2012.2204883}.
+
+\bibitem[{Data Science Lab, Fachhochschule
+  S{\"u}dwestfalen}(n.d.)]{ontology_extender}
+{Data Science Lab, Fachhochschule S{\"u}dwestfalen}.
+\newblock {OntologyExtender}: A multi-agent human-in-the-loop framework for
+  ontology evolution.
+\newblock Project repository; work in progress, n.d.
+\newblock URL \url{https://github.com/DataScienceLabFHSWF/OntologyExtender}.
+\newblock Accessed 5 October 2026.
+
+\bibitem[Diettrich et~al.(2026)Diettrich, Friedenberger, and
+  Both]{diettrich2026harp}
+Anton Diettrich, Dirk Friedenberger, and Andreas Both.
+\newblock Navigating schema drift: Orchestrating agents and schema discovery
+  for robust, domain-specific knowledge graph question answering.
+\newblock In \emph{Bridging the Gap Between Curated and Induced Semantics},
+  volume~63 of \emph{Studies on the Semantic Web}, pages 160--174. IOS Press,
+  2026.
+\newblock \doi{10.3233/SSW260014}.
+
+\bibitem[Edge et~al.(2024)]{edge2024graphrag}
+Darren Edge et~al.
+\newblock From local to global: A graph {RAG} approach to query-focused
+  summarization.
+\newblock arXiv:2404.16130, 2024.
+\newblock URL \url{https://arxiv.org/abs/2404.16130}.
+
+\bibitem[Ehrenm{\"u}ller et~al.(2026)Ehrenm{\"u}ller, Kook, Ekaputra, and
+  Sabou]{ehrenmuller2026sock}
+Katrin Ehrenm{\"u}ller, Lucas Kook, Fajar~J. Ekaputra, and Marta Sabou.
+\newblock Synthesising causal knowledge with semantic technologies.
+\newblock In \emph{Bridging the Gap Between Curated and Induced Semantics},
+  volume~63 of \emph{Studies on the Semantic Web}, pages 19--33. IOS Press,
+  2026.
+\newblock \doi{10.3233/SSW260004}.
+
+\bibitem[Fel'dbaum(1960)]{feldbaum1960dual}
+A.~A. Fel'dbaum.
+\newblock Dual control theory {I--II}.
+\newblock \emph{Automation and Remote Control}, 21:\penalty0 874--880,
+  1033--1039, 1960.
+\newblock English translation; no persistent identifier recorded.
+
+\bibitem[Friston(2010)]{friston2010free}
+Karl Friston.
+\newblock The free-energy principle: A unified brain theory?
+\newblock \emph{Nature Reviews Neuroscience}, 11\penalty0 (2):\penalty0
+  127--138, 2010.
+\newblock \doi{10.1038/nrn2787}.
+
+\bibitem[Gangemi et~al.(2002)Gangemi, Guarino, Masolo, Oltramari, and
+  Schneider]{gangemi2002dolce}
+Aldo Gangemi, Nicola Guarino, Claudio Masolo, Alessandro Oltramari, and Luc
+  Schneider.
+\newblock Sweetening ontologies with {DOLCE}.
+\newblock In \emph{Knowledge Engineering and Knowledge Management: Ontologies
+  and the Semantic Web}, volume 2473 of \emph{Lecture Notes in Computer
+  Science}, pages 166--181. Springer, 2002.
+\newblock \doi{10.1007/3-540-45810-7_18}.
+
+\bibitem[Ha and Schmidhuber(2018)]{ha2018world}
+David Ha and J{\"u}rgen Schmidhuber.
+\newblock Recurrent world models facilitate policy evolution.
+\newblock In \emph{Advances in Neural Information Processing Systems}, 2018.
+\newblock URL \url{https://worldmodels.github.io/}.
+
+\bibitem[Hafner et~al.(2020)Hafner, Lillicrap, Ba, and
+  Norouzi]{hafner2020dream}
+Danijar Hafner, Timothy Lillicrap, Jimmy Ba, and Mohammad Norouzi.
+\newblock Dream to control: Learning behaviors by latent imagination.
+\newblock In \emph{International Conference on Learning Representations}, 2020.
+\newblock URL \url{https://arxiv.org/abs/1912.01603}.
+
+\bibitem[Hafner et~al.(2023)Hafner, Pasukonis, Ba, and
+  Lillicrap]{hafner2023dreamerv3}
+Danijar Hafner, Jurgis Pasukonis, Jimmy Ba, and Timothy Lillicrap.
+\newblock Mastering diverse domains through world models.
+\newblock arXiv:2301.04104, 2023.
+\newblock URL \url{https://arxiv.org/abs/2301.04104}.
+
+\bibitem[Hamilton et~al.(2017)Hamilton, Ying, and
+  Leskovec]{hamilton2017inductive}
+William~L. Hamilton, Rex Ying, and Jure Leskovec.
+\newblock Inductive representation learning on large graphs.
+\newblock In \emph{Advances in Neural Information Processing Systems}, 2017.
+\newblock URL \url{https://arxiv.org/abs/1706.02216}.
+
+\bibitem[Irie et~al.(2022)Irie, Schlag, Csord{\'a}s, and
+  Schmidhuber]{irie2022neural}
+Kazuki Irie, Imanol Schlag, R{\'o}bert Csord{\'a}s, and J{\"u}rgen Schmidhuber.
+\newblock A modern self-referential weight matrix that learns to modify itself.
+\newblock In \emph{International Conference on Machine Learning}, 2022.
+\newblock URL \url{https://arxiv.org/abs/2202.05780}.
+
+\bibitem[{jiayi} et~al.(2026){jiayi}, Wang, and Garijo]{garijo2026maseo}
+{jiayi}, Clark Wang, and Daniel Garijo.
+\newblock {MASEO}: A multi-agent system for explainable ontology generation.
+\newblock Software, Ontology Engineering Group, Universidad Polit{\'e}cnica de
+  Madrid, 2026.
+\newblock URL \url{https://github.com/oeg-upm/maseo}.
+\newblock Zenodo software record oeg-upm/maseo: v1.2; creators as recorded in
+  DataCite.
+
+\bibitem[Kappen(2005)]{kappen2005path}
+Hilbert~J. Kappen.
+\newblock Path integrals and symmetry breaking for optimal control theory.
+\newblock \emph{Journal of Statistical Mechanics: Theory and Experiment}, page
+  P11011, 2005.
+\newblock \doi{10.1088/1742-5468/2005/11/P11011}.
+
+\bibitem[Kaufmann(2026)]{kaufmann2026aifcontrol}
+Rafael Kaufmann.
+\newblock {Active Inference is Optimal Control}.
+\newblock SSRN preprint, 2026.
+\newblock URL \url{https://doi.org/10.2139/ssrn.7504418}.
+
+\bibitem[LeCun(2022)]{lecun2022path}
+Yann LeCun.
+\newblock A path towards autonomous machine intelligence.
+\newblock OpenReview position paper, 2022.
+\newblock URL \url{https://openreview.net/forum?id=BZ5a1r-kVsf}.
+
+\bibitem[Liao et~al.(2026)Liao, Collarana, Pack, Grass, Both, Decker, and
+  Beecks]{liao2026graphragbp}
+Yan-Ying Liao, Diego Collarana, Christopher~Ingo Pack, Alexander Grass, Andreas
+  Both, Stefan Decker, and Christian Beecks.
+\newblock {GraphRAG} best practices: A modular evaluation framework and
+  regulatory case study.
+\newblock In \emph{Bridging the Gap Between Curated and Induced Semantics},
+  volume~63 of \emph{Studies on the Semantic Web}, pages 141--156. IOS Press,
+  2026.
+\newblock \doi{10.3233/SSW260013}.
+
+\bibitem[Lippolis et~al.(2026)Lippolis, Saeedizade, Schmid, Blattner,
+  Keskis{\"a}rkk{\"a}, Gangemi, Blomqvist, and
+  Nuzzolese]{lippolis2026ontoextend}
+Anna~Sofia Lippolis, Mohammad~Javad Saeedizade, Stefan Schmid, Simon Blattner,
+  Robin Keskis{\"a}rkk{\"a}, Aldo Gangemi, Eva Blomqvist, and Andrea~Giovanni
+  Nuzzolese.
+\newblock {OntoExtend}: A framework for requirement-driven and scalable
+  ontology extension with {LLMs}.
+\newblock In \emph{Bridging the Gap Between Curated and Induced Semantics},
+  volume~63 of \emph{Studies on the Semantic Web}, pages 107--122. IOS Press,
+  2026.
+\newblock \doi{10.3233/SSW260011}.
+
+\bibitem[Maes et~al.(2026{\natexlab{a}})Maes, Le~Lidec, Haramati, Massaudi,
+  Scieur, LeCun, and Balestriero]{maes_lelidec2026swm}
+Lucas Maes, Quentin Le~Lidec, Dan Haramati, Nassim Massaudi, Damien Scieur,
+  Yann LeCun, and Randall Balestriero.
+\newblock {stable-worldmodel-v1}: Reproducible world modeling research and
+  evaluation.
+\newblock arXiv:2602.08968, 2026{\natexlab{a}}.
+\newblock URL \url{https://arxiv.org/abs/2602.08968}.
+\newblock Software: \url{https://github.com/galilai-group/stable-worldmodel}.
+
+\bibitem[Maes et~al.(2026{\natexlab{b}})Maes, Le~Lidec, Scieur, LeCun, and
+  Balestriero]{maes_lelidec2026lewm}
+Lucas Maes, Quentin Le~Lidec, Damien Scieur, Yann LeCun, and Randall
+  Balestriero.
+\newblock {LeWorldModel}: Stable end-to-end joint-embedding predictive
+  architecture from pixels.
+\newblock arXiv:2603.19312, 2026{\natexlab{b}}.
+\newblock URL \url{https://arxiv.org/abs/2603.19312}.
+\newblock Software: \url{https://github.com/lucas-maes/le-wm}.
+
+\bibitem[Millidge et~al.(2021)Millidge, Tschantz, and
+  Buckley]{millidge2021whence}
+Beren Millidge, Alexander Tschantz, and Christopher~L. Buckley.
+\newblock Whence the expected free energy?
+\newblock \emph{Neural Computation}, 33\penalty0 (2):\penalty0 447--482, 2021.
+\newblock \doi{10.1162/neco_a_01354}.
+
+\bibitem[Morav{\v{c}}{\'i}k et~al.(2017)]{moravvcik2017deepstack}
+Matej Morav{\v{c}}{\'i}k et~al.
+\newblock {DeepStack}: Expert-level artificial intelligence in heads-up
+  no-limit poker.
+\newblock \emph{Science}, 356\penalty0 (6337):\penalty0 508--513, 2017.
+\newblock \doi{10.1126/science.aam6960}.
+
+\bibitem[{Neo4j Labs}(n.d.)]{neo4j_n10s}
+{Neo4j Labs}.
+\newblock Neosemantics ({n10s}): {RDF} and semantics toolkit for {Neo4j}.
+\newblock Software documentation, n.d.
+\newblock URL \url{https://neo4j.com/labs/neosemantics/}.
+\newblock Accessed 5 October 2026.
+
+\bibitem[Neub{\"u}rger and Neub{\"u}rger(2026)]{neuburger2026ontology}
+Felix Neub{\"u}rger and Jonas Neub{\"u}rger.
+\newblock A provenance-aware ontology for {Magic: The Gathering}.
+\newblock Unpublished companion resource-paper draft, 2026.
+
+\bibitem[{Ollama}(2026)]{ollama2026tev1}
+{Ollama}.
+\newblock {Tev1} model library and local decision api.
+\newblock Model and API documentation, 2026.
+\newblock URL \url{https://ollama.com/library/tev1}.
+\newblock Accessed 5 October 2026.
+
+\bibitem[{Ontology Engineering Group, Universidad Polit{\'e}cnica de
+  Madrid}(2026)]{cq4oe2026}
+{Ontology Engineering Group, Universidad Polit{\'e}cnica de Madrid}.
+\newblock {CQ4OE}: A benchmark for {LLM}-assisted ontology generation from
+  competency questions.
+\newblock Benchmark resource, 2026.
+\newblock URL \url{https://oeg-upm.github.io/cq4oe-benchmark/}.
+\newblock Zenodo archive of the first benchmark release, version 0.0.1.
+
+\bibitem[{phase-rs contributors}(2026)]{phase2026engine}
+{phase-rs contributors}.
+\newblock {phase-rs}: An open-source {Magic: The Gathering} rules engine and
+  game client.
+\newblock Rust software and project repository, 2026.
+\newblock URL \url{https://github.com/phase-rs/phase}.
+\newblock Accessed 5 October 2026; engine revision
+  1191bba65048c83fbbd5a56dfd5f419ee0ead67a, protocol v106.
+
+\bibitem[Romanova(2026)]{romanova2026relationships}
+Alex Romanova.
+\newblock When knowledge graph relationships still matter.
+\newblock In \emph{Bridging the Gap Between Curated and Induced Semantics},
+  volume~63 of \emph{Studies on the Semantic Web}, pages 196--209. IOS Press,
+  2026.
+\newblock \doi{10.3233/SSW260017}.
+
+\bibitem[Sabou(2026)]{sabou2026neurosymbolic}
+Marta Sabou.
+\newblock Beyond data: Why the future of {AI} is neurosymbolic.
+\newblock Keynote, Neurosymbolic AI Workshop, SEMANTiCS 2026, Ghent, 2026.
+\newblock Conference presentation; no persistent identifier recorded.
+
+\bibitem[Sajid et~al.(2021)Sajid, Ball, Parr, and Friston]{sajid2021active}
+Noor Sajid, Philip~J. Ball, Thomas Parr, and Karl~J. Friston.
+\newblock Active inference: Demystified and compared.
+\newblock \emph{Neural Computation}, 33\penalty0 (3):\penalty0 674--712, 2021.
+\newblock \doi{10.1162/neco_a_01357}.
+
+\bibitem[Schmidhuber(2015)]{schmidhuber2015learning}
+J{\"u}rgen Schmidhuber.
+\newblock On learning to think: Algorithmic information theory for novel
+  combinations of {RL} controllers and recurrent neural world models.
+\newblock arXiv:1511.09249, 2015.
+\newblock URL \url{https://arxiv.org/abs/1511.09249}.
+
+\bibitem[Schrittwieser et~al.(2020)]{schrittwieser2020mastering}
+Julian Schrittwieser et~al.
+\newblock Mastering {Atari}, {Go}, chess and shogi by planning with a learned
+  model.
+\newblock \emph{Nature}, 588\penalty0 (7839):\penalty0 604--609, 2020.
+\newblock \doi{10.1038/s41586-020-03051-4}.
+
+\bibitem[Silver et~al.(2017)]{silver2017mastering}
+David Silver et~al.
+\newblock Mastering the game of {Go} without human knowledge.
+\newblock \emph{Nature}, 550\penalty0 (7676):\penalty0 354--359, 2017.
+\newblock \doi{10.1038/nature24270}.
+
+\bibitem[Silver et~al.(2018)]{silver2018alphazero}
+David Silver et~al.
+\newblock A general reinforcement learning algorithm that masters chess, shogi,
+  and {Go} through self-play.
+\newblock \emph{Science}, 362\penalty0 (6419):\penalty0 1140--1144, 2018.
+\newblock \doi{10.1126/science.aar6404}.
+
+\bibitem[Tesauro(1995)]{tesauro1995temporal}
+Gerald Tesauro.
+\newblock Temporal difference learning and {TD-Gammon}.
+\newblock \emph{Communications of the ACM}, 38\penalty0 (3):\penalty0 58--68,
+  1995.
+\newblock \doi{10.1145/203330.203343}.
+
+\bibitem[Thombre et~al.(2026)Thombre, Patwardhan, and
+  Sarawagi]{thombre2026selfdemo}
+Siddhesh Thombre, Manasi Patwardhan, and Sunita Sarawagi.
+\newblock Surprising effectiveness of self-demonstrations in enhancing
+  schema-ontology mapping with {LLMs}.
+\newblock In \emph{Bridging the Gap Between Curated and Induced Semantics},
+  volume~63 of \emph{Studies on the Semantic Web}, pages 70--85. IOS Press,
+  2026.
+\newblock \doi{10.3233/SSW260008}.
+
+\bibitem[Tiwari et~al.(2026)Tiwari, Lopes~Oliveira, Firmansyah, Zahera,
+  Hopfgartner, and Ngonga~Ngomo]{tiwari2026ontoprompt}
+Balram Tiwari, Italo Lopes~Oliveira, Asep~Fajar Firmansyah, Hamada~M. Zahera,
+  Frank Hopfgartner, and Axel-Cyrille Ngonga~Ngomo.
+\newblock Ontology-aware prompting for knowledge graph construction from text.
+\newblock In \emph{Bridging the Gap Between Curated and Induced Semantics},
+  volume~63 of \emph{Studies on the Semantic Web}, pages 87--102. IOS Press,
+  2026.
+\newblock \doi{10.3233/SSW260009}.
+
+\bibitem[Todorov(2009)]{todorov2009efficient}
+Emanuel Todorov.
+\newblock Efficient computation of optimal actions.
+\newblock \emph{Proceedings of the National Academy of Sciences}, 106\penalty0
+  (28):\penalty0 11478--11483, 2009.
+\newblock \doi{10.1073/pnas.0710743106}.
+
+\bibitem[{Together AI}(2026)]{together2026tev1}
+{Together AI}.
+\newblock {Tev1}: Experimental decision models, training recipe and run
+  records.
+\newblock Project repository, 2026.
+\newblock URL \url{https://github.com/togethercomputer/tev1}.
+\newblock Accessed 5 October 2026.
+
+\bibitem[Van~Schependom et~al.(2026)Van~Schependom, Proost, and
+  Bonte]{vanschependom2026synthology}
+Vincent Van~Schependom, Cas Proost, and Pieter Bonte.
+\newblock {SYNTHOLOGY}: Ontology-based data generation for neurosymbolic
+  reasoning.
+\newblock In \emph{Bridging the Gap Between Curated and Induced Semantics},
+  volume~63 of \emph{Studies on the Semantic Web}, pages 211--226. IOS Press,
+  2026.
+\newblock \doi{10.3233/SSW260018}.
+
+\bibitem[Vinyals et~al.(2019)]{vinyals2019grandmaster}
+Oriol Vinyals et~al.
+\newblock Grandmaster level in {StarCraft II} using multi-agent reinforcement
+  learning.
+\newblock \emph{Nature}, 575\penalty0 (7782):\penalty0 350--354, 2019.
+\newblock \doi{10.1038/s41586-019-1724-z}.
+
+\bibitem[Williams et~al.(2017)Williams, Wagener, Goldfain, Drews, Rehg, Boots,
+  and Theodorou]{williams2017mppi}
+Grady Williams, Nolan Wagener, Brian Goldfain, Paul Drews, James~M. Rehg, Byron
+  Boots, and Evangelos~A. Theodorou.
+\newblock Information theoretic {MPC} for model-based reinforcement learning.
+\newblock In \emph{IEEE International Conference on Robotics and Automation},
+  2017.
+\newblock \doi{10.1109/ICRA.2017.7989202}.
+
+\end{thebibliography}

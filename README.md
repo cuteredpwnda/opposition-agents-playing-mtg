@@ -838,11 +838,17 @@ This project stands on the shoulders of excellent open-source work. See [PLAN.md
 
 ### Academic Work
 
-- K. Friston et al., "The Free Energy Principle for Action and Perception" — Active Inference framework
+- K. Friston (2010), "The Free-Energy Principle: A Unified Brain Theory?" — Active Inference framework
+- C. L. Buckley et al. (2017), "The Free Energy Principle for Action and Perception: A Mathematical Review" — mathematical review
 - D. Silver et al., "Mastering the game of Go without human knowledge" — AlphaZero self-play method
 - A. Vaswani et al., "Attention Is All You Need" — Transformer architecture
 
 For full references including ontology sources, graph databases, and academic papers, see [PLAN.md](PLAN.md).
+The manuscripts share [paper/references.bib](paper/references.bib), including
+Rafael Kaufmann's *Active Inference is Optimal Control*
+([doi:10.2139/ssrn.7504418](https://doi.org/10.2139/ssrn.7504418)).
+See [paper/README.md](paper/README.md#shared-references) for citation keys,
+background resources and automated reference checks.
 
 ## License
 

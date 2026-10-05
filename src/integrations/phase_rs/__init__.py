@@ -11,6 +11,11 @@ Heavy deps (``websockets``) are imported lazily inside method bodies, so
 ``import src.integrations.phase_rs`` stays cheap.
 """
 
+from src.integrations.phase_rs.adapter import (
+    engine_action_to_phase_action,
+    legal_actions_to_engine_actions,
+    phase_state_to_game_state,
+)
 from src.integrations.phase_rs.agent_bridge import (
     ActionPicker,
     AgentActionPicker,
@@ -19,13 +24,9 @@ from src.integrations.phase_rs.agent_bridge import (
     PreferNonPassPicker,
     RandomActionPicker,
 )
-from src.integrations.phase_rs.adapter import (
-    engine_action_to_phase_action,
-    legal_actions_to_engine_actions,
-    phase_state_to_game_state,
-)
 from src.integrations.phase_rs.client import (
     PROTOCOL_VERSION,
+    FullSessionKey,
     GameCreated,
     GameOver,
     GameStarted,
@@ -43,16 +44,20 @@ from src.integrations.phase_rs.decks import (
 )
 from src.integrations.phase_rs.kl_control_picker import (
     OBJECTIVES as KL_CONTROL_OBJECTIVES,
+)
+from src.integrations.phase_rs.kl_control_picker import (
     KLControlActionPicker,
 )
 from src.integrations.phase_rs.runner import GameRunResult, run_game, run_game_sync
 from src.integrations.phase_rs.server_process import PhaseServerProcess
 from src.integrations.phase_rs.state_view import PhaseRsPlayerView, PhaseRsStateView
+from src.integrations.phase_rs.tev1_picker import Tev1ActionPicker
 
 __all__ = [
     "PROTOCOL_VERSION",
     "ActionPicker",
     "AgentActionPicker",
+    "FullSessionKey",
     "GameCreated",
     "GameOver",
     "GameRunResult",
@@ -70,6 +75,7 @@ __all__ = [
     "PreferNonPassPicker",
     "RandomActionPicker",
     "STARTER_DECK_NAMES",
+    "Tev1ActionPicker",
     "ServerHello",
     "StateUpdate",
     "decklist_to_deck_data",

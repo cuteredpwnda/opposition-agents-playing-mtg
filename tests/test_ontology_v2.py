@@ -89,11 +89,16 @@ def test_zone_membership_is_functional(graph):
     assert (mtg_("inZone"), RDF.type, OWL.FunctionalProperty) in graph
 
 
-def test_turn_ordering_is_a_strict_partial_order(graph):
+def test_transitive_ordering_does_not_use_forbidden_non_simple_axioms(graph):
     precedes = mtg_("precedes")
     assert (precedes, RDF.type, OWL.TransitiveProperty) in graph
-    assert (precedes, RDF.type, OWL.AsymmetricProperty) in graph
-    assert (precedes, RDF.type, OWL.IrreflexiveProperty) in graph
+    assert (precedes, RDF.type, OWL.AsymmetricProperty) not in graph
+    assert (precedes, RDF.type, OWL.IrreflexiveProperty) not in graph
+
+
+def test_datatype_identity_uses_a_key_not_inverse_functionality(graph):
+    assert (mtg_("scryfallId"), RDF.type, OWL.InverseFunctionalProperty) not in graph
+    assert (mtg_("CardPrinting"), OWL.hasKey, None) in graph
 
 
 def test_counters_is_asymmetric_but_synergy_is_symmetric(graph):

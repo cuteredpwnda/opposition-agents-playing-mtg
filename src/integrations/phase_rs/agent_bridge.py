@@ -35,6 +35,14 @@ from src.integrations.phase_rs.adapter import (
 logger = logging.getLogger(__name__)
 
 
+class PickerError(RuntimeError):
+    """Explicit inference failure, recorded as an incomplete game by the runner."""
+
+    def __init__(self, message: str, *, reason: str) -> None:
+        super().__init__(message)
+        self.reason = reason
+
+
 class ActionPicker(Protocol):
     """Minimal contract a phase-rs-driving policy must satisfy."""
 

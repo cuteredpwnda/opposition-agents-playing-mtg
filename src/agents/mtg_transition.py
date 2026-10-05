@@ -39,6 +39,70 @@ def default_belief(prior: dict[str, float] | None = None) -> BeliefState:
     return belief
 
 
+@dataclass(frozen=True)
+class ActionForecast:
+    """Local analytic features; never submitted in place of a native action."""
+
+    wire: dict[str, Any]
+    damage: int
+    target_is_ours: bool
+    target_is_player: bool
+    removed_power: int = 0
+    removes_permanent: bool = False
+
+
+def forecast_action(
+    action: dict[str, Any], state: dict[str, Any], seat: int,
+) -> dict[str, Any] | ActionForecast:
+    """Resolve a conservative two-player fixed-damage target forecast."""
+    if action.get("type") not in {"ChooseTarget", "SelectTargets"}:
+        return action
+    # Opponent life is a minimum aggregate, not a target-specific multiplayer value.
+    if len(state.get("players") or []) != 2:
+        return action
+    waiting_data = (state.get("waiting_for") or {}).get("data") or {}
+    if waiting_data.get("player") != seat:
+        return action
+    pending = waiting_data.get("pending_cast") or state.get("pending_cast") or {}
+    ability = pending.get("ability") or {}
+    if ability.get("sub_ability") or ability.get("condition"):
+        return action
+    effect = ability.get("effect") or {}
+    amount = effect.get("amount") or {}
+    if effect.get("type") != "DealDamage" or amount.get("type") != "Fixed":
+        return action
+    damage = amount.get("value")
+    if type(damage) is not int or damage < 0:
+        return action
+    data = action.get("data") or {}
+    targets = data.get("targets") if action.get("type") == "SelectTargets" else [data.get("target")]
+    if not isinstance(targets, list) or len(targets) != 1:
+        return action
+    target = targets[0]
+    if not isinstance(target, dict):
+        return action
+    if "Player" in target:
+        return ActionForecast(action, damage, target["Player"] == seat, True)
+    if "Object" not in target:
+        return action
+    objects = state.get("objects") or {}
+    obj = objects.get(str(target["Object"])) or objects.get(target["Object"])
+    if not isinstance(obj, dict) or type(obj.get("toughness")) is not int:
+        return action
+    keywords = obj.get("keywords") or []
+    if not all(isinstance(keyword, str) for keyword in keywords):
+        return action
+    lethal = (
+        damage >= obj["toughness"] - _int(obj.get("damage_marked"))
+        and "Indestructible" not in keywords
+    )
+    return ActionForecast(
+        action, damage, obj.get("controller") == seat, False,
+        removed_power=_int(obj.get("power")) if lethal else 0,
+        removes_permanent=lethal,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Snapshot -> LatentState
 # ---------------------------------------------------------------------------
@@ -86,6 +150,9 @@ def latent_from_phase_rs(state: dict[str, Any], our_seat: int) -> LatentState:
     opp_life = min(
         (_int(o.get("life"), 20) for o in opponents), default=20
     )
+    waiting = state.get("waiting_for") or {}
+    waiting_data = waiting.get("data") or {}
+    pending = waiting_data.get("pending_cast") or state.get("pending_cast")
     return LatentState(
         our_life=_int(me.get("life"), 20),
         opponent_life=opp_life,
@@ -100,6 +167,7 @@ def latent_from_phase_rs(state: dict[str, Any], our_seat: int) -> LatentState:
         opponent_eliminated=bool(
             opponents and all(o.get("is_eliminated", False) for o in opponents)
         ),
+        our_pending_cast=bool(pending and waiting_data.get("player") == our_seat),
     )
 
 
@@ -114,17 +182,28 @@ _ATTACK = frozenset({"DeclareAttackers", "Attack"})
 _BLOCK = frozenset({"DeclareBlockers", "Block"})
 _PASS = frozenset({"PassPriority", "Pass"})
 _CONCEDE = frozenset({"Concede"})
+_CAST_CHOICE = frozenset({
+    "SelectModes", "SelectTargets", "ChooseTarget", "ChooseX", "OrderCostReductions",
+    "DecideOptionalCost", "ChooseAlternativeCast", "ChooseCastingVariant",
+})
+_CANCEL_CAST = frozenset({"CancelCast"})
 
 
 def action_kind(action: Any) -> str:
     """Normalise a phase-rs ``GameAction`` dict (or ``None``) to a coarse kind."""
     if action is None:
         return "pass"
+    if isinstance(action, ActionForecast):
+        action = action.wire
     raw = action.get("type", "") if isinstance(action, dict) else str(action)
     if raw in _LAND:
         return "land"
     if raw in _CAST:
         return "cast"
+    if raw in _CAST_CHOICE:
+        return "cast_choice"
+    if raw in _CANCEL_CAST:
+        return "cancel_cast"
     if raw in _ACTIVATE:
         return "activate"
     if raw in _ATTACK:
@@ -166,6 +245,11 @@ class MTGTransitionModel:
     hidden threat accelerates the opponent's clock. That coupling is what
     makes information about the opponent's hand *operationally* valuable,
     which in turn is what makes the closed-loop planner probe.
+
+    Casting subdecisions forecast completion of the pending spell as one
+    macro-step, not resolution of an individual mode/target announcement.
+    The forecast is still generic: it does not distinguish card effects or
+    targets, and must not be treated as a rules-exact dynamics model.
     """
 
     def __init__(self, config: MTGTransitionConfig | None = None) -> None:
@@ -174,25 +258,47 @@ class MTGTransitionModel:
     def step(self, state: LatentState, action: Any, hypothesis: str) -> LatentState:
         c = self.config
         kind = action_kind(action)
+        if kind == "cancel_cast":
+            return state.replace(our_pending_cast=False)
+        if kind == "cast_choice" and not state.our_pending_cast:
+            # Rollouts reuse the root candidate set. A pending spell's
+            # completion forecast must be credited at most once.
+            return state
 
         our_power = state.our_board_power
         our_perms = state.our_permanents
         our_hand = state.our_hand_size
         opp_life = state.opponent_life
         our_life = state.our_life
+        opp_power = state.opponent_board_power
+        opp_perms = state.opponent_permanents
 
         if kind == "land":
             our_perms += 1
             our_hand = max(0, our_hand - 1)
-        elif kind == "cast":
+        elif kind in {"cast", "cast_choice"}:
             our_hand = max(0, our_hand - 1)
-            gain = c.cast_board_gain
-            if hypothesis == "holds_counterspell":
-                gain = int(gain * (1.0 - c.counter_absorption))
-            elif hypothesis == "holds_removal":
-                gain = int(gain * (1.0 - c.removal_absorption))
-            our_power += gain
-            our_perms += c.cast_permanent_gain if gain > 0 else 0
+            if isinstance(action, ActionForecast):
+                if hypothesis != "holds_counterspell":
+                    if action.target_is_player:
+                        if action.target_is_ours:
+                            our_life = max(0, our_life - action.damage)
+                        else:
+                            opp_life = max(0, opp_life - action.damage)
+                    elif action.target_is_ours:
+                        our_power = max(0, our_power - action.removed_power)
+                        our_perms = max(0, our_perms - int(action.removes_permanent))
+                    else:
+                        opp_power = max(0, opp_power - action.removed_power)
+                        opp_perms = max(0, opp_perms - int(action.removes_permanent))
+            else:
+                gain = c.cast_board_gain
+                if hypothesis == "holds_counterspell":
+                    gain = int(gain * (1.0 - c.counter_absorption))
+                elif hypothesis == "holds_removal":
+                    gain = int(gain * (1.0 - c.removal_absorption))
+                our_power += gain
+                our_perms += c.cast_permanent_gain if gain > 0 else 0
         elif kind == "activate":
             our_power += c.activate_board_gain
         elif kind == "attack":
@@ -207,7 +313,7 @@ class MTGTransitionModel:
         clock = c.opponent_clock + (
             c.threat_extra_clock if hypothesis == "holds_threat" else 0
         )
-        incoming = clock if state.opponent_board_power > 0 else 0
+        incoming = clock if state.opponent_board_power > 0 and kind != "cast_choice" else 0
         our_life = max(0, our_life - incoming)
 
         return state.replace(
@@ -216,9 +322,12 @@ class MTGTransitionModel:
             our_board_power=our_power,
             our_permanents=our_perms,
             our_hand_size=our_hand,
+            opponent_board_power=opp_power,
+            opponent_permanents=opp_perms,
             turn=state.turn + (1 if kind == "pass" else 0),
             we_are_eliminated=our_life <= 0,
             opponent_eliminated=opp_life <= 0,
+            our_pending_cast=False if kind == "cast_choice" else state.our_pending_cast,
         )
 
     def observation_likelihood(
@@ -263,6 +372,8 @@ class MTGTransitionModel:
 _PASSIVE_WEIGHTS: dict[str, float] = {
     "land": 6.0,
     "cast": 4.0,
+    "cast_choice": 4.0,
+    "cancel_cast": 1.0,
     "attack": 3.0,
     "block": 3.0,
     "activate": 2.0,

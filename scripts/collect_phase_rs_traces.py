@@ -19,16 +19,17 @@ from pathlib import Path
 
 from src.agents import make_agent
 from src.integrations.phase_rs import (
+    STARTER_DECK_NAMES,
     AgentActionPicker,
     HeuristicActionPicker,
     OllamaActionPicker,
     PhaseServerConfig,
     PreferNonPassPicker,
     RandomActionPicker,
-    STARTER_DECK_NAMES,
     load_deck_data,
     run_game_sync,
 )
+from src.integrations.phase_rs.tev1_picker import add_tev1_arguments, make_tev1_picker
 
 
 @dataclass
@@ -53,6 +54,8 @@ def _build_picker(name: str, seed: int, args: argparse.Namespace):
         return PreferNonPassPicker(seed=seed)
     if name == "heuristic":
         return HeuristicActionPicker(seed=seed)
+    if name == "tev1":
+        return make_tev1_picker(args, seed)
     if name == "ollama":
         return OllamaActionPicker(seed=seed, model=args.ollama_model, base_url=args.ollama_url)
     if name.startswith("agent:"):
@@ -162,6 +165,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--output-dir", default="runs/phase_rs_training_traces")
     p.add_argument("--ollama-model", default="gemma4:e2b")
     p.add_argument("--ollama-url", default="http://localhost:11434")
+    add_tev1_arguments(p)
     return p.parse_args()
 
 

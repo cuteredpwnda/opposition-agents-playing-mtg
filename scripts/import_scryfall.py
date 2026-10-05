@@ -13,6 +13,7 @@ from pathlib import Path
 
 import httpx
 
+from src.integrations.scryfall_bulk import HEADERS, download_bulk, fetch_bulk_metadata
 from src.knowledge.kg_builder import KGBuilder
 
 logging.basicConfig(level=logging.INFO)
@@ -23,22 +24,9 @@ BULK_DATA_PATH = "data/scryfall/oracle-cards.json"
 
 async def download_bulk_data(output_path: str = BULK_DATA_PATH) -> str:
     """Download Scryfall oracle-cards bulk data."""
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        resp = await client.get("https://api.scryfall.com/bulk-data")
-        resp.raise_for_status()
-        for item in resp.json()["data"]:
-            if item["type"] == "oracle_cards":
-                download_uri = item["download_uri"]
-                break
-        else:
-            raise ValueError("oracle_cards bulk data not found")
-
-        logger.info(f"Downloading from {download_uri}")
-        resp = await client.get(download_uri, follow_redirects=True)
-        resp.raise_for_status()
-
-    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-    Path(output_path).write_bytes(resp.content)
+    async with httpx.AsyncClient(headers=HEADERS, timeout=120.0) as client:
+        item = await fetch_bulk_metadata(client, "oracle_cards")
+        await download_bulk(client, item, Path(output_path))
     logger.info(f"Saved to {output_path}")
     return output_path
 

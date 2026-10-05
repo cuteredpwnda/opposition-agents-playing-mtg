@@ -37,6 +37,18 @@ def ts():
     return load_type_system()
 
 
+@pytest.mark.parametrize("line,canonical", [
+    ("Land \u2014 Urza's Tower", "Urza\u2019s"),
+    ("Creature \u2014 C'tan", "C\u2019tan"),
+    ("Creature \u2014 Shi'ar", "Shi\u2019ar"),
+])
+def test_scryfall_apostrophes_resolve_to_canonical_cr_labels(ts, line, canonical):
+    parsed = parse_type_line(line, ts)
+    assert parsed.is_well_formed
+    assert canonical in parsed.subtypes
+    assert parsed.raw == line
+
+
 # ---------------------------------------------------------------------------
 # Vocabulary loading
 # ---------------------------------------------------------------------------

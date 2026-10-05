@@ -9,10 +9,13 @@ failure localises to one concern:
 2. **Structure** — counts of classes, object/datatype properties, individuals,
    and the OWL 2 constructs that carry modelling weight here (property chains,
    keys, qualified cardinality, disjoint unions).
-3. **Profile** — OWL 2 DL sanity checks we can run without a Java reasoner:
-   punning detection (a term used as both class and individual), undeclared
-   terms in domain/range position, and dangling ``rdfs:subClassOf`` targets.
-4. **Consistency** — optional HermiT run via ``owlready2`` when available.
+3. **Local modelling sanity** — incomplete guards for undeclared local terms,
+   incompatible property characteristics and dangling local subclass targets.
+   OWL 2 permits class/individual punning; these checks do not certify a profile.
+4. **Logical qualification** — checksum-pinned imports are materialised as
+   RDF/XML for an isolated Java OWLAPI/HermiT checker. Profile conformance,
+   consistency and named-class satisfiability are reported separately.
+   ``owlready2`` supplies the HermiT jar; a JDK supplies source-file launching.
 5. **SHACL** — optional ``pyshacl`` run against the shapes file.
 6. **Competency questions** — term coverage plus SPARQL execution, from
    ``data/competency_questions.yaml``.
@@ -31,6 +34,7 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -135,8 +139,8 @@ def stage_profile(g: Any) -> StageResult:
     annot_props = set(g.subjects(RDF.type, OWL.AnnotationProperty))
     declared = classes | obj_props | data_props | annot_props
 
-    # Punning: a term declared as a class that is also used as an individual
-    # of another class. This is what pushed v1.x out of OWL 2 DL.
+    # Mixed class/instance uses violate this project's modelling convention,
+    # not OWL 2 DL itself, which permits class/individual punning.
     for s, _, o in g.triples((None, RDF.type, None)):
         if isinstance(s, BNode) or not isinstance(o, URIRef):
             continue
@@ -149,6 +153,15 @@ def stage_profile(g: Any) -> StageResult:
             continue
         if s in classes:
             problems.append(f"punning: {s} is an owl:Class and also an instance of {o}")
+
+    for term in obj_props & data_props:
+        problems.append(f"forbidden object/datatype property punning: {term}")
+    for term in data_props & set(g.subjects(RDF.type, OWL.InverseFunctionalProperty)):
+        problems.append(f"inverse functionality is not allowed on datatype properties: {term}")
+    transitive = set(g.subjects(RDF.type, OWL.TransitiveProperty))
+    for type_ in (OWL.AsymmetricProperty, OWL.IrreflexiveProperty):
+        for term in transitive & set(g.subjects(RDF.type, type_)):
+            problems.append(f"non-simple transitive property cannot have {type_}: {term}")
 
     # Domain/range pointing at undeclared, non-blank, in-namespace terms.
     for pred in (RDFS.domain, RDFS.range):
@@ -171,7 +184,7 @@ def stage_profile(g: Any) -> StageResult:
 
     unique = sorted(set(problems))
     return StageResult(
-        "owl2-dl-profile",
+        "local-modelling-sanity",
         not unique,
         "clean" if not unique else f"{len(unique)} issue(s)",
         unique,
@@ -289,21 +302,47 @@ def stage_shacl(ontology: Path, shapes: Path) -> StageResult:
     )
 
 
-def stage_reasoner(ontology: Path) -> StageResult:
+def stage_reasoner(
+    ontology: Path, java: Path | None = None, timeout: float = 180,
+    report_path: Path | None = None, vocabulary: Path | None = None,
+    require_dl_profile: bool = False,
+) -> StageResult:
     try:
-        import owlready2
+        import owlready2  # noqa: F401
     except ImportError:
-        return StageResult("reasoner", True, "owlready2 not installed", skipped=True)
+        return StageResult(
+            "reasoner", not require_dl_profile, "owlready2 not installed",
+            skipped=not require_dl_profile,
+        )
     try:
-        onto = owlready2.get_ontology(ontology.as_uri()).load()
-        with onto:
-            owlready2.sync_reasoner(infer_property_values=True)
-    except Exception as exc:
+        from src.knowledge.ontology_reasoning import qualify_ontology
+
+        sources = [ontology] + ([vocabulary] if vocabulary else [])
+        report = qualify_ontology(sources, java, timeout)
+        if report_path:
+            report_path.parent.mkdir(parents=True, exist_ok=True)
+            report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    except (OSError, ValueError, RuntimeError, TimeoutError) as exc:
         return StageResult(
             "reasoner", False, f"{type(exc).__name__}: {exc}",
-            ["HermiT needs a JRE on PATH; rerun with --skip-reasoner if unavailable"],
+            ["Fetch pinned imports with scripts/fetch_ontology_imports.py; "
+             "install a JDK or pass --java. Errors are not counted as passes."],
         )
-    return StageResult("reasoner", True, "consistent (HermiT)")
+    reasoner = report["reasoner"]
+    profile = report["profile"]
+    logical_ok = reasoner["consistent"] and not reasoner["unsatisfiable_classes"]
+    ok = logical_ok and (not require_dl_profile or profile["in_profile"])
+    return StageResult(
+        "reasoner", ok,
+        "HermiT: consistent, no unsatisfiable named classes" if ok else (
+            "required OWL 2 DL profile not met" if logical_ok else "logical defects"
+        ),
+        [
+            f"Pinned import closure: {report['closure_triples']} triples",
+            f"Full OWLAPI profile: {'in profile' if profile['in_profile'] else 'outside OWL 2 DL'} "
+            f"({len(profile['violations'])} violations; separate from consistency)",
+        ],
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -323,7 +362,18 @@ def main() -> int:
     )
     parser.add_argument("--skip-reasoner", action="store_true")
     parser.add_argument("--skip-shacl", action="store_true")
+    parser.add_argument(
+        "--java", type=Path, help="JDK Java executable (supports source-file launch).",
+    )
+    parser.add_argument("--reasoner-timeout", type=float, default=180)
+    parser.add_argument("--reasoner-report", type=Path)
+    parser.add_argument("--require-dl-profile", action="store_true",
+                        help="Fail if the resolved OWLAPI profile is outside OWL 2 DL.")
+    parser.add_argument("--reasoner-vocabulary", type=Path,
+                        help="Also reason over the factual vocabulary, not only the schema.")
     args = parser.parse_args()
+    if args.require_dl_profile and (args.no_imports or args.skip_reasoner):
+        parser.error("--require-dl-profile cannot be combined with a skipped reasoner")
 
     _require_rdflib()
 
@@ -354,7 +404,10 @@ def main() -> int:
             StageResult("reasoner", True, "skipped (offline / by flag)", skipped=True)
         )
     else:
-        results.append(stage_reasoner(args.ontology))
+        results.append(stage_reasoner(
+            args.ontology, args.java, args.reasoner_timeout,
+            args.reasoner_report, args.reasoner_vocabulary, args.require_dl_profile,
+        ))
 
     return _report(results)
 
@@ -365,7 +418,11 @@ def _report(results: list[StageResult]) -> int:
         print(r.render())
     failed = [r for r in results if not r.ok and not r.skipped]
     print("=" * 60)
-    print(f"{len(results) - len(failed)}/{len(results)} stages passed")
+    enabled = [r for r in results if not r.skipped]
+    print(
+        f"{len(enabled) - len(failed)}/{len(enabled)} enabled stages passed; "
+        f"{len(results) - len(enabled)} skipped"
+    )
     return 1 if failed else 0
 
 

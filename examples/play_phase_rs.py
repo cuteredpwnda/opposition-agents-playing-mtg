@@ -21,18 +21,22 @@ import logging
 import sys
 from pathlib import Path
 
+from src.agents import make_agent
 from src.integrations.phase_rs import (
+    STARTER_DECK_NAMES,
     AgentActionPicker,
     HeuristicActionPicker,
     OllamaActionPicker,
     PhaseServerConfig,
     PreferNonPassPicker,
     RandomActionPicker,
-    STARTER_DECK_NAMES,
     load_deck_data,
     run_game_sync,
 )
-from src.agents import make_agent
+from src.integrations.phase_rs.tev1_picker import (
+    Tev1ActionPicker,
+    add_tev1_arguments,
+)
 
 
 def _build_picker(
@@ -41,6 +45,9 @@ def _build_picker(
     *,
     ollama_model: str,
     ollama_url: str,
+    tev1_model: str = "tev1:0.8b",
+    tev1_candidates: int = 24,
+    tev1_timeout: float = 120.0,
 ):
     if name == "random":
         return RandomActionPicker(seed=seed)
@@ -48,6 +55,11 @@ def _build_picker(
         return PreferNonPassPicker(seed=seed)
     if name == "heuristic":
         return HeuristicActionPicker(seed=seed)
+    if name == "tev1":
+        return Tev1ActionPicker(
+            seed=seed, model=tev1_model, base_url=ollama_url,
+            max_candidates=tev1_candidates, timeout_s=tev1_timeout,
+        )
     if name == "ollama":
         return OllamaActionPicker(seed=seed, model=ollama_model, base_url=ollama_url)
     if name.startswith("agent:"):
@@ -58,7 +70,7 @@ def _build_picker(
         return AgentActionPicker(agent=agent, name=f"phase_rs_agent:{agent_name}")
     raise SystemExit(
         "unknown picker "
-        f"{name!r}; try: random | prefer-nonpass | heuristic | ollama"
+        f"{name!r}; try: random | prefer-nonpass | heuristic | tev1 | ollama"
         f" | agent:<name>"
     )
 
@@ -76,9 +88,12 @@ def main() -> int:
         ),
     )
     parser.add_argument("--our-deck-file", default=None, help="Path to our deck (.txt)")
+    parser.add_argument("--ai-deck-file", action="append", help="Repeat for each native AI seat")
+    parser.add_argument("--format", default=None, help="Engine format, e.g. Modern or Commander")
     parser.add_argument("--picker", default="prefer-nonpass")
     parser.add_argument("--ollama-model", default="gemma4:e2b")
     parser.add_argument("--ollama-url", default="http://localhost:11434")
+    add_tev1_arguments(parser)
     parser.add_argument("--ai-difficulty", default="Medium")
     parser.add_argument("--uri", default="ws://127.0.0.1:9374/ws")
     parser.add_argument(
@@ -93,6 +108,9 @@ def main() -> int:
     )
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--max-actions", type=int, default=2000)
+    parser.add_argument("--max-game-seconds", type=float, default=None)
+    parser.add_argument("--max-turns", type=int, default=None)
+    parser.add_argument("--max-message-mib", type=int, default=16)
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args()
 
@@ -128,8 +146,11 @@ def main() -> int:
         args.seed,
         ollama_model=args.ollama_model,
         ollama_url=args.ollama_url,
+        tev1_model=args.tev1_model,
+        tev1_candidates=args.tev1_candidates,
+        tev1_timeout=args.tev1_timeout,
     )
-    cfg = PhaseServerConfig(uri=args.uri)
+    cfg = PhaseServerConfig(uri=args.uri, max_message_bytes=args.max_message_mib * 1024 * 1024)
 
     if args.autostart:
         print("autostarting phase-server (or adopting existing instance) ...")
@@ -142,6 +163,13 @@ def main() -> int:
         ai_deck_name=ai_deck_name,
         max_actions=args.max_actions,
         autostart_server=args.autostart,
+        format_name=args.format,
+        max_game_seconds=args.max_game_seconds,
+        max_turns=args.max_turns,
+        ai_decks=(
+            [load_deck_data(path) for path in args.ai_deck_file]
+            if args.ai_deck_file else None
+        ),
     )
 
     print("\n--- game log ---")

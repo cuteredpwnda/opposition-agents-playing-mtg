@@ -1,18 +1,88 @@
 # Implementation Plan — Single Source of Truth
 
 > **opposition-agents-playing-mtg**
-> Last updated: 2026-09-17
+> Last updated: 2026-10-05
 
 This document is the **single source of truth** for what has been implemented,
 what is in progress, and what remains. It supersedes the phase descriptions in
 `PLAN.md`, `ARCHITECTURE.md`, and the presentation slides for tracking purposes
 — those documents retain their value as design rationale and research context.
 
-## Status Snapshot — September 2026
+## Status Snapshot — October 2026
+
+**October 5 continuation:** phase-rs checkout updated to upstream
+`1191bba65048c83fbbd5a56dfd5f419ee0ead67a`; Python bridge aligned to
+protocol **v106**. The local checkout had regressed to protocol v6 despite
+the parent repository pinning the September update. MSVC was located with
+`vswhere` (Visual Studio 18 BuildTools); the release build completed in 33m03s.
+Signed native data refresh, complete format defaults and v106 mulligan-phase
+handling are verified by a live Modern game (14 turns, 150 controlled actions).
+K2 now has an interleaved objective benchmark harness, but no new gameplay
+strength results are claimed. The Tev1 shortlist adapter and local 0.8B API
+smoke are implemented, but full-game Tev1 evaluation remains blocked by the
+local API's 2050-token prompt ceiling, even after card-aware compaction.
+The paper now explains decision models and separates
+deployment comparisons from controlled ablations. See section 6.
+
+**Publication feasibility gates (Oct 5):** the full Scryfall oracle/rulings
+cache is refreshed (38,706 oracle records, 79,706 rulings, 38,201 indexed names).
+The separate native compiled database contains 35,879 name-keyed entries;
+this is not a count of fully tested card implementations. Four-player
+Commander creation, custom AI decks, elimination and a six-turn development
+smoke work, but terminal pod qualification remains pending. The 10-game
+Modern mirror pilot completed 8 games (all losses); both KL games hit the
+action cap with repeated cast/cancel decisions. It fails the advancement
+gate and supports no strength claim. Six enabled ontology validation stages
+passed; HermiT was skipped and imports were not resolved. The fresh full-card
+type audit and the optional CR provenance regression expose unresolved
+resource-paper gates. Section 6 contains the staged experiment plan and
+`docs/RESEARCH_PIPELINES.md` contains five validated Mermaid diagrams.
+
+**Follow-up implementation (Oct 5):** casting choices and cancellation now
+have distinct analytic forecasts, including simple fixed-damage target
+direction. A fresh two-game KL mirror check completes (two losses, turns 7/11,
+203 decisions, no cancellations); this repairs the loop, not policy strength.
+Real keyed native reconnect is implemented and verified after forced socket
+closure (same generation/seat, non-stale revision). The factual CR vocabulary
+is refreshed to Sept 25 with 830/830 direct source links. Explicit Modern and
+Commander-card corpora have 23,483 and 32,914 clean type lines respectively;
+unfiltered auxiliary/nonstandard residuals remain recorded. Ontology paper
+submission gates are specified in section 6. Runtime graph grounding remains
+partial: no Fuseki, no verified Neo4j import from these offline operations.
+The focused follow-up suite passes 289 tests (3 skipped); the post-reconnect
+six-turn Commander smoke ends explicitly at `turn_cap` (50 actions, observed
+turn 7). All three review manuscripts compile, without undefined references
+or citations; they remain research drafts rather than submission-ready claims.
+
+**Workbench/runtime follow-up (Oct 5):** a source-linked KG Workbench JSON review
+projection now groups rules, cards, gameplay, strategy, agent decisions and
+learned evidence, plus external dependency stubs. It includes 62 local named
+classes (81 display classes), 47 display relations from 35 object properties,
+18 datatype properties, all 32 CQs and 888 vocabulary/seed examples. This is
+not an OWL round-trip, a full card/combo ABox or independently importable OWL
+domain modules. Companion RDF/JSON preserves the asserted local triples.
+K10 setup now verifies connectivity, retains compatible configuration, defaults
+to v2.0 Turtle, imports factual vocabulary and refuses unaccounted RDF results.
+No live database has been mutated or qualified by this follow-up.
+
+**Logical/RDF follow-up (Oct 5):** HermiT now actually runs using a local JDK,
+the declared `owlready2` dependency and checksum-pinned DUL/PROV/SKOS/Time
+snapshots. Two illegal property-characteristic combinations were repaired;
+the schema is now 1,193 triples. The import-resolved schema is consistent with
+no unsatisfiable named classes; the raw external closure separately has 37
+OWLAPI profile violations, so it is not certified OWL 2 DL. Positive/negative
+local-schema ABox probes and SHACL cycle regressions are tested. The larger
+schema-plus-factual-vocabulary run exceeded 600 seconds without a conclusion.
+An opt-in localhost/read-only Fuseki snapshot preserves six named source graphs;
+a real service passes 14/14 CQ queries, has 6,222 default triples and refuses
+updates (405). This supersedes earlier no-Fuseki/missing-reasoner status, not the
+remaining Neo4j, agent-grounding or full corpus qualification gates. The ontology
+paper now frames research questions, evaluation criteria and threats to validity.
 
 Two structural changes landed this cycle: the action-selection objective was
-replaced with a principled one, and the ontology was rebuilt as a real OWL 2 DL
-artefact.
+replaced with a principled one, and the ontology was rebuilt with OWL 2 DL
+as its target profile. Complete profile and full populated-input reasoning
+qualification remain pending.
 
 - **Active inference reformulated as belief-space KL control (Sept 17).**
   Following Kaufmann (2026), *Active Inference is Optimal Control*: continuous
@@ -23,10 +93,12 @@ artefact.
   penalty** — plus `LegacyEFE` holding the two extant factorisations as ablation
   arms. Exploration is recovered from closed-loop belief branching (Fel'dbaum's
   dual control effect), not from a surrogate term.
-- **OWL 2 DL ontology v2.0, DOLCE-aligned (Sept 17).**
-  `data/ontology/mtg-ontology-v2.0.ttl` (935 triples, 56 classes, 46
-  properties). Removes the class/individual punning that kept v1.x outside
-  OWL 2 DL; aligns every top-level term to DOLCE-UltraLite; adds role/situation
+- **Ontology v2.0, DOLCE-aligned (Sept 17; current inventory Oct 5).**
+  `data/ontology/mtg-ontology-v2.0.ttl` (1,196 triples, 74 classes, 35
+  object, 18 datatype and 5 annotation properties). Separates intentional
+  class/individual uses; class/individual punning itself is permitted in
+  OWL 2 DL and is not a profile violation. Aligns top-level terms to
+  DOLCE-UltraLite; adds role/situation
   and quality/region patterns; uses property chains, `owl:hasKey`, qualified
   cardinality and a disjoint union where the rules license them; and enforces a
   curated/induced split with `mtg:epistemicStatus` on every axiom plus a
@@ -110,10 +182,14 @@ artefact.
 
 ### Known gaps from this cycle
 
-- `phase-server` does not currently build locally: the MSVC toolset is installed
-  but `link.exe` is not on `PATH`. Build inside a Developer Command Prompt, or
-  run `vcvars64.bat` first. Nothing in the Python layer depends on this to
-  import or to be tested.
+- Native viewer interactions and engine/AI RNG control remain
+  pending. The v106 release build and runtime gate are complete; see K1 for
+  the version-independent build command. Keyed reconnect is now verified;
+  long-pod qualification is still pending.
+- Ollama 0.35.1's decision API rejects prompts above 2050 tokens and bodies
+  above 64 KiB. The Tev1 adapter now uses a versioned card-aware projection;
+  full-game pilots still hit the token ceiling. Budgeted state/action context
+  needs a documented selection policy before strength evaluation.
 - The role/situation pattern has no population path: roles are produced by
   gameplay, and the trace-to-graph writer for combat situations is not built.
 - The `tree` planner's continuation set is degenerate, so deep belief branching
@@ -135,13 +211,281 @@ Full games of Magic now run end-to-end on the **phase-rs Rust engine**. Python a
 
 ---
 
-## Active Work Log — Engine Quality Pass (May 2026)
+## Active Work Log — Runtime and Engine Quality
 
 Iterative bug-hunt + mechanic coverage session driven by inspection of
 `runs/edh_pod/pod_game_001.log`. New items append to the bottom; completed
 items stay for traceability.
 
 ### Done
+
+- [x] **Varied native deck pilots and clearer dual-control wording (Oct 5)** —
+      `scripts/run_paper_pilot.py` retains the default burn mirror and adds
+      `--deck-pool modern-diverse`, explicit `--deck-files`, mirrors/ordered
+      round-robin scheduling and policy subsets. Two hand-authored 60-card
+      creature-aggro/control fixtures live in `data/decks/benchmark/`; the
+      selected pool has three decks/nine ordered matchups. Schema-v3 manifests
+      and cells retain deck identities/hashes, including custom external paths;
+      input-change invalidation and completion-aware outcomes are preserved.
+      `tests/test_paper_pilot.py` covers schedules, CLI propagation, constraints
+      and counts. Focused pilot/ablation/reference suite: 38 passed; Ruff passes.
+      A bounded heuristic smoke completes all three native Modern mirrors
+      (3/3 terminal games, no incomplete cells, unchanged hashes), not a
+      strength or full mechanics qualification. `docs/EXPERIMENTS.md` now gives
+      commands and preliminary-to-full results gates. The research paper
+      explains dual control as information enabling better contingent decisions;
+      all review PDFs rebuild with resolved references.
+
+- [x] **JEPA/control exposition and decision-model foundation (Oct 5)** —
+      `paper/opposition_agents_mtg.tex` explains one-step latent targets,
+      shared stop-gradient encoder parameters and standard-normal KL, rather
+      than full next-state prediction or an unsupported H-step training loss.
+      Architecture and agent descriptions separate JEPA from recurrent
+      predicted-reward dream search; unnecessary tensor/checkpoint notes and
+      the erroneous fusion worked example are removed. Control notation
+      distinguishes beliefs, models, goals and action priors; normalised Gibbs
+      weights and entropy failure hypotheses have numerical examples and
+      controlled-probe qualifications. A dedicated decision-model subsection
+      follows chat selection. `paper/references.bib` adds canonical phase-rs
+      software/GitHub citation (67 entries), used in both agent manuscripts;
+      `paper/agents_tech_report.tex` fixes the same training-loss description.
+      `paper/fig_stack.tex` labels the JEPA predictor separately from recurrent
+      dynamics. `paper/README.md` documents the clarification; all three review
+      PDFs rebuild with resolved citations/references, five bibliography-guard
+      tests pass, and the numerical examples are independently checked.
+
+- [x] **Shared manuscript bibliography and Kaufmann DOI (Oct 5)** —
+      `paper/references.bib` replaces three inline reference lists while
+      preserving their citation keys; it also collects relevant background
+      reading from existing world-model/ontology/control documents and the
+      design-plan references. Rafael Kaufmann's SSRN preprint is registered
+      as `10.2139/ssrn.7504418`; no unverified month is asserted. Registry
+      metadata corrects inherited SEMANTiCS author/title errors and Romanova's
+      DOI (`SSW260017`, not unrelated `SSW260016`); LeWorldModel now has its
+      arXiv identifier. Software, undated resources and unpublished companions
+      remain explicitly labelled. `validate_paper_references.py` and
+      `compile_papers.ps1` check source keys, audit every entry through BibTeX
+      and fail on final reference diagnostics; focused tests cover guards.
+      All three PDFs are rebuilt using shared `plainnat` BibTeX, preserving
+      author-year versus numeric citation styles. Paper/root README and
+      related reference sections link the shared resource; newly generated
+      bibliography auxiliaries are ignored without removing tracked files.
+      External checks distinguish registered DOI records from SSRN's 403/
+      OpenReview's browser challenge; no nonexistent publication IDs invented.
+      Final inventory: 66 unique entries, all 29 recorded DOI registrations
+      verified (Crossref/DataCite), 34 explicit URL checks with no 404s.
+      All database entries render in the isolated BibTeX audit; final PDFs have
+      no undefined citations/references or BibTeX warnings. Kaufmann's
+      author/DOI and Romanova's corrected DOI are present in extracted PDF text.
+      Focused guard tests: 5 passed; targeted Ruff/editor checks pass.
+      Final PDFs: ontology 14 pages, agents 29, technical report 13; inherited
+      non-reference layout warnings remain.
+
+- [x] **Ontology construction method clarified (Oct 5)** —
+      `paper/mtg_ontology.tex` adds a six-step responsibility table, separates
+      LLM-assisted schema/tooling work from deterministic rule extraction,
+      gives a Vehicle example and discloses incomplete historical
+      prompt/model/acceptance records. The extension guide adds a two-track
+      feedback-loop diagram; the README, generator docstring and companion
+      manuscripts use matching terminology. Curated status is not independent
+      expert approval, and cited multi-agent builders are not claimed as
+      executed. All review PDFs are rebuilt; prospective assisted-change
+      provenance is queued in O5 rather than invented retrospectively.
+      Final PDFs: ontology 14 pages, agents 28, technical report 13; extracted
+      PDF text confirms the new construction section/table/example. No
+      undefined references/citations or ontology-paper overfull boxes remain;
+      inherited agent-paper/table and minor technical-report layout warnings
+      are retained. Related Ruff/editor and whitespace checks pass.
+
+- [x] **Scientific ontology review, real reasoning and RDF publication (Oct 5)** —
+      `ontology_reasoning.py`, `ReasonerCheck.java`, `fetch_ontology_imports.py`
+      and `imports.lock.json` resolve/freeze imports and run genuine
+      OWLAPI/HermiT. `validate_ontology.py` separates local sanity, profile
+      diagnostics and consistency; optional `--require-dl-profile` fails
+      closed when the raw closure is outside OWL 2 DL. The 1,193-triple schema
+      repairs transitive asymmetry/irreflexivity and inverse-functional
+      datatype misuse; `mtg-shapes.ttl` checks temporal cycles. Actual schema
+      reasoning and positive/negative local-schema probes pass; dependency
+      profile conformance and the 600-second vocabulary timeout remain gates.
+      `serve_ontology.py` and `install_ontology_tools.ps1` provide a reproducible
+      opt-in read-only RDF snapshot: six source graphs, 6,222 default triples,
+      14/14 real Fuseki CQ queries and refused updates. No agent wiring or
+      persistent TDB/Neo4j qualification is implied. Workbench exports are
+      regenerated after the logical repairs. `test_ontology_reasoning.py`,
+      directly affected ontology tests, the extension guide and paper README
+      cover the boundaries. `mtg_ontology.tex` is reframed as a scientific
+      resource paper; affected agent-paper claims are qualified and all three
+      review PDFs are rebuilt. Full populated reasoning/profiling, external
+      modelling review and physical modules remain explicitly queued below.
+      Final targeted suite: 142 passed, 3 skipped (optional local rule text);
+      targeted Ruff and patch-whitespace checks pass. Refreshed exports pass
+      the actual pinned upstream Zod contract. Final-source Fuseki checks
+      reproduce all source counts/14 CQs and refuse both SPARQL updates and
+      Graph Store POST (405); temporary services are stopped after verification.
+
+- [x] **Modular workbench review export and K10 setup safety (Oct 5)** —
+      `scripts/export_ontology_workbench.py`, three `data/ontology/mtg-workbench*.json`
+      outputs and `test_workbench_export.py` export modules, classes, relations,
+      datatype fields, vocabulary examples and all CQs from the tagged YAML.
+      Actual pinned upstream Zod import schema accepts the export; a generated,
+      attributed JSON Schema fixture supports repeatable local validation.
+      RDF/JSON reconstructs an isomorphic source graph; source/exporter hashes
+      and explicit projection warnings accompany it.
+      `src/config.py`, `n10s_setup.py`, `neo4j/init/01_init_n10s.cypher` and
+      `train_pipeline.py` update current Turtle defaults, preserve compatible
+      graph config, verify connectivity/import counts, add current-pattern
+      indexes and stop training setup on failure with driver cleanup.
+      `test_n10s_setup.py` covers failure/format/config/lifecycle contracts;
+      `docs/ONTOLOGY_EXTENSION_GUIDE.md` distinguishes current implementation
+      from historical design and documents import/projection limitations.
+      Final targeted verification: 122 passed, 3 skipped (absent optional local
+      rule-text layer), targeted Ruff clean; training pipeline has no new lint
+      diagnostics compared with HEAD. Persisted JSON files match current
+      source graphs/hashes and pass the pinned workbench import contract.
+      Live store readiness, complete query migration and prefetch remain K10;
+      independently importable domain OWL modules are queued as K11.
+
+- [x] **Review-paper build and follow-up verification (Oct 5)** —
+      `scripts/compile_papers.ps1` reproducibly builds the required figure
+      and all three manuscripts; `paper/README.md` documents the command.
+      Review PDFs: ontology 12 pages, agents paper 28 pages, technical report
+      13 pages. Fixed long-path layout overflows and qualified unsupported
+      end-to-end/live-import claims. No undefined citations/references;
+      smaller inherited layout warnings remain. Focused follow-up suite:
+      289 passed, 3 skipped. Post-reconnect capped Commander smoke:
+      50 actions, observed turn 7, explicit `turn_cap`, no winner.
+      Final safety guard keeps fixed-damage forecasts two-player-only rather
+      than altering an aggregate multiplayer life value; 32 pending-cast/
+      reconnect regressions pass after this change.
+      Runtime local-vocabulary versus optional Neo4j access documented;
+      verified graph readiness/import/prefetch remains K10, no Fuseki deployed.
+
+- [x] **Casting/cancellation and fixed-damage target repair (Oct 5)** —
+      `src/agents/kl_control.py`, `mtg_transition.py` and
+      `src/integrations/phase_rs/kl_control_picker.py` project owned pending
+      casts, distinguish cancel from native mode/target choices, credit at
+      most one completion forecast per rollout and avoid inventing turn/
+      opponent-clock advancement for internal choices. Conservative fixed
+      damage ASTs retain target direction and original action mapping.
+      Modal-only intermediate attempts exposed `ChooseTarget` cancellation
+      and remained action-capped; these failures are retained. Final two
+      KL mirror games terminate in 7/11 turns, two losses, 203 decisions,
+      zero cancellations. General mode/effect/cost semantics remain K2/K5.
+
+- [x] **Actual authenticated session restore (Oct 5)** —
+      `client.py`, `runner.py`, package exports and `test_reconnect.py`
+      retain the exact server-issued `FullSessionKey`, send `Reconnect`
+      with the player credential, require matching session/seat and non-stale
+      revision, recover legal actions and terminal states, and reuse/close
+      the original client rather than leaking replacement contexts.
+      A forced native disconnect restored generation 1/revision 2/seat 0.
+      Missing keys and failed restores remain explicit incomplete outcomes.
+
+- [x] **Ontology resource evidence and submission plan (Oct 5)** —
+      `build_ontology_from_cr.py` regenerates factual terms only from Sept 25
+      CR; all 830 grounded subjects directly derive from `CRDocument`.
+      `type_line.py` matches ASCII/typographic apostrophes and retains
+      unknown-card-type denominators; `check_card_types.py` adds explicit
+      format/auxiliary eligibility, exclusion counts and hashed JSON audits.
+      Modern: 22,718 records/23,483 clean lines; Commander cards: 32,068/
+      32,914 clean lines, explicitly excluding sticker sheets. The unfiltered
+      audit is retained. `validate_ontology.py` counts skips separately.
+      Section 6 and the resource manuscript now contain measured results,
+      independent-review/logical/reuse/revision/licensing gates, and corrected
+      OWL-punning/open-world claims. Papers/README and tech report updated.
+
+- [x] **Current card snapshot refresh (Oct 5, 2026)** —
+      `src/integrations/scryfall_bulk.py`, `scripts/fetch_card_data.py`,
+      `scripts/import_scryfall.py` and `src/integrations/scryfall.py` support
+      current gzip JSONL and legacy JSON bulk downloads, validate before
+      publication and retain source dates/counts/SHA-256. Oracle, rulings
+      and dependent name index refreshed; Neo4j/checkpoints are not rebuilt.
+      Full type audit: 35,623/36,748 parsed items well formed (96.94%),
+      46 reported correlation violations and 1,081 unknown-token cases.
+      Corpus eligibility and CR vocabulary alignment remain queued (K8).
+
+- [x] **Four-player Commander wiring and bounded smoke (Oct 5, 2026)** —
+      `client.py`, `runner.py`, `scripts/run_phase_rs_ablation.py` and
+      `examples/play_edh_pod.py` support one Python host plus three explicit
+      native AI decks, with format bounds, game/turn caps and configurable
+      transport limits. Complete Krenko/Atraxa/Meren/Urza decks validate.
+      Six-turn smoke stopped explicitly at `turn_cap` (47 actions, observed
+      turn 7), not a draw. Longer host-Krenko attempts reached turn 34 before
+      transport closure and turn 40/507 actions before the 420-second budget;
+      the first closure's exact cause is unconfirmed. A host-Atraxa/native-Krenko
+      follow-up reached turn 39/418 actions, then `stream_timeout` with recorded
+      WebSocket keepalive-ping timeout (1011, no close frame received).
+      No terminal pod is verified; full pods remain K7.
+
+- [x] **Publication plan, pilot driver and pipeline diagrams (Oct 5, 2026)** —
+      section 6, `scripts/run_paper_pilot.py`, `docs/EXPERIMENTS.md` and
+      `docs/RESEARCH_PIPELINES.md` define claims, qualification gates,
+      calibration/holdout matrices, power caveats, failure handling and
+      five Mermaid pipelines (all parse with Mermaid 11).
+      Initial Modern pilot: 10 scheduled/attempted games, 8 terminal losses,
+      2 KL action caps; cast/cancel semantics must be fixed before advancement.
+      Subsequent driver schema v2 freezes deck files, Python source hashes, release
+      binary, data/index hashes and package versions, checks for changes,
+      and rejects successful processes without a completed summary.
+      The initial schema-v1 pilot did not have that later source/binary freeze.
+      Agents research paper compiles to 28 pages; no strength results added.
+
+- [x] **K1 native runtime gate (Oct 5, 2026)** — release build and signed data
+      bootstrap verified at `1191bba65`/v106. `format_config.py`,
+      `format_defaults.json` and `scripts/export_phase_rs_formats.py` export
+      all 25 engine-authored formats; `client.py` sends complete configurations.
+      `runner.py` distinguishes Decision/BottomCards within native mulligan
+      rounds. `decks.py` exposes only the five actual AI starter names.
+      Modern burn versus Blue Control/VeryEasy completed in 14 turns and
+      150 actions. All three objective CLI pilots also completed (one game
+      per arm); these are functional checks, not comparative strength evidence.
+      Regeneration/data setup and format legality are documented in
+      `docs/PHASE_RS_INTEGRATION.md` and `docs/EXPERIMENTS.md`.
+
+- [x] **Tev1 decision adapter and research framing (Oct 5, 2026)** —
+      `src/integrations/phase_rs/tev1_picker.py` implements the user-selected
+      maximum-24 heuristic shortlist with seeded ties, pass retention,
+      exact original-index mapping, probability validation and explicit
+      inference failures. Wired through all four phase-rs picker CLIs;
+      `runner.py` records reasoning/latency and benchmark summaries expose
+      action coverage and p50/p95. Focused tests cover offline
+      API/shortlist/CLI contracts; real local Ollama 0.35.1 inference works
+      with installed `tev1:0.8b`. `decision_context.py` projects visible
+      characteristics into equivalent-ID card rows without cropping cards
+      or reconstructing actions. Projection version/request bytes are traced;
+      exact 64 KiB boundaries and explicit server diagnostics are tested.
+      Raw requests failed at 156 KiB; compact full-game pilots progressed to
+      turns 18/22 before hitting the 2050-token ceiling. K6 remains blocked
+      on budgeted context policy. No playing-strength result is claimed.
+      `paper/opposition_agents_mtg.tex` defines decision-tuned models,
+      describes the benchmark controls and corrects the objective-budget/RNG
+      confounds; the paper compiles with sourced Tev1 citations.
+      `AGENTS.md`, `paper/README.md` and the experiment/integration runbooks
+      describe the new comparator.
+
+- [x] **K2 benchmark harness + phase-rs protocol update (Oct 5, 2026)** —
+      `scripts/run_phase_rs_ablation.py` supports an interleaved
+      `kl`/`efe_infogain`/`efe_ambiguity` sweep, explicit deck/format, saved
+      configuration, checkout revisions, deck fingerprint, picker seeds,
+      retry traces, completion rate and Wilson win-rate intervals. Incomplete
+      runs are not draws; a run with incomplete games exits nonzero.
+      `external/phase-rs` updated to `1191bba65`; `client.py` speaks v106;
+      `runner.py` records the actual server handshake identity and surfaces
+      operational/AI-driver faults instead of waiting for a timeout.
+      Focused tests: `tests/test_phase_rs_ablation.py` and
+      `tests/integrations/phase_rs/`. K1 and a three-arm functional pilot are
+      verified; statistically meaningful K2 measurements remain queued.
+      Final focused selection includes terminal win/draw evidence in both
+      normal and drain receive paths, plus exact request-size boundaries.
+      Latest focused bridge/benchmark/bulk/pilot selection: **135 passed**.
+      Broad offline regression after installing missing RDF dependencies:
+      **820 passed, 30 skipped, 2 existing failures**:
+      `tests/test_llm_registry.py` (`lfm2.5-8b` exceeds its asserted 7B budget)
+      and `tests/test_ontology_cr_derived.py` (direct CR-document provenance
+      assertion fails without the optional local rules graph; see K8).
+      The unrestricted suite was stopped during live Ollama gameplay.
+      Benchmark/new-test lint passes; 15 bridge lint diagnostics also exist
+      in the unchanged HEAD versions and were not expanded by this work.
 
 - [x] **H1–H5 architectural engine items (May 2026)** — full implementation pass for
       all five deferred CR-correctness items:
@@ -964,34 +1308,47 @@ items stay for traceability.
 
 ### Queue — High Priority
 
-These five items finish the engine's structural backbone so that *any*
-new mechanic can be expressed declaratively instead of bolted on with
-case-by-case `if` chains. Each has a sketched module layout so the
-work can be picked up without redesign.
+The K-series tracks current research/runtime blockers and evaluation work.
+The completed H-series below records the legacy Python engine's structural
+backbone; it is not the phase-rs runtime queue.
 
-#### K1 — Build phase-server locally (blocker for all gameplay evaluation)
+#### K1 — Build phase-server locally ✅ Implemented
 
-The MSVC toolset (14.35.32215) is installed under
-`C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools` but
-`link.exe` is not on `PATH`, so `cargo build --release --bin phase-server`
-fails with `linker 'link.exe' not found`. Fix: run the build from a
-Developer Command Prompt, or wrap it:
+**Oct 5: complete; moved to Done above.** Release build, signed data refresh,
+complete format registry and live Modern gameplay verified. The previously
+documented VS 2022 path no
+longer exists. `vswhere` finds Visual Studio 18 BuildTools. Resolve the
+installed toolchain rather than hard-coding its version, and initialize
+MSVC and build in the same process:
 
+```powershell
+$vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+$vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+$dev = Join-Path $vs 'VC\Auxiliary\Build\vcvars64.bat'
+$phase = Join-Path (Get-Location) 'external\phase-rs'
+& $env:ComSpec /c "call `"$dev`" >nul && cd /d `"$phase`" && cargo build --locked --release --bin phase-server"
 ```
-cmd /c '"C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat" && cargo build --release --bin phase-server'
-```
 
-Everything downstream of this is blocked: the objective ablation (K2),
-trace collection, and any win-rate number. Nothing in the Python layer
-imports or tests against a live server, so the rest of the stack is
-unaffected.
+Completion requires a successful build and live protocol/game smoke, not
+just finding `link.exe`. Protocol contract tests do not require a live server.
 
 #### K2 — Objective ablation: KL control vs. the two legacy EFE forms
+
+**Harness and one-game-per-arm functional pilot implemented; strength
+measurements pending.** All three arms reached explicit rules-engine terminal
+outcomes versus Blue Control/VeryEasy (three losses, no incomplete games).
+This sample cannot establish differences between objectives. Run all three arms
+with `--picker kl_control --objectives kl efe_infogain efe_ambiguity`.
+See section 6 and `docs/EXPERIMENTS.md` for the executable command.
+Benchmark validation also needs an explicit model-size policy: the existing
+registry contains `lfm2.5-8b` while its tests assert every entry fits a 7B
+budget. Resolve that pre-existing contradiction before publishing a
+budget-matched LLM/decision-model comparison.
 
 All three objectives are already implemented behind one flag
 (`src/integrations/phase_rs/kl_control_picker.py --objective
 kl|efe_infogain|efe_ambiguity`) sharing belief, transition model,
-potential, prior and seed. Once K1 lands, run against `phase-ai` at fixed
+potential, prior and seed. With K1 verified, run against `phase-ai` at fixed
 difficulty and measure three things:
 
 1. **Win rate** per objective.
@@ -1005,14 +1362,31 @@ difficulty and measure three things:
 A null result is publishable and would suggest the pathologies are masked
 by MTG's large action space.
 
-#### K3 — Migrate the ABox importer onto the v2.0 patterns
+The current KL arm plans over a horizon whereas the legacy arms score a
+single step. This is a policy-stack comparison, not yet an isolated
+objective-only ablation. Equal planning budgets, counterfactual noisy-TV/
+scotophobia instrumentation, and engine RNG seeding are required before
+making causal claims; matched Python picker seeds alone are insufficient.
 
-`src/knowledge/` still writes flat card properties. The v2.0 TBox declares
-role/situation and quality/region patterns that nothing currently
-populates, so the expressive gain is available only to hand-written
-queries. Needs: Scryfall importer emitting `CardDesign`/`CardPrinting`
-pairs, `Power`/`Toughness` qualities with `ValueRegion` values, and
-`hasCardType` classification rather than direct typing.
+**Later Modern mirror pilot:** 8/10 games completed, all losses; both KL runs
+hit the 1,500-action cap with repeated `CastSpell` / `CancelCast` at Upkeep.
+Audit pending-cast state, mode/target/cost decisions and cancellation in
+`kl_control_picker.py` / `mtg_transition.py` against native semantics before
+running more strength cells. Fix the transition/action model, not an
+anti-repeat heuristic that masks the defect. This pilot fails P1's gate.
+
+**Follow-up repair:** pending modes/targets/cancellation and conservative
+fixed-damage direction are now modeled. Two fresh KL games complete (two
+losses, 7/11 turns, no cancellation loops). Preserve the original and
+modal-only intermediate failures. General card/mode/cost semantics, targets
+for effects beyond fixed damage and the 20-game calibration gate remain
+pending; the completion check alone does not qualify a strength campaign.
+
+#### K3 — Migrate the ABox importer onto the v2.0 patterns ✅ Implemented
+
+Completed Sept 18 in `src/knowledge/abox_builder.py`,
+`src/knowledge/type_line.py` and `scripts/import_scryfall.py`; see the
+Status Snapshot. Gameplay role/situation population remains pending.
 
 #### K4 — Promotion gate for induced evidence
 
@@ -1030,6 +1404,118 @@ damage assignment and ordering. `client.py` can now send submissions, but
 list, so the agent cannot tell a targeting decision from a mode choice.
 Each has a different shape of belief dependence and should be planned
 differently.
+
+#### K6 — Local decision-model evaluation (Tev1)
+
+**Adapter implemented; full-game evaluation blocked on input budgeting.**
+The user selected a
+maximum-24 heuristic shortlist, with action coverage recorded. The local
+0.8B API smoke passes; 4B has not been installed/evaluated. Actual pilots
+exposed 64 KiB requests and a 2050-token prompt ceiling in Ollama 0.35.1.
+The versioned card-aware projection removes hidden placeholders, library
+order, internal journals and compiled rule ASTs, and groups identical visible
+instances while retaining their IDs. It does not silently truncate observations.
+Compact pilots still failed late in games at the token ceiling.
+**Next:** implement and evaluate an explicit token-budgeted context policy
+(including what information/actions may be excluded and coverage reporting),
+then run full game pilots, vary shortlist size/source and option order, match context and
+candidate sets with a size-matched general Qwen3.5 comparator, and instrument
+the existing chat picker's random fallback. Candidate coverage is not
+optimal-move recall. Keep deployment-stack results distinct from isolated
+decision-tuning effects. Planner/WM-candidate critic integration and
+probability calibration are separate follow-ups. The research paper's
+decision-model benchmark subsection now specifies these controls.
+
+#### K7 — Terminal Commander qualification and multiplayer evaluation
+
+Custom four-player pods and elimination are wired; bounded smoke is Done.
+No terminal pod has yet been verified. The final host-Atraxa follow-up ended
+at turn 39/418 decisions with a recorded WebSocket keepalive-ping timeout;
+diagnose native progression/transport and authenticated reconnect rather than
+assuming message size alone. Qualify at least three completed pods
+per intended configuration without transport/action failures, then rotate
+host/decks and establish runtime budgets from measured durations. Current
+ownership is one Python host and three native AI seats, not four Python
+agents. Multi-connection control, multiplayer belief/value semantics and
+politics-aware policies remain separate pending work.
+
+Keyed reconnect is now implemented and live-verified; the remaining work is
+native progression/long-pod diagnosis and terminal qualification, not a
+handshake-only retry. Do not claim that session restoration cures a stalled AI.
+
+#### K8 — Resource-paper corpus scope and CR provenance
+
+**Scope/provenance implementation complete; release qualification pending.**
+Sept 25 factual terms now have direct `prov:wasDerivedFrom` links independently
+of local rule text. The primary Modern and Commander-card corpora pass all
+type-line checks; declared auxiliary/nonstandard residuals remain in the
+unfiltered audit. See the ontology resource-paper plan in section 6 for exact
+denominators, source hashes and the logical/reuse/revision/review release gates.
+Do not promote every Scryfall label into the ontology. Six enabled stages pass
+(1,196 triples, 74 classes, 115/115 terms annotated, 32/32 CQs, 14 SPARQL
+checks); HermiT was then skipped and imports unresolved. The subsequent
+1,193-triple schema repairs and genuine import-resolved HermiT run qualify
+schema consistency/satisfiability, not the full release: the raw dependencies
+have 37 OWLAPI profile violations and schema-plus-vocabulary reasoning exceeded
+600 seconds. Profile that larger input and declare a bounded supported reasoner
+scope before release; do not turn timeouts into passes. Local-schema disjoint
+positive/negative probes are Done; broader corpus and modelling/revision review
+remain pending.
+
+#### K9 — Complete publication provenance and controlled execution
+
+Pilot schema v2 captures source/binary/data hashes and rejects input changes.
+Before publication, archive the exact dirty patch/release source, audit/hash
+all native auxiliary inputs actually used, pin the complete environment and
+declare hardware/concurrent load. Native RNG/seat controls, matched objective
+budgets remain pending; keyed `full_key` reconnect is now implemented and
+verified. Source hashes alone
+do not resolve these controls or qualify the earlier feasibility pilot.
+
+#### K10 — Runtime ontology access and verified graph writes
+
+An opt-in read-only localhost Fuseki snapshot is implemented and live-verified;
+no automatic service or agent SPARQL wiring is enabled. `type_line.py` provides a cached in-process factual
+vocabulary; Neo4j/n10s/APOC and the async Cypher APIs provide optional strategic
+graph access. Current native random/heuristic/KL/Tev1 pilots are not evidence
+of live KG grounding. Docker was unavailable during the offline resource work;
+neither the Scryfall file refresh nor RDF audits imply successful Neo4j writes.
+
+**Implemented setup slice:** defaults use v2.0 Turtle and the separate factual
+vocabulary, connectivity is checked before setup, compatible config is retained
+and incompatible config is refused without dropping it. RDF calls require `OK`
+and positive parsed/loaded counts; full setup returns the reports. Current-pattern
+constraints/fulltext coexist with legacy indexes. The training KG stage closes
+its driver and stops on setup failure instead of silently skipping setup.
+The bootstrap file is documented as manual/fresh-database-only, not automatically
+executed by stock Neo4j. Unit tests qualify these contracts, not a live import.
+
+Before a KG-enabled benchmark: qualify read-only plugin/index readiness and the
+imported snapshot manifest against a live store, reconcile `Card` versus
+`CardDesign` query labels and vector retrieval, and assert actual bulk-card/
+combo written counts (n10s counts alone do not prove these).
+Replace implicit dry-run/query-disable behaviour with
+explicit benchmark failure/fallback accounting. Prefetch bounded, versioned
+strategic priors into an in-process cache keyed by snapshot/card identity so
+agent decisions do not perform unbounded network queries. Keep curated RDF and
+induced graph evidence distinct. The implemented Fuseki service is optional
+consumer-facing RDF/SPARQL publication, not a prerequisite for the agent hot
+path or a substitute for a full OWL reasoner. Its memory dataset reloads a frozen
+TriG snapshot; persistent TDB deployment, authenticated remote publication and
+agent query integration remain unimplemented. The temporary qualification
+service is stopped after its read-only/CQ checks.
+
+#### K11 — Independently importable OWL domain modules
+
+The schema currently separates concerns by vocabulary/sections and uses a
+distinct decision namespace, while factual CR data lives in a separate file.
+The workbench JSON adds explicit editor groupings, not physical OWL modules.
+Extract rules/taxonomy, card descriptions, gameplay, strategy, decisions and
+induced-evidence modules behind a backward-compatible aggregate ontology.
+Preserve all IRIs, blank-node axioms, provenance, CQ coverage and cross-module
+relations; define shared foundational dependencies and test aggregate-graph
+equivalence plus each module's pinned import closure. Do not infer independent
+reasoner certification from editor groupings. This remains queued.
 
 #### H1 — Continuous-effects layer system (CR 613) ✅ Implemented
 
@@ -1953,9 +2439,14 @@ The full V+M+C world model with JEPA predictor and KG context fusion is implemen
 
 ### 4.4 Knowledge Graph & Ontology
 
-**Status: ✅ Infrastructure complete, requires Neo4j to be running**
+**Status: 🟡 Partial — factual resource and read-only RDF serving verified; agent grounding unqualified**
 
-- **OWL Ontology:** `data/ontology/mtg-ontology-v1.1.owl` — formal TBox with Card, Creature, Instant, Combo, Archetype, Keyword, Effect classes
+- **OWL Ontology:** `data/ontology/mtg-ontology-v2.0.ttl`, plus the Sept 25
+  factual vocabulary with independent document provenance; local schema/CQ/SHACL
+  and declared corpus audits verified; import-resolved schema reasoning passes,
+  raw dependency profile and full vocabulary reasoning remain unqualified.
+- **Runtime vocabulary:** cached in-process type/subtype index; optional localhost
+  read-only Fuseki snapshot, not wired to agent decisions.
 - **SHACL Shapes:** `data/ontology/mtg-shapes.ttl` — validation constraints
 - **Neo4j integration:** Full async driver with n10s setup, APOC algorithms (PageRank, Louvain community detection)
 - **Import pipelines:** Scryfall bulk → Neo4j, Commander Spellbook → Combo nodes, EDHREC synergies
@@ -1963,7 +2454,11 @@ The full V+M+C world model with JEPA predictor and KG context fusion is implemen
 - **Graph embeddings:** GraphSAGE export → 128-dim vectors → Neo4j writeback + local cache
 - **GraphRAG:** Subgraph + vector + fulltext hybrid retrieval
 
-**Competency questions** (`data/competency_questions.txt`) validated against the KG schema.
+**Competency questions** (`data/competency_questions.yaml`): 32/32 covered,
+14 local and real Fuseki SPARQL checks. This is not a successful live Neo4j import or independent
+alignment review. Workbench module grouping is implemented, physical OWL domain
+modules remain K11. n10s current-format/default/config safety is implemented;
+live readiness, query compatibility and bulk-write/fallback accounting remain K10.
 
 ### 4.5 Training & Self-Play
 
@@ -1989,11 +2484,27 @@ The full V+M+C world model with JEPA predictor and KG context fusion is implemen
 
 ### 4.7 External Integrations
 
-**Status: ✅ Complete**
+**Status: 🟡 Partial**
 
 - Scryfall API wrapper with rate limiting, bulk download, rulings
 - SQLite card cache
 - Decklist loader (plaintext, Moxfield, Archidekt)
+- phase-rs upstream `1191bba65`, protocol v106, parser/bridge tests and
+  explicit operational-failure handling; release build, signed data refresh,
+  all 25 native format defaults and live Modern smoke verified.
+- Current Scryfall gzip-JSONL/legacy bulk downloader with validated publication
+  and snapshot manifest; oracle/rulings/name index refreshed independently
+  of native card implementations.
+- Four-player custom-deck Commander and capped smoke verified; terminal pod
+  qualification remains pending (K7). Budgets and transport failures remain
+  explicit incomplete outcomes.
+- Experimental Tev1 decision adapter with card-aware context and explicit
+  input/inference failures; full-game evaluation still blocked by the local
+  endpoint's observed 2050-token ceiling.
+- Keyed Full-session restore retains the issued generation and player credential
+  and validates the restored seat/revision; forced native disconnect verified.
+- Pending: native viewer-interaction planning (K5), engine RNG seeding, general
+  target/mode/cost forecasts and long Commander terminal qualification.
 
 ### 4.8 Judge Agent
 
@@ -2308,6 +2819,290 @@ tests/
 ---
 
 ## 6. Benchmark & Evaluation Plan
+
+### Current execution plan — phase-rs-first (Oct 2026)
+
+1. **Runtime gate (K1) — complete:** pinned server built, Python wire version
+   matches upstream, and live Modern gameplay completes.
+2. **Objective pilot (K2):** fixed explicit deck, format and AI difficulty;
+   interleave the three arms over the same Python picker seed schedule.
+   Use `scripts/run_phase_rs_ablation.py --objectives`. Run at least a
+   small pilot before launching a 100-games-per-arm campaign. One functional
+   game per arm completed on Oct 5; a larger pilot remains necessary.
+3. **Reporting gate:** publish `config.json`, append-only `games.jsonl`,
+   traces and `summary.json`. Report completed games, true draws, incomplete
+   runs and reason counts separately. Win rate uses completed games only;
+   Wilson 95% intervals quantify sampling uncertainty, not deck/seat/RNG bias.
+   No completed games means a null win rate, not zero.
+4. **Validity work:** add engine/AI RNG seeding and seat rotation; match
+   objective planning budgets; instrument counterfactual noisy-TV and
+   scotophobia rates. These metrics are not inferred from action names.
+5. **Decision-model pilot (K6):** local Tev1 0.8B/4B versus heuristic,
+   ordinary Ollama chat and KL control. Record decision latency p50/p95,
+   invalid-choice/API-error rate, option count and shortlist coverage.
+   First resolve the observed 2050-token decision-endpoint ceiling through a
+   documented budgeted projection; current full-game Tev1 pilots are incomplete.
+   Evaluate a fresh held-out deck/seed pool after tuning. Model confidence
+   must be evaluated for calibration separately from playing strength.
+6. **Architecture ablations:** extend to KG, JEPA and dreaming once the
+   baselines complete reliably; head-to-head and Commander remain separate
+   experiments, not features claimed by the current built-in-AI harness.
+
+**Deck diversity (Oct 5):** the bounded paper pilot now supports three
+development archetypes (burn, green creature aggro, blue-white control), mirror
+or nine ordered round-robin matchups, custom Modern deck pools and eligible
+policy subsets. See `docs/EXPERIMENTS.md` for executable commands and
+`data/decks/benchmark/README.md` for fixture scope. One terminal native game
+per mirror passed; per-condition 20-game reliability and held-out strength
+gates remain pending. Deck-role rotation is not seat rotation. Do not sweep
+historical deck folders blindly: some lists have wrong counts/non-format cards.
+
+The old experiment commands in `docs/EXPERIMENTS.md` and
+`scripts/weekend_campaign.ps1` include legacy Python-engine entry points.
+The current runbook section documents the supported phase-rs command.
+Existing targets below are research goals, not measured achievements.
+
+### Publication plan: claims, gates, schedule and release package
+
+**Fastest credible publication path:** finish the standalone ontology resource
+paper while running a narrowly scoped agent-policy study in parallel. The main
+agents paper must not claim that the complete KG + JEPA + dreaming +
+play-to-graph architecture has been evaluated merely because its modules exist.
+Negative results and endpoint feasibility failures are legitimate findings,
+but the claims must match the deployed system.
+
+The pipeline and decision boundaries are illustrated in
+[docs/RESEARCH_PIPELINES.md](docs/RESEARCH_PIPELINES.md). This subsection is the
+authoritative experimental plan; the diagrams are explanatory, not a second
+status tracker.
+
+#### Claim-to-evidence matrix
+
+| Claim | Required evidence | Current gate |
+|---|---|---|
+| Ontology is reusable and logically consistent | Versioned CR vocabulary, OWL/SHACL/competency validation, licences, data generation instructions and ABox conformance sample | Re-run on the frozen October snapshot; not inferred from card count |
+| Native bridge supports Commander pods | Four legal 100-card decks, four 40-life players, commanders/priority/elimination exercised, genuine terminal games and failure accounting | One Python host + three native AI seats wired; initial pod reached turn 34 but transport closed, so not a completed pod |
+| One policy stack performs differently from another | Same declared observation/action interface, deck/difficulty strata, independent repeated games, effect sizes and uncertainty | Runtime-ready random, heuristic and objective stacks; first pilot only |
+| KL objective itself improves control | Equal action candidates, transition/belief model, horizon, exhaustive/scoring budget and selection rule, plus objective-only tests | Blocked: current KL horizon search and one-step EFE are different stacks |
+| Decision tuning improves selection | Size-matched general model, identical context/options, option-order controls, no uncounted chat fallback and held-out tasks | Blocked: Tev1 input budget; matched chat/error accounting pending |
+| KG grounding / induced learning helps | With/without frozen KG under identical policies; provenance-safe train/holdout split and blinded held-out games | Native integration and promotion policy not validated |
+| JEPA / learned dreaming helps | Native trace/action semantics, transition prediction quality, frozen trained checkpoints, matched rollout budgets and held-out policy ablation | Legacy checkpoints are not evidence for native dynamics |
+
+#### P0 - Freeze and qualify inputs (before strength runs)
+
+1. Pin engine, protocol, Python revision **and dirty diff**; hash the compiled
+   server binary, signed engine dataset, deck lists and normalized deck payloads.
+   Record source manifest dates, schema/projection versions, format and
+   transport/action/time limits. Do not update data during an evaluation.
+2. Keep two sources distinct: Scryfall oracle/rulings for immutable facts and
+   the KG; signed phase-rs definitions for executable mechanics. Refresh both
+   deliberately and record coverage/missing or unsupported study cards.
+   The October Scryfall API now serves gzip JSONL; safe conversion produces
+   the existing JSON-array cache without changing card records.
+3. Validate every scheduled deck **through the native engine**, including
+   Commander singleton/colour identity/bracket rules and 99 + commander count.
+   `edh_krenko_goblins.txt` has only 75 main-deck cards and is not an eligible
+   Commander study deck; use the complete `_core` lists.
+4. Run unit/contract tests, semantic probes and small native games. Probe
+   cast-source IDs, target direction, modes, optional effects, combat defenders,
+   command-zone casts and elimination. A policy that burns itself or predicts
+   identical effects for different targets must be diagnosed before causal
+   conclusions. Rules legality alone does not establish policy quality.
+5. For Commander, verify at least three terminal pods on each selected pod
+   configuration, with no transport-size failure. A six-turn capped run is
+   a development smoke only. Four independent Python agents require a separate
+   multi-connection controller; today's wrapper supplies three native opponents.
+
+#### P1 - Bounded calibration pilot (now executable)
+
+- `scripts/run_paper_pilot.py` runs sequential, interleaved seed schedules with
+  a private server/temporary database, hard campaign timeout and per-game limits.
+  It verifies cache hashes against the published Scryfall snapshot manifest.
+  It retains configs, games, traces, per-cell summaries and campaign failures.
+  Schema v2 pins the existing release binary and hashes Python sources,
+  native data and the full Scryfall cache/index, records Python/package
+  versions, and invalidates a campaign if these inputs change. Exact dirty
+  patch/native auxiliary-input coverage remains P0 work. The initial
+  schema-v1 feasibility pilot predates this additional freeze.
+- Modern: mirror the explicit burn deck against native AI to remove decklist
+  asymmetry; random, heuristic, KL horizon stack and both one-step EFE stacks.
+  Start with 2-3 games per arm at VeryEasy. These are feasibility checks, not a
+  powered objective or strength comparison.
+- Commander: random and heuristic host, Krenko/Atraxa/Meren/Urza explicit decks;
+  first qualify completion. Do not apply the current single-opponent latent
+  belief/planner as if it were already multiplayer-aware.
+- Gate to P2: at least 95% completion across a 20-game calibration batch per
+  intended condition, zero protocol/illegal-choice failures, audited targets
+  and action semantics. Report caps separately; do not discard hard failures.
+  If a gate fails, stop that branch and preserve its diagnosis.
+- Record warm/cold inference and concurrent resource load. Pilot latency is
+  exploratory; no speed superiority claim follows from these timings.
+
+#### P2 - Freeze a publishable evaluation protocol
+
+**Primary empirical scope:** deployed policy stacks versus native AI, not a
+complete learned-agent or objective-only ablation. Predeclare the primary
+comparison after pilot diagnostics, before evaluating a fresh holdout. Keep
+development traces out of held-out evaluation.
+
+| Study | Planned matrix | Eligibility |
+|---|---|---|
+| Main 1v1 stack comparison | 2 qualified archetypes x 2 AI difficulties x 5 stacks x 100 games/cell initially = 2,000 games | After P1 and semantic audit; no chat/Tev1 unless gates pass |
+| Controlled objective-only study | Same three objectives, exhaustive one-step scorer first; then equal-budget horizon variant | New matching implementation and tests required |
+| Commander robustness | Fixed bracket-matched pods; 4 host-deck assignments x 2 qualified policies x 20 terminal pods = 160 pods initially | Completion and elimination gates; deck rotation is not seat rotation |
+| Decision-model reranker | Heuristic candidate source; caps 8/16/24; identical context and order permutations; matched general model | Token budgeting and chat fallback accounting first |
+| KG / learning ablation | Curated-only vs induced priors, frozen training data and checkpoint, same downstream picker | Native trace-to-KG pipeline and provenance split first |
+| JEPA / dreaming ablation | Frozen checkpoint with/without learned rollout features; same observations and compute | Predictive calibration and native action translation first |
+
+These counts are **planning budgets**, not an automatic authorization for
+multi-day computation. Use pilot median/p95 game duration to estimate wall time
+and obtain a resource budget before P2. At 40 seconds/game, 2,000 games take
+about 22 hours sequentially; Commander may take substantially longer.
+Reduce the number of claims/arms rather than disguising a tiny sample as a
+powered study. A 100-game binomial cell has roughly +/-10 percentage-point
+uncertainty near 50%; it cannot resolve a five-point effect. For independent
+two-arm proportions near 50%, detecting five points at 80% power and two-sided
+5% alpha needs approximately 1,570 games **per arm**, before multiplicity,
+stratification or within-pod dependence. Re-estimate with pilot rates and a
+simulation-based power analysis.
+
+#### Statistics, reproducibility and stopping rules
+
+- Unit of analysis is a complete independent game/pod, not each action or the
+  four correlated players within one pod. Do not inflate sample size with moves.
+- Report per-deck/difficulty/model completion, win/loss/true draw and failure
+  reasons; show both wins/completed and wins/scheduled as a sensitivity measure.
+  Keep unstarted campaign cells distinct from incomplete started games.
+- Wilson 95% intervals are for per-cell win rates. Report differences with
+  stratified game/pod bootstrap intervals; do not pool unrelated strata into
+  a single ranking. Holm-adjust the predeclared family of confirmatory tests.
+- Picker seeds do not seed native shuffle/AI RNG. Until native controls and
+  seat rotation exist, use independent-game comparisons, record observed
+  starting player, and explicitly disclaim deterministic paired replay.
+- Prespecify limits, failures/retries, exclusions, sample size and primary
+  endpoint. No optional stopping after a favourable win rate. Interface repairs
+  start a new versioned run; old failures remain in the feasibility report.
+- Deadline is not evidence: if learning arms miss gates, publish the resource
+  paper or narrow the agents paper, leaving ambitious architecture as future work.
+
+#### P3 - Paper-ready artefacts and order of work
+
+1. **Now:** input refresh, Commander wrapper, capped smoke, Modern pilot,
+   full diagrams and blocker ledger.
+2. **Next 1-2 working days:** diagnose failed pods and baseline semantics;
+   validate ontology/ABox against the frozen dataset; decide the narrow claim.
+3. **After gates:** lock the evaluation schedule and approved compute budget,
+   run held-out cells, then statistical analysis and negative-result sensitivity.
+4. **Release:** code revision plus diff, environment/hardware/runtime versions,
+   source hashes/dates, deck payloads, eligible-card coverage, run manifests,
+   all attempt summaries/traces, analysis script and regenerated tables/figures.
+   Share source acquisition instructions rather than copyrighted bulk rule text.
+5. **Manuscript audit:** each results sentence links to an actual archived
+   experiment; distinguish resource validation, runtime smokes, feasibility
+   failures and controlled performance evidence. Do not rewrite design rationale
+   or label missing experiments "implemented".
+
+### Ontology resource paper — submission plan
+
+**Primary deliverable:** `paper/mtg_ontology.tex`, a standalone reusable-resource
+paper. Target semantic-web resource tracks (e.g. SEMANTiCS/ESWC) only after
+verifying the current call, page limit and dates. Do not depend on winning agents,
+completed Commander pods or an unverified end-to-end learning loop.
+
+**Narrow thesis:** explicit design/printing/object, role/situation and
+quality/value patterns, a versioned deterministic factual derivation, and
+provenance-safe reuse make MTG data more inspectable than flat classifications.
+Do not claim comprehensive rules execution, an independently certified OWL 2 DL
+profile, all-card coverage, or agent-strength improvement.
+
+| Claim | Evidence required | Current status |
+|---|---|---|
+| Reusable foundational modelling | Explicit mappings and CQ motivations; independent review of representative design/object/role/quality cases | Schema and 32 CQs exist; external review pending |
+| Deterministic factual derivation | Source revision/hash, reproducible generator, exact vocabulary inventory and direct document provenance without rule text | Sept 25 source; 5,059 factual triples; 830/830 grounded subjects have direct links |
+| Declared card-corpus type conformance | Frozen Scryfall/vocabulary/parser hashes; all exclusions counted; record and face denominators separate | Modern: 22,718 records/23,483 lines; Commander cards: 32,068/32,914; both zero unknowns/mismatches |
+| Logical/constraint quality | Full OWL profile checker, pinned import closure, reasoner consistency and positive/negative ABox probes; SHACL separately | Import-resolved schema consistent, no unsatisfiable named classes; focused local ABox probes pass. Raw dependency profile has 37 violations; vocabulary run times out at 600s |
+| Transparent assisted construction | Responsibilities, normative sources, artifact chain and honest model/prompt provenance boundaries | Six-step method and worked example documented; complete historical prompt/model/acceptance archive unavailable, prospective records remain O5 |
+| Practical reuse beyond this project | Minimal offline consumer/query tasks and documented flat-baseline comparison; no agent/Neo4j prerequisite | Parser and factual graph are offline; comparative task suite pending |
+| Maintainability across revisions | Frozen old/new rule snapshots, reproducible term/axiom diff, manual audit of additions/removals, generator timings | Fresh vocabulary includes +1 artifact type/+1 keyword action; systematic revision experiment pending |
+
+**Corpus protocol (fixed before further comparisons):**
+
+1. Use the October 5 oracle snapshot (38,706 records) and Sept 25 rule source.
+   Preserve source, vocabulary and parser hashes with every JSON audit.
+2. Primary strata: Modern legal/restricted records; Commander legal/restricted
+   card records excluding exactly `type_line == "Stickers"`. Scryfall sticker
+   sheets have `layout=normal`, so a layout filter alone is insufficient.
+   Exclusion precedence is auxiliary type, then legality. Current Commander
+   counts exclude 50 source sheets, 6,505 not-legal records and 83 banned records.
+   Modern excludes 15,936 not-legal records and 52 banned records.
+3. Retain the unfiltered audit as a limitations stratum: 41,912 type lines,
+   35,635 clean, 6,233 unknown-token cases and 100 reported correlations outside
+   the primary corpus. These parser outputs do not imply CR inconsistency.
+   Multi-face records contribute multiple lines; they are not independent cards.
+4. Normalize ASCII apostrophes for matching to canonical CR labels only.
+   Never rewrite immutable Scryfall JSON, learn new authoritative labels from
+   residuals, or prune unknown rows from the denominator.
+
+**Submission work packages (order reflects actual prerequisites):**
+
+- **O1 — Evidence freeze and regeneration (implemented):** refresh factual
+  vocabulary, direct term provenance, format-scoped/count-preserving audits,
+  transparent enabled/skipped validator summary and measured manuscript tables.
+  Re-run the commands below after any source/generator/parser change.
+- **O2 — Logical qualification (partial; schema scope implemented):**
+  DUL/PROV/SKOS/Time imports are checksum-pinned; real OWLAPI/HermiT runs use
+  RDF/XML and a local JDK. Schema consistency/satisfiability and focused
+  positive/negative object/event ABox probes pass. Raw external documents
+  remain outside OWL 2 DL (37 profile violations); schema-plus-vocabulary
+  reasoning exceeds 600 seconds and is unqualified. Profile that input and
+  resolve/document a defensible release profile without silently rewriting
+  third-party documents. Independently review mappings and broaden valid
+  dual-type/cross-family and invalid-fact probes. Under open-world
+  OWL, absent type assertions may be inferred: closed-world omission detection
+  belongs in procedural/SHACL checks, not an unsupported reasoner claim.
+- **O3 — Competency/reuse evaluation (queued; after evidence freeze):** prespecify
+  8-12 executable consumer tasks covering card design versus printing, lexical
+  qualities, contextual roles, subtype correlation and provenance. Run the same
+  questions on the current representation and a documented flat baseline;
+  report answerability/correctness, unsupported tasks and warm/cold query timing.
+  Obtain independent review of mappings and question coverage; self-authored
+  CQ coverage is not independent validation.
+- **O4 — Revision robustness (queued; after evidence freeze):** archive eligible
+  old/new factual snapshots, record source dates/hashes, additions/removals and
+  canonical-IRI stability; audit every changed enumeration and time regeneration.
+  Keep copyrighted sources local and provide acquisition instructions.
+- **O5 — Release/manuscript audit (after O2-O4):** versioned factual release,
+  stable identifiers, environment lock, raw JSON measurements, minimal adoption
+  example, licence/third-party input review, and a claim-to-evidence checklist.
+  Check novelty against actual related resources before comparative claims.
+  Separate MIT original tooling from third-party rights; mutual manuscript
+  citations are unpublished drafts until a real venue/preprint exists.
+  For future LLM-assisted ontology revisions, record model identifier,
+  prompt/context, proposed diff, motivating CQ/source, validation results and
+  acceptance rationale. Historical gaps are disclosed, not backfilled with
+  invented prompts or approval decisions.
+
+**Manuscript outline:** motivation and scoped contributions; related resources
+and requirements; assisted construction responsibilities; foundational patterns;
+reproducible derivation/provenance;
+licensing boundaries; local and logical validation; declared corpus and
+comparison results; revision/adoption study; availability and limitations.
+Current review draft distinguishes partial O2 qualification from queued O3-O4. Trim for the chosen
+venue only after preserving the reproducibility appendix.
+
+```powershell
+.\.venv\Scripts\python.exe scripts\build_ontology_from_cr.py --skip-rule-tree
+.\.venv\Scripts\python.exe scripts\validate_ontology.py --no-imports --skip-reasoner
+.\.venv\Scripts\python.exe scripts\check_card_types.py --format modern --fail-on-violation --output-json runs\ontology\modern.json
+.\.venv\Scripts\python.exe scripts\check_card_types.py --format commander --exclude-type-line Stickers --fail-on-violation --output-json runs\ontology\commander.json
+.\.venv\Scripts\python.exe scripts\check_card_types.py --output-json runs\ontology\all-records.json
+```
+
+**Readiness gate:** all enabled release checks pass, no falsely counted skips,
+reviewed factual provenance, declared residuals, import-resolved logical checks,
+independent modelling review, reproducible reuse/revision tasks and rights audit.
+If full reasoner qualification is unavailable, describe the resource as intended
+for OWL 2 DL with structural validation, not as certified consistent.
 
 ### Primary Metrics
 

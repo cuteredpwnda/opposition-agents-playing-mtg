@@ -204,6 +204,8 @@ def _match_subtypes(right: str, ts: TypeSystem, parsed: ParsedTypeLine) -> list[
             if i + span > len(words):
                 continue
             candidate = " ".join(words[i : i + span])
+            if candidate not in known:
+                candidate = candidate.replace("'", "\u2019")
             if candidate in known:
                 out.append(candidate)
                 i += span
@@ -259,8 +261,6 @@ def report_over_cards(
         name = card.get("name", "?")
         for face in split_faces(type_line) or [""]:
             parsed = parse_type_line(face, ts)
-            if not parsed.card_types:
-                continue
             report.total += 1
             if parsed.violations:
                 report.with_violations += 1

@@ -1,9 +1,10 @@
 #!/usr/bin/env python
 """Translate the Magic Comprehensive Rules into OWL, step by step.
 
-The hand-authored ontology (``mtg-ontology-v2.0.ttl``) is the *schema*: it
-says what kinds of things exist and how they relate. It is deliberately
-small and human-reviewed. This script produces the *content*: the several
+The curated ontology (``mtg-ontology-v2.0.ttl``) is the *schema*: it
+says what kinds of things exist and how they relate. Schema/tooling development
+is author-directed and LLM-assisted; independent modelling review remains pending.
+This script executes deterministic parsing, not LLM inference, to produce the content: the several
 thousand individuals that the Comprehensive Rules actually enumerate, which
 no one should be hand-copying.
 
@@ -39,8 +40,8 @@ CR rule      Enumeration                                 Emitted as
 
 **Stage 3 — provenance.** Every generated individual gets
 ``mtg:groundedIn`` the rule it came from, ``mtg:epistemicStatus "curated"``
-(the CR is definitional, not inferred), and the whole graph is attributed
-to a ``prov:Activity`` recording the source document and its date.
+(the CR is definitional, not inferred), and ``prov:wasDerivedFrom`` the
+document entity recording the source revision and publisher attribution.
 
 Output is a *generated* file and is marked as such. Never hand-edit it;
 change this script or the hand-authored schema instead.
@@ -374,6 +375,7 @@ def build(
             if owl_class == "LandType" and name in BASIC_LAND_TYPES:
                 emit("    a mtg:BasicLandType ;")
             emit(f"    mtg:groundedIn {rule_iri(rule_no)} ;")
+            emit("    prov:wasDerivedFrom mtg:CRDocument ;")
             emit('    mtg:epistemicStatus "curated" .')
         emit("")
 
@@ -393,6 +395,7 @@ def build(
             emit(f'    rdfs:label "{ttl_string(name)}"@en ;')
             emit(f'    mtg:crRule "{num}" ;')
             emit(f"    mtg:groundedIn {rule_iri(num)} ;")
+            emit("    prov:wasDerivedFrom mtg:CRDocument ;")
             emit('    mtg:epistemicStatus "curated" .')
         emit("")
 

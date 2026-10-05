@@ -37,9 +37,11 @@ from src.agents.kl_control import (
     gibbs_policy,
 )
 from src.agents.mtg_transition import (
+    ActionForecast,
     MTGTransitionModel,
     action_kind,
     default_belief,
+    forecast_action,
     latent_from_phase_rs,
     passive_prior,
 )
@@ -100,26 +102,31 @@ class KLControlActionPicker:
         if not legal_actions:
             raise ValueError("KLControlActionPicker received empty legal_actions")
         if len(legal_actions) == 1:
+            self.last_reasoning = {
+                "forced": True, "chosen_index": 0,
+                "chosen_type": str(legal_actions[0].get("type", "")),
+            }
             return 0
 
         latent = latent_from_phase_rs(state, seat)
         candidates, index_map = self._filter_candidates(legal_actions)
-        prior = np.array(passive_prior(candidates), dtype=float)
+        projected_candidates = [forecast_action(action, state, seat) for action in candidates]
+        prior = np.array(passive_prior(projected_candidates), dtype=float)
 
         self._belief = self._observe(state)
 
         if self.objective == "kl":
-            result = self._planner.plan(latent, candidates, self._belief, prior)
+            result = self._planner.plan(latent, projected_candidates, self._belief, prior)
             costs = result.total_cost
             self.last_reasoning = result.as_trace()
         else:
             if self.objective == "efe_infogain":
                 costs = self._legacy.information_gain(
-                    latent, candidates, self._belief, self._transition
+                    latent, projected_candidates, self._belief, self._transition
                 )
             else:
                 costs = self._legacy.ambiguity(
-                    latent, candidates, self._belief, self._transition
+                    latent, projected_candidates, self._belief, self._transition
                 )
             self.last_reasoning = {
                 "objective": self.objective,
@@ -129,13 +136,18 @@ class KLControlActionPicker:
 
         if self.sample_policy:
             policy = gibbs_policy(costs, self._planner.config.beta, prior)
-            local = int(self._np_rng.choice(len(candidates), p=policy))
+            local = int(self._np_rng.choice(len(projected_candidates), p=policy))
         else:
             local = int(np.argmin(costs))
 
         chosen = index_map[local]
         self.last_reasoning["chosen_index"] = chosen
         self.last_reasoning["chosen_type"] = str(legal_actions[chosen].get("type", ""))
+        self.last_reasoning["transition_model"] = "analytic_pending_cast_v2"
+        self.last_reasoning["pending_cast"] = latent.our_pending_cast
+        self.last_reasoning["fixed_damage_forecasts"] = sum(
+            isinstance(action, ActionForecast) for action in projected_candidates
+        )
         return chosen
 
     # -- internals -------------------------------------------------------

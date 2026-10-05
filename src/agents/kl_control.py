@@ -97,6 +97,7 @@ class LatentState:
     turn: int
     we_are_eliminated: bool = False
     opponent_eliminated: bool = False
+    our_pending_cast: bool = False
 
     def replace(self, **kwargs: Any) -> "LatentState":
         from dataclasses import replace as _replace

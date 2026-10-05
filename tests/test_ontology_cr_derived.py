@@ -231,3 +231,13 @@ def test_provenance_points_at_the_rules_document(graph):
     assert (doc, RDF.type, URIRef("http://www.w3.org/ns/prov#Entity")) in graph
     derived = URIRef("http://www.w3.org/ns/prov#wasDerivedFrom")
     assert any(True for _ in graph.subjects(derived, doc))
+
+
+def test_term_provenance_does_not_require_local_rule_text():
+    graph = Graph().parse(str(TYPES), format="turtle")
+    grounded = URIRef(MTG + "groundedIn")
+    derived = URIRef("http://www.w3.org/ns/prov#wasDerivedFrom")
+    doc = URIRef(MTG + "CRDocument")
+    terms = set(graph.subjects(grounded))
+    assert terms
+    assert all((term, derived, doc) in graph for term in terms)

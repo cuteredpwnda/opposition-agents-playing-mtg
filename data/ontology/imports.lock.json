@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "imports": [
+    {
+      "iri": "http://www.ontologydesignpatterns.org/ont/dul/DUL.owl",
+      "url": "http://www.ontologydesignpatterns.org/ont/dul/DUL.owl",
+      "file": "dul.ttl",
+      "format": "turtle",
+      "sha256": "e5f6429596d2c7014730bad85aaaa9c39530235f27f596cd0e7ce85e6bbcba66",
+      "triples": 1917,
+      "imports": []
+    },
+    {
+      "iri": "http://www.w3.org/ns/prov-o#",
+      "url": "https://www.w3.org/ns/prov-o.ttl",
+      "file": "prov.ttl",
+      "format": "turtle",
+      "sha256": "7d203989f67b38bca572253942acc5a1bf24ce3ccfece16f072dcb4be2b79a96",
+      "triples": 1146,
+      "imports": []
+    },
+    {
+      "iri": "http://www.w3.org/2004/02/skos/core",
+      "url": "https://www.w3.org/2004/02/skos/core.rdf",
+      "file": "skos.rdf",
+      "format": "xml",
+      "sha256": "e79633b8d0564816cee8a99f5c9acf9a0e6fc7257c7209acd684ecad53a89dd6",
+      "triples": 252,
+      "imports": []
+    },
+    {
+      "iri": "http://www.w3.org/2006/time#",
+      "url": "https://www.w3.org/2006/time.ttl",
+      "file": "time.ttl",
+      "format": "turtle",
+      "sha256": "251bd6970b0d7a5efa97ff681afe81a297df85deab3d860fa4f8eeba72d8f16c",
+      "triples": 1296,
+      "imports": []
+    }
+  ]
+}

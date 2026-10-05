@@ -374,7 +374,10 @@ otherwise would be cargo-culting the pattern.
 
 ## References
 
-- Kaufmann, R. (2026). *Active Inference is Optimal Control.* — the result this implements.
+- Kaufmann, Rafael (2026). *Active Inference is Optimal Control.* SSRN preprint,
+  [doi:10.2139/ssrn.7504418](https://doi.org/10.2139/ssrn.7504418) — the result
+  this implements; shared citation key `kaufmann2026aifcontrol` in
+  [references.bib](../paper/references.bib).
 - Fel'dbaum, A. A. (1960). *Dual Control Theory I–II.* — where exploration actually comes from.
 - Kappen (2005), Todorov (2009) — path-integral control / linearly solvable MDPs.
 - Williams et al. (2017) — MPPI, the algorithm `_risk_mppi` implements.

@@ -9,6 +9,7 @@ __pycache__/
 dist/
 build/
 .venv/
+.tools/
 venv/
 
 # Debug and test output
@@ -68,6 +69,8 @@ requirements_frozen*.txt
 .idea/
 
 # LaTeX outputs
+paper/*.bbl
+paper/*.blg
 *.aux
 *.log
 *.nav

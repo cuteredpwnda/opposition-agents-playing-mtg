@@ -22,22 +22,23 @@ import argparse
 import csv
 import json
 import time
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 
+from src.agents import make_agent
 from src.integrations.phase_rs import (
+    STARTER_DECK_NAMES,
     AgentActionPicker,
     HeuristicActionPicker,
     OllamaActionPicker,
     PhaseServerConfig,
     PreferNonPassPicker,
     RandomActionPicker,
-    STARTER_DECK_NAMES,
     load_deck_data,
     run_game_sync,
 )
-from src.agents import make_agent
+from src.integrations.phase_rs.tev1_picker import add_tev1_arguments, make_tev1_picker
 
 
 @dataclass
@@ -62,6 +63,8 @@ def _build_picker(name: str, seed: int, args: argparse.Namespace):
         return PreferNonPassPicker(seed=seed)
     if name == "heuristic":
         return HeuristicActionPicker(seed=seed)
+    if name == "tev1":
+        return make_tev1_picker(args, seed)
     if name == "ollama":
         return OllamaActionPicker(
             seed=seed,
@@ -327,7 +330,7 @@ def parse_args() -> argparse.Namespace:
         nargs="+",
         default=["random", "prefer-nonpass", "heuristic"],
         help=(
-            "One or more: random, prefer-nonpass, heuristic, ollama, "
+            "One or more: random, prefer-nonpass, heuristic, tev1, ollama, "
             "agent:<name> (e.g. agent:heuristic, agent:active_inference)"
         ),
     )
@@ -356,6 +359,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--output-dir", default="runs/phase_rs_rollout_sweep")
     p.add_argument("--ollama-model", default="gemma4:e2b")
     p.add_argument("--ollama-url", default="http://localhost:11434")
+    add_tev1_arguments(p)
     # KG enrichment options (opt-in; no Neo4j required for --kg-dry-run).
     p.add_argument(
         "--kg-enrich",

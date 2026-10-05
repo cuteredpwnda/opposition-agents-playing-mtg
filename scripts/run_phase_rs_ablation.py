@@ -7,21 +7,27 @@ KG-aware pickers, etc.).
 
 Examples:
 
-  python scripts/run_phase_rs_ablation.py --games 4 --picker random --autostart
-  python scripts/run_phase_rs_ablation.py --games 6 --picker ollama --ollama-model gemma4:e2b --autostart
-  python scripts/run_phase_rs_ablation.py --games 8 --picker ollama --ai-difficulty Hard --our-deck-file data/decks/modern_burn.txt
+  python -m scripts.run_phase_rs_ablation --help
+  python -m scripts.run_phase_rs_ablation --games 4 --picker kl_control \
+      --objectives kl efe_infogain efe_ambiguity --format Modern --ai-deck "Blue Control" \
+      --our-deck-file data/decks/modern/modern_mono_red_burn.txt --autostart
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
-import random
-from dataclasses import asdict, dataclass
+import math
+import subprocess
+import time
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 
+from src.agents import make_agent
 from src.integrations.phase_rs import (
+    STARTER_DECK_NAMES,
     AgentActionPicker,
     HeuristicActionPicker,
     KLControlActionPicker,
@@ -29,11 +35,14 @@ from src.integrations.phase_rs import (
     PhaseServerConfig,
     PreferNonPassPicker,
     RandomActionPicker,
-    STARTER_DECK_NAMES,
     load_deck_data,
     run_game_sync,
 )
-from src.agents import make_agent
+from src.integrations.phase_rs.client import PROTOCOL_VERSION
+from src.integrations.phase_rs.kl_control_picker import OBJECTIVES
+from src.integrations.phase_rs.runner import GameRunResult
+from src.integrations.phase_rs.server_process import DEFAULT_SUBMODULE, REPO_ROOT
+from src.integrations.phase_rs.tev1_picker import add_tev1_arguments, make_tev1_picker
 
 
 @dataclass
@@ -44,6 +53,80 @@ class GameRow:
     reason: str
     turns: int
     actions: int
+    seed: int
+    objective: str | None
+    outcome: str
+    attempts: int
+    elapsed_sec: float
+    decision_latencies_sec: list[float] = field(default_factory=list)
+    candidate_coverages: list[float] = field(default_factory=list)
+
+
+def _percentile(values: list[float], quantile: float) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    index = (len(ordered) - 1) * quantile
+    lower = math.floor(index)
+    upper = math.ceil(index)
+    return ordered[lower] + (ordered[upper] - ordered[lower]) * (index - lower)
+
+
+def _outcome(result: GameRunResult) -> str:
+    # A missing winner alone is not evidence of a rules-engine draw.
+    if not any(event.get("event") == "game_over" for event in result.trace):
+        return "incomplete"
+    if result.winner_seat is None:
+        return "draw"
+    return "win" if result.winner_seat == result.our_seat else "loss"
+
+
+def _summarize(rows: list[GameRow]) -> dict:
+    wins = sum(row.outcome == "win" for row in rows)
+    losses = sum(row.outcome == "loss" for row in rows)
+    draws = sum(row.outcome == "draw" for row in rows)
+    completed = wins + losses + draws
+    interval = None
+    if completed:
+        z = 1.959963984540054
+        p = wins / completed
+        denominator = 1 + z * z / completed
+        center = (p + z * z / (2 * completed)) / denominator
+        radius = z * math.sqrt(
+            p * (1 - p) / completed + z * z / (4 * completed * completed)
+        ) / denominator
+        interval = [max(0.0, center - radius), min(1.0, center + radius)]
+    reason_counts: dict[str, int] = {}
+    for row in rows:
+        reason_counts[row.reason] = reason_counts.get(row.reason, 0) + 1
+    latencies = [value for row in rows for value in row.decision_latencies_sec]
+    coverages = [value for row in rows for value in row.candidate_coverages]
+    return {
+        "games": len(rows),
+        "completed_games": completed,
+        "wins": wins,
+        "losses": losses,
+        "draws": draws,
+        "incomplete_games": len(rows) - completed,
+        "completion_rate": completed / len(rows) if rows else None,
+        "win_rate": wins / completed if completed else None,
+        "win_rate_ci95": interval,
+        "reason_counts": reason_counts,
+        "decision_count": len(latencies),
+        "decision_latency_sec": {
+            "p50": _percentile(latencies, 0.5),
+            "p95": _percentile(latencies, 0.95),
+        },
+        "candidate_coverage_mean": sum(coverages) / len(coverages) if coverages else None,
+        "shortlisted_decisions": sum(value < 1 for value in coverages),
+    }
+
+
+def _revision(path: Path) -> str:
+    return subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=path, check=True,
+        capture_output=True, text=True,
+    ).stdout.strip()
 
 
 def _make_picker(args: argparse.Namespace, seed: int):
@@ -53,6 +136,8 @@ def _make_picker(args: argparse.Namespace, seed: int):
         return PreferNonPassPicker(seed=seed)
     if args.picker == "heuristic":
         return HeuristicActionPicker(seed=seed)
+    if args.picker == "tev1":
+        return make_tev1_picker(args, seed)
     if args.picker == "kl_control":
         return KLControlActionPicker(
             seed=seed,
@@ -81,45 +166,101 @@ def _make_picker(args: argparse.Namespace, seed: int):
 def _load_our_deck(args: argparse.Namespace) -> dict:
     if args.our_deck_file:
         return load_deck_data(args.our_deck_file)
-    # Starter deck data lives server-side; for the host seat we keep the
-    # existing adapter behavior and send an empty DeckData placeholder.
     return {"main_deck": [], "sideboard": [], "commander": []}
 
 
 def run(args: argparse.Namespace) -> int:
-    if args.ai_deck not in STARTER_DECK_NAMES:
+    if args.games < 1 or args.max_retries < 1 or args.max_actions < 1:
+        raise ValueError("games, max-retries and max-actions must be positive")
+    if not 1 <= args.max_message_mib <= 64:
+        raise ValueError("max-message-mib must be between 1 and 64")
+    if args.max_turns is not None and args.max_turns < 1:
+        raise ValueError("max-turns must be positive")
+    if args.max_game_seconds is not None and (
+        not math.isfinite(args.max_game_seconds) or args.max_game_seconds <= 0
+    ):
+        raise ValueError("max-game-seconds must be finite and positive")
+    if args.objectives and args.picker != "kl_control":
+        raise ValueError("--objectives requires --picker kl_control")
+    if not args.ai_deck_file and args.ai_deck not in STARTER_DECK_NAMES:
         raise SystemExit(
             f"--ai-deck must be one of {STARTER_DECK_NAMES}, got {args.ai_deck!r}"
         )
 
-    out_dir = Path(args.output_dir) / datetime.now().strftime("%Y%m%d_%H%M%S")
+    deck = _load_our_deck(args)
+    if not deck.get("main_deck"):
+        raise ValueError("Supply --our-deck-file with a nonempty main deck for evaluation")
+    ai_decks = (
+        [load_deck_data(path) for path in args.ai_deck_file]
+        if args.ai_deck_file else None
+    )
+    objectives = (
+        list(dict.fromkeys(args.objectives or [args.objective]))
+        if args.picker == "kl_control" else [None]
+    )
+    out_dir = Path(args.output_dir) / datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     out_dir.mkdir(parents=True, exist_ok=True)
-
-    random.seed(args.seed)
+    manifest = {
+        "schema_version": 2,
+        "config": vars(args),
+        "objectives": objectives,
+        "repository_commit": _revision(REPO_ROOT),
+        "phase_rs_commit": _revision(DEFAULT_SUBMODULE),
+        "protocol_version": PROTOCOL_VERSION,
+        "deck_sha256": hashlib.sha256(
+            json.dumps(deck, sort_keys=True).encode("utf-8")
+        ).hexdigest(),
+        "ai_decks_sha256": (
+            [hashlib.sha256(json.dumps(d, sort_keys=True).encode("utf-8")).hexdigest()
+             for d in ai_decks] if ai_decks is not None else None
+        ),
+        "player_count": 2 if ai_decks is None else len(ai_decks) + 1,
+        "seed_scope": "Python picker only; engine shuffle and AI RNG are not seeded",
+        "objective_comparison": (
+            "KL uses horizon planning; legacy EFE arms use one-step scoring"
+        ),
+    }
+    (out_dir / "config.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     rows: list[GameRow] = []
-    max_retries = args.max_retries if hasattr(args, "max_retries") else 2
-
-    for i in range(args.games):
+    games_path = out_dir / "games.jsonl"
+    games_path.write_text("", encoding="utf-8")
+    schedule = [(i, objective) for i in range(args.games) for objective in objectives]
+    for run_index, (i, objective) in enumerate(schedule, start=1):
         game_seed = args.seed + i
-        result = None
-        for attempt in range(1, max_retries + 1):
-            picker = _make_picker(args, seed=game_seed)
-            cfg = PhaseServerConfig(uri=args.uri, stream_timeout_s=args.stream_timeout)
+        picker_args = argparse.Namespace(**vars(args))
+        if objective is not None:
+            picker_args.objective = objective
+        started = time.perf_counter()
+        for attempt in range(1, args.max_retries + 1):
+            picker = _make_picker(picker_args, seed=game_seed)
+            cfg = PhaseServerConfig(
+                uri=args.uri, stream_timeout_s=args.stream_timeout,
+                max_message_bytes=args.max_message_mib * 1024 * 1024,
+            )
             result = run_game_sync(
-                deck=_load_our_deck(args),
+                deck=deck,
                 picker=picker,
                 config=cfg,
                 ai_difficulty=args.ai_difficulty,
                 ai_deck_name=args.ai_deck,
                 max_actions=args.max_actions,
                 autostart_server=args.autostart,
+                format_name=args.format,
+                ai_decks=ai_decks,
+                max_game_seconds=args.max_game_seconds,
+                max_turns=args.max_turns,
             )
+            if result.trace and result.reason == "stream_timeout":
+                trace_dir = out_dir / "traces"
+                trace_dir.mkdir(parents=True, exist_ok=True)
+                (trace_dir / f"game_{run_index:04d}_attempt_{attempt:02d}.jsonl").write_text(
+                    "\n".join(json.dumps(event) for event in result.trace) + "\n",
+                    encoding="utf-8",
+                )
             # If succeeded or not a transient failure, stop retrying.
-            if result.reason != "stream_timeout" or attempt == max_retries:
+            if result.reason != "stream_timeout" or attempt == args.max_retries:
                 break
-            print(f"[retry {attempt}/{max_retries}] game {i+1}: {result.reason}")
-        if result is None:
-            continue  # Skip this game
+            print(f"[retry {attempt}/{args.max_retries}] game {run_index}: {result.reason}")
         row = GameRow(
             game_index=i + 1,
             winner_seat=result.winner_seat,
@@ -127,67 +268,77 @@ def run(args: argparse.Namespace) -> int:
             reason=result.reason,
             turns=result.turns_observed,
             actions=result.actions_sent,
+            seed=game_seed,
+            objective=objective,
+            outcome=_outcome(result),
+            attempts=attempt,
+            elapsed_sec=time.perf_counter() - started,
+            decision_latencies_sec=[
+                float(event["decision_time_sec"])
+                for event in result.trace
+                if "decision_time_sec" in event
+            ],
+            candidate_coverages=[
+                float(event["picker_reasoning"]["candidate_coverage"])
+                for event in result.trace
+                if isinstance(event.get("picker_reasoning"), dict)
+                and "candidate_coverage" in event["picker_reasoning"]
+            ],
         )
         rows.append(row)
+        with games_path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(asdict(row)) + "\n")
 
         if result.trace:
             trace_dir = out_dir / "traces"
             trace_dir.mkdir(parents=True, exist_ok=True)
-            (trace_dir / f"game_{i+1:04d}.jsonl").write_text(
+            (trace_dir / f"game_{run_index:04d}.jsonl").write_text(
                 "\n".join(json.dumps(evt) for evt in result.trace) + "\n",
                 encoding="utf-8",
             )
 
-        outcome = "win" if result.winner_seat == result.our_seat else "loss"
-        if result.winner_seat is None:
-            outcome = "draw/unknown"
         print(
-            f"game {i+1}/{args.games}: {outcome} "
-            f"(our_seat={result.our_seat}, winner={result.winner_seat}, turns={result.turns_observed})"
+            f"game {run_index}/{len(schedule)} [{objective or args.picker}]: {row.outcome} "
+            f"(reason={row.reason}, winner={result.winner_seat}, turns={result.turns_observed})"
         )
 
-    total = len(rows)
-    wins = sum(1 for r in rows if r.winner_seat == r.our_seat)
-    losses = sum(1 for r in rows if r.winner_seat is not None and r.winner_seat != r.our_seat)
-    draws = total - wins - losses
-    reason_counts: dict[str, int] = {}
-    for row in rows:
-        reason_counts[row.reason] = reason_counts.get(row.reason, 0) + 1
     summary = {
-        "games": total,
-        "wins": wins,
-        "losses": losses,
-        "draws": draws,
-        "win_rate": (wins / total) if total else 0.0,
-        "reason_counts": reason_counts,
+        **_summarize(rows),
+        "schema_version": 2,
+        "by_objective": {
+            objective: _summarize([row for row in rows if row.objective == objective])
+            for objective in objectives if objective is not None
+        },
         "picker": args.picker,
         "ai_difficulty": args.ai_difficulty,
-        "ai_deck": args.ai_deck,
+        "ai_deck": args.ai_deck if ai_decks is None else None,
         "autostart": args.autostart,
         "seed": args.seed,
+        "player_count": 2 if ai_decks is None else len(ai_decks) + 1,
+        "ai_deck_files": args.ai_deck_file,
     }
 
     (out_dir / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
-    (out_dir / "games.jsonl").write_text(
-        "\n".join(json.dumps(asdict(r)) for r in rows) + "\n",
-        encoding="utf-8",
-    )
 
     print("\n=== phase-rs ablation summary ===")
     print(json.dumps(summary, indent=2))
     print(f"output: {out_dir}")
 
-    return 0
+    return 1 if summary["incomplete_games"] else 0
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--games", type=int, default=4)
+    parser.add_argument(
+        "--objectives", nargs="+", choices=OBJECTIVES,
+        help="Interleave multiple objective arms with the same picker seed schedule.",
+    )
     parser.add_argument(
         "--picker",
         help=(
             "Policy for our seat: random | prefer-nonpass | heuristic | "
-            "kl_control | ollama | agent:<name> (e.g. agent:heuristic, "
+            "kl_control | tev1 | ollama | agent:<name> (e.g. agent:heuristic, "
             "agent:world_model, agent:fusion)"
         ),
         default="random",
@@ -210,26 +361,38 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--ollama-model", default="gemma4:e2b")
     parser.add_argument("--ollama-url", default="http://localhost:11434")
+    add_tev1_arguments(parser)
     parser.add_argument(
         "--ai-difficulty",
         choices=["VeryEasy", "Easy", "Medium", "Hard", "VeryHard"],
         default="Medium",
     )
     parser.add_argument("--ai-deck", default="Red Deck Wins")
+    parser.add_argument(
+        "--ai-deck-file", action="append", default=None,
+        help="Explicit deck for the next AI seat; repeat three times for a Commander pod.",
+    )
     parser.add_argument("--our-deck-file", default=None)
+    parser.add_argument("--format", default=None, help="Engine format (default: Standard).")
     parser.add_argument("--uri", default="ws://127.0.0.1:9374/ws")
     parser.add_argument("--autostart", action="store_true")
     parser.add_argument(
         "--stream-timeout",
         type=float,
         default=45.0,
-        help="Max seconds to wait for the next server message before ending a game with reason=stream_timeout",
+        help="Seconds to wait for the next message before ending with reason=stream_timeout",
     )
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--max-actions", type=int, default=2000)
-    parser.add_argument("--max-retries", type=int, default=2, help="Retry transient failures per game.")
+    parser.add_argument("--max-game-seconds", type=float, default=None)
+    parser.add_argument("--max-message-mib", type=int, default=16)
+    parser.add_argument("--max-turns", type=int, default=None)
+    parser.add_argument(
+        "--max-retries", type=int, default=2,
+        help="Maximum attempts per scheduled game, including the first attempt.",
+    )
     parser.add_argument("--output-dir", default="runs/phase_rs_ablation")
-    return parser.parse_args()
+    return parser.parse_args(argv)
 
 
 if __name__ == "__main__":

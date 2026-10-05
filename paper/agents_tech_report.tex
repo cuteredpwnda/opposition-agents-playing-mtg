@@ -18,8 +18,11 @@
 \usepackage{algorithm}
 \usepackage{algpseudocode}
 \usepackage[hidelinks]{hyperref}
+\usepackage{xurl}
+\newcommand{\doi}[1]{\href{https://doi.org/#1}{doi:\nolinkurl{#1}}}
 \usepackage{enumitem}
 \usepackage{titlesec}
+\usepackage[numbers]{natbib}
 
 \titleformat{\section}{\Large\bfseries}{\thesection}{0.6em}{}
 \titleformat{\subsection}{\large\bfseries}{\thesubsection}{0.5em}{}
@@ -63,6 +66,56 @@ traces each agent emits.  All cited paths are workspace-relative.
 
 \tableofcontents
 \bigskip
+
+\section*{Runtime status for the October 2026 review}
+
+The current native target is phase-rs 0.102.0, protocol 106 \cite{phase2026engine},
+from \url{https://github.com/phase-rs/phase}. The bridge sends
+engine-authored complete format configurations and retains incomplete outcomes
+for time, turn, action and transport limits. Four-player Commander currently
+means one Python-controlled seat and three native AI opponents with explicit
+decks, not four independent Python agents; terminal pods remain unqualified.
+
+Full-session reconnect now retains the server-issued generation and player
+credential, submits the native \texttt{Reconnect} frame, and requires a matching
+\texttt{GameStarted} session, controlled seat and non-stale revision before
+reporting success. Credentials are not included in gameplay traces. A successful
+handshake alone does not restore a game.
+
+The analytic KL model distinguishes cancellation from casting subdecisions.
+For an observed pending cast it forecasts one generic completion macro-step;
+repeated rollout subdecisions cannot repeatedly create board value, and these
+internal choices do not invent opponent attacks or advance the turn. This
+repairs the cancellation/mode tie. In two-player snapshots, simple fixed-damage
+player/object targets use native effect/target identities, including
+self-versus-opponent direction. Multiplayer snapshots and other effects retain
+coarse forecasts: the latent opponent-life minimum is not a specific player's
+life. This is not a general card-, mode-
+or target-exact transition model. Native interaction planning and matched objective budgets
+remain separate research gates.
+
+Ontology construction is author-directed and LLM-assisted at the schema/tooling
+level; the rule-vocabulary generator performs deterministic parsing without
+runtime LLM calls. The companion ontology paper separates requirements,
+modelling, extraction, validation, revision and packaging, and discloses
+incomplete historical prompt/model provenance.
+The ontology vocabulary has been refreshed from the September 25 rules revision.
+Direct document provenance no longer depends on materialising the optional
+local rule-text graph. Corpus audits declare format and auxiliary-object
+exclusions and retain unknown-type denominators; resource validation results
+belong in the companion ontology paper rather than being treated as agent
+performance.
+
+At runtime the local type/subtype vocabulary is an in-process cached index.
+Strategic graph access is optional Neo4j/Cypher, with partial caches in the
+KG-aware heuristic. An opt-in localhost read-only Fuseki snapshot is now
+implemented and query-verified, but not wired into agent decisions.
+Current n10s setup uses v2.0 Turtle, preserves compatible configuration and
+checks import counts; existing KG fallback behaviour and live writes still
+need qualification before live
+ontology grounding or successful writes are claimed. Docker availability is
+not required for the offline factual resource audits reported in the companion
+paper.
 
 % =========================================================================
 \section{Theoretical background (1 page)}
@@ -355,7 +408,7 @@ Parameter & Default & Role \\
 \end{center}
 
 \medskip\noindent\textbf{Objective selection for ablation.} The picker takes
-\texttt{--objective kl|efe\_infogain|efe\_ambiguity}. All three share the
+\path{--objective kl|efe_infogain|efe_ambiguity}. All three share the
 belief, transition model, potential, prior and seed, so they differ in
 nothing but the scoring function. Expected failure modes of the two legacy
 arms, in MTG terms:
@@ -384,9 +437,9 @@ file.
 
 \subsection{WorldModelAgent}
 \textbf{File:} \texttt{src/agents/world\_model\_agent.py}.
-\textbf{Backbone:} \texttt{src/world\_model/world\_model.py}.
+\textbf{Backbone:} \path{src/world_model/world_model.py}.
 
-Training now uses the external \texttt{stable-pretraining} orchestration layer and the surrounding \texttt{stable-worldmodel} research stack rather than a bespoke in-repo trainer. Concretely, \texttt{scripts/train\_stable\_worldmodel.py} wraps the local MTG \texttt{WorldModel} in a \texttt{stable\_pretraining.Module} and drives optimisation through \texttt{stable\_pretraining.Manager}; this mirrors the software split used by LeWorldModel, which keeps the architecture and loss local while delegating training/runtime plumbing to the upstream libraries \cite{balestriero2025stable,maes_lelidec2026swm,maes_lelidec2026lewm}.
+Training now uses the external \texttt{stable-pretraining} orchestration layer and the surrounding \texttt{stable-worldmodel} research stack rather than a bespoke in-repo trainer. Concretely, \path{scripts/train_stable_worldmodel.py} wraps the local MTG \texttt{WorldModel} in a \texttt{stable\_pretraining.Module} and drives optimisation through \texttt{stable\_pretraining.Manager}; this mirrors the software split used by LeWorldModel, which keeps the architecture and loss local while delegating training/runtime plumbing to the upstream libraries \cite{balestriero2025stable,maes_lelidec2026swm,maes_lelidec2026lewm}.
 
 \medskip\noindent\textbf{Components} (V+M+C, after Ha \& Schmidhuber).
 \begin{align*}
@@ -500,8 +553,8 @@ Symptoms: repeated \texttt{PASS\_PRIORITY} despite non-trivial board states.
 
 Checklist:
 \begin{itemize}[leftmargin=1.2em, itemsep=1pt]
-      \item Inspect \texttt{legal\_actions} logs from \texttt{src/orchestrator/priority\_loop.py}; if only pass/concede exist, the issue is engine-side rather than policy-side.
-      \item Verify stack resolution path in \texttt{src/engine/stack.py} and trigger enqueueing in \texttt{src/engine/triggered\_abilities.py}.
+      \item Inspect \texttt{legal\_actions} logs from \path{src/orchestrator/priority_loop.py}; if only pass/concede exist, the issue is engine-side rather than policy-side.
+      \item Verify stack resolution path in \path{src/engine/stack.py} and trigger enqueueing in \path{src/engine/triggered_abilities.py}.
       \item Confirm current phase allows the expected action class (main phase vs combat priority windows).
 \end{itemize}
 
@@ -510,8 +563,8 @@ Symptoms: board develops, but attackers are never declared.
 
 Checklist:
 \begin{itemize}[leftmargin=1.2em, itemsep=1pt]
-      \item Check \texttt{src/engine/combat.py:legal\_attackers} output for summoning-sickness and tap-state filtering.
-      \item Ensure power/toughness modifiers from equipment and temporary effects reach \texttt{effective\_power}/\texttt{effective\_toughness}.
+      \item Check \path{src/engine/combat.py:legal_attackers} output for summoning-sickness and tap-state filtering.
+      \item Ensure power/toughness modifiers from equipment and temporary effects reach \path{effective_power} and \path{effective_toughness}.
       \item For heuristic agents, inspect \texttt{ACTION\_PRIORITIES} and tiebreak functions for accidental over-penalisation of combat lines.
 \end{itemize}
 
@@ -636,16 +689,24 @@ all our policies are approximations.
 \subsection{World models as latent imagination}
 Following Ha \& Schmidhuber and Hafner et~al.\ (Dreamer), we factor the
 agent as $V$ (encoder), $M$ (recurrent dynamics), and $C$ (controller).
-Training the dynamics jointly minimises
+The one-step JEPA stage jointly optimises the observation encoder and
+predictor, using the same encoder under stop-gradient on the target branch:
 %
 \begin{equation}
-\mathcal{L}_{\text{dyn}} = \sum_t \big\| \hat z_{t+1} - \mathrm{sg}(z_{t+1}) \big\|^2_2
-   + \beta \cdot \mathrm{KL}(q(z_t|o_t) \,\|\, p(z_t|h_{t-1})),
+\mathcal{L}_{\text{JEPA}} =
+ \mathbb E_{\mathcal D}\!\left[
+ \mathrm{MSE}\!\left(\hat z_{t+1},\mathrm{sg}(E_\phi(o_{t+1}))\right)
+ +\beta_J\mathrm{KL}\!\left(q_\phi(z|o_t)\,\|\,\mathcal N(0,I)\right)
+ \right],
 \end{equation}
 %
-where $\mathrm{sg}$ is stop-gradient.  We follow the JEPA recipe of
-LeCun \& Assran: predict in representation space, not in pixel space.
-The single tunable knob is $\beta$ (\texttt{--jepa-beta}, default $1.0$).
+where $\mathcal D$ contains consecutive transitions and optional KG context
+is suppressed in the notation. Prediction targets an embedding, not a
+complete symbolic successor state. $\beta_J$ (\texttt{--jepa-beta}, default
+$1.0$) weights encoder regularisation; the reference is a standard normal,
+not an LSTM-conditioned prior. Dream search currently uses separate
+recurrent dynamics and accumulates predicted rewards. This stage does not
+train that recurrent model or establish an $H$-step JEPA rollout objective.
 In the current repository this loss is still computed by the local MTG model, but the optimisation loop, callback stack, and checkpoint orchestration are delegated to \texttt{stable-pretraining}; \texttt{stable-worldmodel} remains the upstream runtime substrate around data collection and world-model evaluation conventions \cite{balestriero2025stable,maes_lelidec2026swm}.
 
 \subsection{Free energy, active inference, and optimal control}
@@ -749,51 +810,22 @@ Neo4j outage can never block play.
 % =========================================================================
 \section{Where to look next}
 \begin{itemize}[leftmargin=*]
-  \item Companion paper: \texttt{paper/opposition\_agents\_mtg.tex}.
-  \item Single source of truth: \texttt{IMPLEMENTATION\_PLAN.md}.
-  \item Control objective: \texttt{src/agents/kl\_control.py}, reviewed in
-        \texttt{docs/ACTIVE\_INFERENCE.md}.
-  \item Ontology: \texttt{data/ontology/mtg-ontology-v2.0.ttl},
-        validated by \texttt{scripts/validate\_ontology.py}.
-  \item Competency questions: \texttt{data/competency\_questions.yaml}.
+  \item Companion paper: \path{paper/opposition_agents_mtg.tex}.
+  \item Single source of truth: \path{IMPLEMENTATION_PLAN.md}.
+  \item Control objective: \path{src/agents/kl_control.py}, reviewed in
+        \path{docs/ACTIVE_INFERENCE.md}.
+  \item Ontology: \path{data/ontology/mtg-ontology-v2.0.ttl},
+        validated by \path{scripts/validate_ontology.py}.
+  \item Competency questions: \path{data/competency_questions.yaml}.
   \item Engine docs: \texttt{ARCHITECTURE.md}, \texttt{DEVELOPMENT.md}.
   \item World-model design: \texttt{docs/WORLD\_MODEL\_DESIGN.md}.
-  \item Opponent modelling: \texttt{docs/OPPONENT\_MODELING\_WITH\_DECKLIST.md}.
+  \item Opponent modelling:   \path{docs/OPPONENT_MODELING_WITH_DECKLIST.md}.
 \end{itemize}
 
 % =========================================================================
-\section{References}
+\renewcommand{\bibsection}{\section{References}}
 
-\begin{thebibliography}{9}
-
-\bibitem{balestriero2025stable}
-R.~Balestriero, H.~Van~Assel, S.~BuGhanem, and L.~Maes.
-\newblock stable-pretraining-v1: Foundation Model Research Made Simple.
-\newblock \emph{arXiv:2511.19484}, 2025.
-\newblock Software: \url{https://github.com/galilai-group/stable-pretraining}.
-
-\bibitem{maes_lelidec2026swm}
-L.~Maes, Q.~Le~Lidec, D.~Haramati, N.~Massaudi, D.~Scieur, Y.~LeCun, and R.~Balestriero.
-\newblock stable-worldmodel-v1: Reproducible World Modeling Research and Evaluation.
-\newblock \emph{arXiv:2602.08968}, 2026.
-\newblock Software: \url{https://github.com/galilai-group/stable-worldmodel}.
-
-\bibitem{maes_lelidec2026lewm}
-L.~Maes, Q.~Le~Lidec, D.~Scieur, Y.~LeCun, and R.~Balestriero.
-\newblock LeWorldModel: Stable End-to-End Joint-Embedding Predictive Architecture from Pixels.
-\newblock \emph{arXiv preprint}, 2026.
-\newblock Software: \url{https://github.com/lucas-maes/le-wm}.
-
-\bibitem{kaufmann2026aifcontrol}
-R.~Kaufmann.
-\newblock Active Inference is Optimal Control.
-\newblock Preprint, August 2026.
-
-\bibitem{gangemi2002dolce}
-A.~Gangemi, N.~Guarino, C.~Masolo, A.~Oltramari, and L.~Schneider.
-\newblock Sweetening Ontologies with DOLCE.
-\newblock \emph{EKAW}, LNCS 2473, pages 166--181, 2002.
-
-\end{thebibliography}
+\bibliographystyle{plainnat}
+\bibliography{references}
 
 \end{document}
