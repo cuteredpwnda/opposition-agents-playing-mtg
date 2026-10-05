@@ -54,8 +54,8 @@ We've successfully built and hardened a complete phase-rs integration for opposi
   - `phase-rs-ablation` — 1v1 sweep (pickers × difficulties × decks)
   - `phase-rs-commander` — 4-player pod format
   - `phase-rs-all-formats` — Cartesian sweep across 4 formats
-  - `phase-rs-traces N=16` — Collect traces for training
-  - `phase-rs-training` — Full pipeline (traces → JEPA → eval)
+  - `phase-rs-traces N=16` — Collect event-only diagnostic traces
+  - `phase-rs-training` — Real observations → graph/model learning → held-out play
 
 ### 5. Documentation
 
@@ -141,14 +141,15 @@ foreach ($fmt in @("Standard", "Pioneer", "Modern", "Commander")) {
 ### Full Training Pipeline (Stage 4.1 → 5 → 6)
 
 ```powershell
-.\.venv\Scripts\python.exe scripts/train_pipeline.py `
-  --phase-rs-traces `
-  --num-games 64 `
-  --phase-rs-picker heuristic `
-  --phase-rs-difficulty Medium `
-  --jepa-epochs 40 `
-  --skip-dream
+.\.venv\Scripts\python.exe -m scripts.run_native_learning `
+  --train-games 64 --validation-games 16 --test-games 8 `
+  --training-seeds 0 1 2 3 4 --epochs 20 --graph-epochs 100 --eval-games 20
 ```
+
+This records actual numeric native observations, trains an offline induced
+co-visibility graph plus JEPA/recurrent dynamics/imitation components and
+evaluates strict complete bundles. It does not train a dream controller.
+The former stage 4.1 deck-summary placeholder conversion is explicitly retired.
 
 ---
 
@@ -158,14 +159,14 @@ foreach ($fmt in @("Standard", "Pioneer", "Modern", "Commander")) {
 
 1. **Format validation**: Phase-rs validates card legality; we don't replicate that client-side. Wrong decks → server error.
 2. **Commander per-game AI**: Phase-rs AI adjusts for multiplayer but no per-difficulty variation in commander mode yet.
-3. **Trace-to-trajectory reconstruction**: JSONL events → (s,a,r,s') tuples still has a TODO in Stage 4.1.
+3. **Trace-to-trajectory reconstruction**: old summary-only JSONL cannot reconstruct missing observations. The native learner records features directly; archived deck-summary placeholders are rejected.
 4. **Deck discovery**: Deck names are hard-coded. Downloading full decklists from phase-rs or MTGGoldfish not yet automated.
 
 ### Recommended Next Steps
 
 1. **Run full baseline** — Use Makefile targets to establish reference metrics
 2. **Analyze trace quality** — Inspect JSONL decision events to confirm action diversity
-3. **Train JEPA on phase-rs traces** — Stage 4.1 pipeline ready; run with --skip-dream for speed
+3. **Train on recorded native decisions** — use `python -m scripts.run_native_learning`; see the learning runbook for split and activation audits.
 4. **Evaluate trained agents** — Compare world-model performance vs heuristic baseline
 5. **Extend to Commander research** — Phase-rs multiplayer support ready; design pod experiments
 

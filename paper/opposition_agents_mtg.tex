@@ -748,7 +748,7 @@ with default weights $(\alpha_h, \alpha_g, \alpha_w, \alpha_\ell) = (0.15, 0.15,
 \section{Implementation}
 \label{sec:impl}
 
-The scientific object of interest is the \emph{interaction} between symbolic structure and learned planning, not the package layout. The artifact supplies a native rules runtime, an ontology and card-data pipeline, trainable latent-model components, and selectors combining heuristic, model and language signals. These components do not yet constitute a qualified native training-and-retrieval loop. The proposed interventions isolate their contributions after activation and calibration have been verified: MTG provides a setting for studying how symbolic priors, learned dynamics and uncertainty-aware action selection cooperate.
+The scientific object of interest is the \emph{interaction} between symbolic structure and learned planning, not the package layout. The artifact supplies a native rules runtime, an ontology and card-data pipeline, trainable latent-model components, and selectors combining heuristic, model and language signals. A small native offline observation-to-graph-to-model cycle now executes, but does not qualify the full strategic-retrieval and learning-benefit study. The proposed interventions isolate their contributions after activation and calibration have been verified: MTG provides a setting for studying how symbolic priors, learned dynamics and uncertainty-aware action selection cooperate.
 
 \paragraph{Reproducibility.} The current \texttt{phase-rs} benchmark records
 the repository and engine checkout revisions, the actual server identity
@@ -1118,6 +1118,47 @@ not the effects specified by RQ2--RQ5.
 The analytic control model distinguishes cancellation from pending-cast
 completion and interprets simple fixed-damage targets. These approximations
 do not establish card-/mode-exact dynamics or a causal objective comparison.
+
+\paragraph{Native offline learning qualification.}
+A separate development pipeline replaces an invalid deck-summary conversion
+whose empty state features and dummy actions could not train native dynamics.
+It records perspective-filtered numeric observations and complete original
+legal actions at controlled-seat decisions; hidden hand/library identities
+and face-down names are excluded. A frozen burn anchor is used throughout.
+Four training games from burn/green stompy, two independent validation games
+and two held-out blue-white control games all reach rules-terminal outcomes.
+Only training observations induce the 241 co-visible card-pair edges and
+407 producer/deck/source provenance records. This is observational association,
+not causal synergy or a populated normative ontology.
+
+GraphSAGE learns 32-dimensional card context. A small 32-dimensional latent
+model then trains an EMA-target JEPA encoder/predictor (target momentum 0.99,
+batch standard-deviation floor 0.05, variance weight 10, KL weight 0.001),
+recurrent latent/reward/terminal heads and a producer-imitation controller.
+Targets span successive controlled decisions, including opponent activity,
+not engine microsteps. All four model components change; complete bundles
+load strictly and frozen source/native-input hashes remain unchanged.
+Hashed card/action features and fixed zone capacities remain compression
+limitations. No reward-maximizing or dream-policy training is claimed.
+
+Greedy deployment completes the two initial-model episodes but stalls in both
+trained-model episodes, including a repeated cast/cancel cycle. A separately
+recorded repair samples the learned categorical policy with its own seeded
+generator, without a heuristic fallback, using identical checkpoints.
+All four initial/trained by no/induced-graph episodes then complete as losses.
+This establishes execution, not learning improvement. Forced-decision and
+genuine-choice imitation diagnostics must be separated; latent MSE across
+changing encoders is not a common-coordinate strength comparison.
+An ensuing tensor audit found that identity redaction had also erased public
+library/opponent-hand counts. The initial full collection attempt was stopped
+before optimization, retaining its 27 terminal datasets. Feature version~3
+restores those public counts without hidden identities, rejects malformed
+counts and passes a live observation check; the fresh full run uses this version.
+The full development campaign schedules 64/16/8 collection games, five
+training seeds, 20 epochs per neural component, 100 graph epochs and
+20 episodes per first-seed intervention cell. It is running, with results
+pending. Curated/shuffled graph controls, all-seed playing effects,
+native RNG/multi-seat control and powered RQ2--RQ5 comparisons remain open.
 Long Commander pods and live ontology-grounded decisions remain unqualified.
 A read-only ontology snapshot supports resource queries independently of
 gameplay; resource validation is not evidence that a playing policy used

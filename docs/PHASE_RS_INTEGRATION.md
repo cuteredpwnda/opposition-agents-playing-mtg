@@ -156,6 +156,21 @@ For training-trace collection (flat event stream + per-game metadata), use:
 This writes `games.jsonl` and `trace_events.jsonl` under
 `runs/phase_rs_training_traces/<timestamp>/`.
 
+These event summaries do **not** contain full numeric transition observations.
+Do not turn game/deck metadata into dummy world-model training states. For
+actual native graph and model learning, use the direct recorder:
+
+```powershell
+.\.venv\Scripts\python.exe -m scripts.run_native_learning `
+  --train-games 64 --validation-games 16 --test-games 8 `
+  --training-seeds 0 1 2 3 4 --epochs 20 --graph-epochs 100 --eval-games 20
+```
+
+The [learning runbook](EXPERIMENTS.md#native-graph-and-model-learning) documents
+data boundaries, strict model bundles, graph activation and limitations.
+The old `train_pipeline.py --phase-rs-traces` conversion is retired and fails
+explicitly, rather than mixing placeholders or legacy self-play into native data.
+
 Note: these are **episode rollouts** (full-game Monte Carlo), not
 per-decision branch dreaming from arbitrary in-game states. True
 ``dream_search`` on phase-rs requires the pending Action/GameState

@@ -77,7 +77,7 @@ uses a controlled 2×3 factorial, not every possible named model combination.
 | Play a game with LLM agents on phase-rs | [docs/PHASE_RS_INTEGRATION.md](docs/PHASE_RS_INTEGRATION.md) | `python examples/play_edh_pod.py --max-turns 12 --model ollama:llama3` |
 | Collect training traces from phase-rs | [docs/PHASE_RS_INTEGRATION.md](docs/PHASE_RS_INTEGRATION.md) | `python scripts/collect_phase_rs_traces.py --games 16 --picker agent:heuristic` |
 | Run ablation suite against phase-rs AI | [docs/PHASE_RS_INTEGRATION.md](docs/PHASE_RS_INTEGRATION.md) | `python scripts/run_phase_rs_ablation.py --games 10 --picker agent:heuristic --autostart` |
-| Train JEPA on phase-rs traces (phase-rs-first) | [docs/PHASE_RS_INTEGRATION.md](docs/PHASE_RS_INTEGRATION.md) | `python scripts/train_pipeline.py --phase-rs-traces --num-games 64` |
+| Train native graph + JEPA + recurrent dynamics + controller | [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md#native-graph-and-model-learning) | `python -m scripts.run_native_learning --train-games 64` |
 | Inspect the world-model design | [docs/WORLD_MODEL_DESIGN.md](docs/WORLD_MODEL_DESIGN.md) | `pytest tests/test_world_model_pytest.py` |
 | Track a real Commander opponent's hand exactly | [docs/OPPONENT_MODELING_WITH_DECKLIST.md](docs/OPPONENT_MODELING_WITH_DECKLIST.md) | see snippet below |
 | Read the science behind it | [paper/opposition_agents_mtg.tex](paper/opposition_agents_mtg.tex) | `cd paper && latexmk -pdf` |
@@ -96,7 +96,8 @@ not 35,879 independently tested implementations. Python selectors drive one seat
 
 **Training pipeline (phase-rs-first):**
 - `scripts/collect_phase_rs_traces.py` — Run games on phase-rs, emit decision events
-- `scripts/train_pipeline.py --phase-rs-traces` — Stage 4.1 new: collect traces → post-process → feed into JEPA training
+- `scripts/run_native_learning.py` — Real observations → training-only graph → GraphSAGE + JEPA + recurrent dynamics/reward + imitation controller → held-out native episodes
+- `scripts/train_pipeline.py --phase-rs-traces` — Retired unsafe placeholder conversion; now fails explicitly with the replacement command
 - `scripts/run_phase_rs_ablation.py` — Batch evaluation with automatic retry on transient failures
 - `scripts/phase_rs_rollout_sweep.py` — Cartesian sweep (picker × difficulty × deck)
 
@@ -130,16 +131,16 @@ This project builds an agentic framework where multiple AI agents compete in Mag
   - `adapter.py` — GameAction ↔ Action translation
   - `agent_bridge.py` — AsyncActionPicker for native MTGAgent
   - `runner.py` — Trace collection + reconnect/resume logic
-- **Trace Collection**: Structured JSONL (decision events, legal actions, game outcomes) → TrajectoryStore → JEPA training
+- **Trace Collection**: Event-only JSONL supports diagnostics, not retrospective reconstruction of missing full observations. Native learning records real numeric observations and original legal action payloads directly.
 - **Knowledge Graph**: Neo4j + n10s (OWL ontology import) + APOC for card knowledge, combo detection, strategic reasoning
 - **Collective Intelligence Layer**: Append-only learned evidence from self-play (`LearnedSynergyEvidence`, `LearnedCardOutcome`, `KGExtensionEvent`)
 - **Agent Architecture**: Native MTGAgent protocol (RandomAgent, HeuristicAgent, LLMAgent, WorldModelAgent, ActiveInferenceAgent, LLMFusionAgent, HierarchicalAgent)
-- **Training (phase-rs-first)**: 
-  1. Collect traces from phase-rs games (Stage 4.1: `scripts/collect_phase_rs_traces.py`)
-  2. Post-process into TrajectoryStore
-  3. Train JEPA world model on traces (Stage 5: `scripts/train_pipeline.py`)
-  4. Dream training for planning (Stage 6)
-  5. Evaluate trained agents back on phase-rs
+- **Training (phase-rs-first)**:
+  1. Record perspective-safe native observations and legal action identities.
+  2. Split entire games before graph extraction; reserve a control-deck family.
+  3. Build provenance-tagged co-visibility evidence and train offline GraphSAGE.
+  4. Train JEPA, recurrent latent/reward/terminal prediction and producer imitation.
+  5. Strictly load the complete frozen bundle; evaluate initial/trained weights with/without graph context. Native self-play promotion and dream-controller optimization remain unqualified.
 - **Knowledge Graph**: Neo4j card/combo/archetype ontology + GraphSAGE embeddings + RAG query strategies
 - **JEPA Integration**: Dual-input state+KG JEPA predictor (2-loss MSE+KL), surprise scoring, hybrid MDN-LSTM + JEPA planning
 - **Integration**: Scryfall API for card data, Commander Spellbook combos, rules vectorstore judge, Ollama LLM for agent reasoning

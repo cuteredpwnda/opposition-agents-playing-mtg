@@ -460,6 +460,126 @@ distinguishes these experiments.
 
 ---
 
+## Native graph and model learning
+
+Use `scripts/run_native_learning.py`, not the retired
+`train_pipeline.py --phase-rs-traces` path. That path previously constructed
+empty states and one-dimensional dummy actions from game/deck summaries,
+then silently reused old trajectory directories. It now refuses to train.
+Event-only JSONL files are still useful for diagnostics, but cannot recover
+observations that were never recorded.
+
+```powershell
+.\.venv\Scripts\python.exe -m scripts.run_native_learning `
+  --train-games 64 --validation-games 16 --test-games 8 `
+  --training-seeds 0 1 2 3 4 --epochs 20 --graph-epochs 100 `
+  --eval-games 20 --threads 4 --max-game-seconds 300 --max-actions 2000
+```
+
+This performs the entire implemented **offline native development learning**
+cycle on CPU, without requiring or modifying a shared Neo4j service:
+
+1. Capture actual numeric observations at each controlled-seat decision,
+   complete original legal actions, chosen indices and a genuine terminal
+   observation. Hidden opponent hands, library identities and face-down names
+   are excluded; card text is signed token-hashed, not a pretrained embedding.
+   Public hand/library counts survive that filtering and are independently
+   checked; removing identities must not replace known counts with zeros.
+   Pending-decision context is encoded separately without hidden card names.
+   Producers and deployment share a non-conceding candidate policy.
+   Fixed tokenizer capacities are an explicit compression limitation.
+2. Preassign independent whole-game train/validation splits to burn and green
+   stompy; reserve blue-white control as a held-out deck family. Shared staple
+   cards remain possible; this is not a zero-overlap split. Native AI has
+   privileged internal state and engine RNG is not seeded. The opponent uses
+   the same burn deck throughout (`--opponent-deck`), rather than changing
+   between family-specific mirrors.
+3. Build a frozen graph only from completed **training** observations:
+   `CO_VISIBLE` edges, exposed-game denominators, terminal win/loss/draw counts
+   and per-game producer/deck/source provenance. Co-visibility is an association,
+   never a proven combo or curated rules fact. No normative ontology is mutated.
+4. Train GraphSAGE on that observation graph, then encoder/JEPA, recurrent
+   latent/reward/terminal prediction and a controller imitating producer
+   decisions. JEPA uses a stop-gradient EMA target encoder (momentum 0.99),
+   a 0.05 batch latent-standard-deviation floor (weight 10), and KL weight
+   0.001; held-out latent variance is retained as a collapse diagnostic.
+   Targets run from one controlled decision to the next, including
+   intervening opponent activity; these are not engine microstep dynamics.
+   No dream-policy or reward-maximizing self-play promotion is claimed.
+5. Train five independent initializations on the same frozen data. Save
+   complete initial/trained bundles containing model configuration, all
+   parameter states, frozen graph embeddings and component digests.
+   Verify each requested component changes, and load every parameter strictly.
+6. Report validation/test predictive diagnostics and a **2×2** deployment
+   intervention: initial/trained weights × no/induced graph context. Twenty
+   fresh control-deck episodes per cell run for the first prespecified seed;
+   `--evaluate-all-seeds` runs playing evaluations for every trained seed.
+   This is not the planned 2×3 no/curated/induced study: curated relational
+   retrieval remains unwired. No graph-free retraining is implied by a
+   frozen-model graph-context ablation.
+
+Each run owns a private native server/database and writes its manifest,
+individual tensor datasets, exposure/evidence graph, graph/model checkpoints,
+training histories, held-out diagnostics, evaluation traces and summary under
+`runs/native_learning/<timestamp>/`. No graph/weight cache is overwritten.
+The manifest freezes source/decks, the actual server binary and native
+card/AI input files; `progress.json` records the current stage.
+Collection requires >=95% terminal completion in each split; operational
+failures are retained and stop the training gate rather than becoming draws.
+Evaluation retains incomplete episodes and traceable controller/dynamics
+activation, retrieved graph cards, graph identity and a local graph-score
+ablation delta. Parameter updates or nonzero score influence alone do not
+prove better decisions.
+
+The development policy samples from its learned categorical distribution
+using an owned seeded generator, not a heuristic/random fallback. This matches
+the imitation objective and avoids turning a moderate cancellation probability
+into an endless greedy cast/cancel cycle. `--selection argmax` (or the separate
+ablation CLI's `--native-selection argmax`) retains that explicit comparison.
+Report non-forced imitation metrics separately: the headline all-decision
+accuracy is dominated by mandatory passes and is not a playing-strength measure.
+
+Qualification `20261005_193213_820367` completed all eight collection games,
+induced 241 co-visible edges with 407 provenance records and updated all four
+components, with unchanged frozen inputs. Its greedy evaluations completed
+both initial-model games but timed out in both trained-model games, including
+a recorded cast/cancel loop. These failures remain part of the evidence;
+the separate seeded-sampling deployment qualification
+`20261005_194343_832447` completes all four episodes (four losses), with
+identical original checkpoint hashes and no heuristic fallback.
+The initial full attempt `20261005_194651_374203` was stopped before optimization
+after a tensor audit exposed zeroed public library/opponent-hand counts; its
+27 terminal datasets and stopped summary remain retained. Feature v3 restores
+public counts while continuing to exclude hidden identities, rejects malformed
+counts and passes the live tensor check.
+Fresh full campaign `runs/native_learning/20261005_200225_435675` is running the
+64/16/8-game collection, five training seeds and 80 first-seed intervention
+episodes; results are pending, not inferred from the small qualification.
+
+The `W0` bundle has untrained model weights but shares the training-derived
+frozen graph with `W1` in graph-enabled conditions. Diagnostic latent MSE is
+per-model, not comparable across changing latent coordinate systems. Validation
+does not select hyperparameters in this development run; final test predictions
+are computed once per seed. Playing outcomes still need game/producer-run
+uncertainty, controls and qualification before scientific improvement claims.
+
+Deploy a strict bundle separately:
+
+```powershell
+.\.venv\Scripts\python.exe -m scripts.run_phase_rs_ablation `
+  --picker native_learned --native-checkpoint <run>\seed_0\trained.pt `
+  --native-graph induced --games 20 --ai-difficulty VeryEasy `
+  --our-deck-file data\decks\benchmark\modern_azorius_control.txt `
+  --ai-deck-file data\decks\benchmark\modern_azorius_control.txt `
+  --format Modern --autostart
+```
+
+Full confirmatory RQ1–RQ5 work still requires native multi-seat/information
+controls, shuffled/curated graph arms, larger training batches and replication,
+calibrated dynamics/planning, validated strategic evidence and powered
+held-out comparisons. Do not turn a completed development pipeline into a
+claim that all those gates passed.
+
 ## Publication campaign and four-player Commander
 
 The full staged paper plan, claim-to-evidence matrix, sample-size caveats,

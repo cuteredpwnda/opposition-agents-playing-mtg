@@ -104,59 +104,45 @@ python scripts/phase_rs_rollout_sweep.py \
     └── 20260520_152000/ (if rerun)
 ```
 
-### Stage 4.2 → 5: JEPA Training (Once Traces Ready)
+### Native Graph and Model Training (Fresh Observation Capture)
 
 **Command**:
 ```bash
-python scripts/train_pipeline.py \
-  --phase-rs-traces \
-  --num-games 64 \
-  --phase-rs-picker heuristic \
-  --phase-rs-difficulty Medium \
-  --jepa-epochs 40 \
-  --skip-dream
+python -m scripts.run_native_learning \
+  --train-games 64 --validation-games 16 --test-games 8 \
+  --training-seeds 0 1 2 3 4 --epochs 20 --graph-epochs 100 --eval-games 20
 ```
 
 **What happens**:
 
-1. **Trace ingestion** (2-5 min)
-   - Read all JSONL from ablation output
-   - Convert decision events → (state, action, reward, next_state) tuples
-   - Create `TrajectoryStore` in memory (64 games ≈ 500-1000 transitions)
+1. **Direct native observation capture**
+   - Record perspective-filtered numeric state features, complete legal action JSON and chosen indices.
+   - Split whole games before training; exclude incomplete games from terminal labels.
+   - Old event/deck-summary files cannot reconstruct absent observations; the retired stage 4.1 fails explicitly.
 
-2. **JEPA training** (10-30 min depending on GPU)
-   - Input: Phase-rs game states (encoded as images of board state)
-   - Encoder: CNN → latent z
-   - Predictor: Predict next latent z from (z_t, action_t)
-   - Loss: MSE between predicted z_{t+1} and actual z_{t+1}
-   - 40 epochs on 64 games → ~2560 gradient steps
-   - Output: `checkpoints/jepa/jepa_final.pt`
+2. **Graph and model training**
+   - Input: structured numeric observations and signed hashed card text, not board images or artwork.
+   - Build training-only observational `CO_VISIBLE` evidence with game/producer/source provenance; this is not a causal synergy graph.
+   - Train GraphSAGE, JEPA latent prediction with stopped targets and Gaussian regularization, recurrent latent/reward/terminal heads and a legal-action imitation controller.
+   - Save initial/trained complete bundles in each seed directory under the run, without overwriting legacy checkpoints.
+   - Verify parameter updates and strict loading; report held-out diagnostics and graph/no-graph native episodes. Imitation is not reinforcement-learning improvement or native dream-controller optimization.
 
-3. **Planning (Stage 6)** — Optional with `--no-skip-dream`
-   - Use trained JEPA to dream k-step rollouts
-   - Pick actions that maximize predicted value
-   - Can generate synthetic training data without playing more games
+3. **Frozen deployment**
+   - Sample the learned categorical policy using a dedicated seeded generator.
+   - Compare initial/trained weights with no/induced graph context on fresh held-out games.
+   - Record strict loading, graph influence, component activation and incomplete episodes.
+   - Native dream-policy optimization is not implemented by this entry point.
 
-### Expected Training Outcomes
+### Outcome Interpretation
 
-**Baseline (before training)**:
-```
-Random agent win rate: ~25% (1v1 coin flip)
-Heuristic agent win rate: ~65% (prioritizes land → spells → attack)
-```
-
-**After JEPA training** (speculative):
-```
-World-model agent (Phase 1): ~55-70% (if training converges)
-- Learns to recognize winning board states
-- Predicts opponent threats
-- Improves via latent-space planning
-
-LLM fusion agent: ~70-75% (if LLM priors are good)
-- LLM provides high-level strategy
-- JEPA provides tactical board eval
-- Hybrid approach beats either alone
-```
+There is no justified expected win-rate percentage. A small qualification
+updates all four model components; greedy trained policies stall, while a
+same-checkpoint seeded-sampling repair completes four terminal losses.
+Public-count filtering is separately corrected in feature v3.
+The full five-seed development campaign remains in progress. Improvements in
+training loss, forced-pass accuracy or graph size do not establish better play;
+use held-out choice diagnostics, complete failure denominators and qualified
+game-level comparisons. See [EXPERIMENTS.md](EXPERIMENTS.md#native-graph-and-model-learning).
 
 ---
 

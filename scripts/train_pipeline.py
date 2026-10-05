@@ -501,94 +501,12 @@ async def stage_4_1_phase_rs_traces(
     picker_name: str = "heuristic",
     ai_difficulty: str = "Medium",
 ) -> "TrajectoryStore":
-    """Collect training traces from phase-rs engine + native MTGAgent picker.
-    
-    Phase-rs-first approach: Rust engine is authoritative runtime,
-    collect structured JSONL traces for offline policy learning.
-    """
-    logger.info(
-        "=== Stage 4.1: Phase-RS Trace Collection ===\n"
-        "  games=%d, picker=%s, ai_difficulty=%s",
-        num_games, picker_name, ai_difficulty,
+    """Reject the retired deck-summary-as-transition conversion."""
+    raise ValueError(
+        "Native training requires actual observation/action pairs. "
+        "Use python -m scripts.run_native_learning; deck-summary KG "
+        "placeholders must never be passed to a world-model optimizer."
     )
-
-    import json
-    import subprocess
-    from pathlib import Path
-
-    from src.world_model.trajectory import TrajectoryStore
-
-    # Call collect_phase_rs_traces.py
-    traces_dir = Path("runs/train_pipeline_traces") / f"{picker_name}_{ai_difficulty}"
-    traces_dir.mkdir(parents=True, exist_ok=True)
-
-    cmd = [
-        sys.executable, "scripts/collect_phase_rs_traces.py",
-        "--games", str(num_games),
-        "--picker", f"agent:{picker_name}" if not picker_name.startswith("agent:") else picker_name,
-        "--ai-difficulty", ai_difficulty,
-        "--autostart",
-        "--output-dir", str(traces_dir),
-    ]
-    logger.info("Running phase-rs collector: %s", " ".join(cmd))
-
-    try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
-        if result.returncode != 0:
-            logger.warning("Phase-RS collector exited with code %d:\n%s",
-                          result.returncode, result.stderr)
-        else:
-            logger.info("Phase-RS trace collection succeeded")
-    except subprocess.TimeoutExpired:
-        logger.error("Phase-RS collection timed out after 600s")
-        return TrajectoryStore(storage_dir="data/trajectories")
-    except Exception as e:
-        logger.error("Phase-RS collection failed: %s", e)
-        return TrajectoryStore(storage_dir="data/trajectories")
-
-    # Post-process: convert JSONL traces into TrajectoryStore via the shared
-    # phase-rs KG enrichment adapter (which builds proper Trajectory objects).
-    logger.info("Post-processing phase-rs traces into TrajectoryStore format...")
-
-    store = TrajectoryStore(storage_dir="data/trajectories")
-
-    # The collector writes each run to a timestamped subdir under traces_dir.
-    run_dirs = [d for d in traces_dir.iterdir() if d.is_dir()]
-    run_dirs.sort()
-    if not run_dirs:
-        logger.warning("No collector run subdirs under %s", traces_dir)
-        return store
-
-    try:
-        from src.integrations.phase_rs.kg_enrichment_adapter import (
-            _build_trajectory,
-            _load_our_deck_cards,
-        )
-    except Exception as exc:
-        logger.warning("Could not import KG enrichment adapter helpers: %s", exc)
-        return store
-
-    our_deck_cards = _load_our_deck_cards(None, None)
-    for run_dir in run_dirs:
-        manifest = run_dir / "games.jsonl"
-        if not manifest.exists():
-            continue
-        with manifest.open("r", encoding="utf-8") as fh:
-            for line in fh:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    row = json.loads(line)
-                    traj = _build_trajectory(row, our_deck_cards)
-                    store.add(traj)
-                except Exception as exc:
-                    logger.debug("Skipping trajectory row in %s: %s", manifest, exc)
-
-    logger.info(
-        "Phase-RS trace collection complete: %d trajectories built", len(store)
-    )
-    return store
 
 
 
@@ -600,6 +518,14 @@ async def run_pipeline(args: argparse.Namespace) -> None:
     start = args.stage
     end = getattr(args, "end_stage", 7)
     t0 = time.time()
+
+    if args.phase_rs_traces:
+        raise ValueError(
+            "The old stage 4.1 used deck-summary placeholders, not native transitions. "
+            "Use python -m scripts.run_native_learning for the real native graph, "
+            "JEPA, recurrent dynamics/reward and controller pipeline. Legacy dream "
+            "self-play must not be mixed into native training."
+        )
 
     def _in_range(n: int) -> bool:
         return start <= n <= end

@@ -76,8 +76,8 @@ help:
 	@echo "  make phase-rs-ablation      Standard 1v1 (picker × difficulty × deck)"
 	@echo "  make phase-rs-commander     Commander pod format"
 	@echo "  make phase-rs-all-formats   Cartesian sweep (4 formats × 3 difficulties)"
-	@echo "  make phase-rs-traces N=16   Collect traces for JEPA training"
-	@echo "  make phase-rs-training      Full pipeline (traces → JEPA → eval)"
+	@echo "  make phase-rs-traces N=16   Collect event-only diagnostic traces"
+	@echo "  make phase-rs-training      Native graph/model learning and held-out play"
 	@echo ""
 	@echo "  ROOT=$(ROOT)"
 
@@ -229,8 +229,8 @@ clean-runs:
 #   make phase-rs-ablation              # Standard 1v1 against AI difficulties
 #   make phase-rs-commander             # Commander/Brawl pod format
 #   make phase-rs-all-formats           # Cartesian sweep: format × difficulty × deck
-#   make phase-rs-traces N=16           # Collect traces for JEPA training
-#   make phase-rs-training              # Full pipeline: traces → JEPA → eval
+#   make phase-rs-traces N=16           # Collect event-only diagnostic traces
+#   make phase-rs-training              # Real observations → graph/model → held-out play
 # ========================================================================
 
 PHASE_RS_ROOT ?= runs/phase_rs_$(TS)
@@ -307,7 +307,7 @@ phase-rs-all-formats:
 	    --output-dir $(PHASE_RS_ROOT)/all_formats/commander
 	@echo "Output: $(PHASE_RS_ROOT)/all_formats/"
 
-# Collect JSONL traces for training (Phase-RS traces → JEPA training data)
+# Collect event-only JSONL diagnostics, not reconstructable observation tensors.
 phase-rs-traces:
 	@echo "=== Collecting Phase-RS Traces (N=$(N) games) ==="
 	@mkdir -p $(PHASE_RS_ROOT)/traces
@@ -318,20 +318,17 @@ phase-rs-traces:
 	    --autostart \
 	    --output-dir $(PHASE_RS_ROOT)/traces
 	@echo "Output: $(PHASE_RS_ROOT)/traces/"
-	@echo "Next: make phase-rs-training"
+	@echo "Native training records fresh observations: make phase-rs-training"
 
-# Full phase-rs training pipeline (traces → JEPA → evaluation)
+# Native offline development training; no legacy trajectories or dream collection.
 phase-rs-training:
-	@echo "=== Phase-RS Training Pipeline (Stage 4.1 → 5 → 6) ==="
+	@echo "=== Native graph/model development learning ==="
 	@mkdir -p $(PHASE_RS_ROOT)/training
-	$(PY) -u scripts/train_pipeline.py \
-	    --stage 1 --end-stage 7 \
-	    --phase-rs-traces \
-	    --num-games 64 \
-	    --phase-rs-picker heuristic \
-	    --phase-rs-difficulty Medium \
-	    --jepa-epochs 40 \
-	    --skip-dream \
+	$(PY) -u -m scripts.run_native_learning \
+	    --train-games 64 --validation-games 16 --test-games 8 \
+	    --training-seeds 0 1 2 3 4 --epochs 20 --graph-epochs 100 \
+	    --eval-games 20 --selection sample \
+	    --output-dir $(PHASE_RS_ROOT)/training \
 	    > $(PHASE_RS_ROOT)/training/train.log 2>&1
 	@echo "Output: $(PHASE_RS_ROOT)/training/"
-	@echo "Checkpoint: checkpoints/jepa/jepa_final.pt"
+	@echo "Checkpoints: training/<timestamp>/seed_<seed>/trained.pt"

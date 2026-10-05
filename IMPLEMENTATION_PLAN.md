@@ -34,6 +34,29 @@ No integrity check is bypassed and no Decision 2.0 MTG result is claimed.
 The paper now explains decision models and separates
 deployment comparisons from controlled ablations. See section 6.
 
+**Native learning continuation (Oct 5):** the old native stage passed
+deck-summary placeholders, not real observations, into world-model training.
+It is retired with an explicit error. The replacement
+`scripts/run_native_learning.py` records filtered observations and original
+legal actions, induces training-only co-visibility evidence, trains GraphSAGE,
+EMA-target JEPA, recurrent latent/reward/terminal heads and a producer-imitation
+controller, and deploys strict complete bundles in initial/trained ×
+none/induced graph interventions. Sixty-five focused compatibility tests pass.
+The first short-budget qualification retained three timeouts and stopped at
+the collection gate. The repaired fixed-burn-anchor run records 8/8 terminal
+collection games and all four component updates; greedy trained deployment
+then stalls. A separate same-checkpoint seeded-sampling repair completes all
+four initial/trained × none/induced episodes (four losses, not strength
+evidence). The subsequent tensor audit found that identity filtering also zeroed public
+library/opponent-hand counts. Campaign `20261005_194651_374203` was stopped
+before optimization, retaining 27 terminal datasets and a stopped-run summary.
+Feature version v3 preserves public counts without hidden identities; focused
+compatibility suite: 65 passed, lint clean for the new/changed native modules.
+Fresh campaign `20261005_200225_435675` is now collecting 64/16/8 games before
+five training seeds and 80 playing evaluations; live tensors verify public
+hand/library counts are retained.
+No completed full native campaign or learning benefit is claimed yet.
+
 **Publication feasibility gates (Oct 5):** the full Scryfall oracle/rulings
 cache is refreshed (38,706 oracle records, 79,706 rulings, 38,201 indexed names).
 The separate native compiled database contains 35,879 name-keyed entries;
@@ -229,6 +252,20 @@ Iterative bug-hunt + mechanic coverage session driven by inspection of
 items stay for traceability.
 
 ### Done
+
+- [x] **Real native graph/model learning path** — retired placeholder-based
+      native optimizers; genuine filtered observations, training-only
+      provenance-tagged GraphSAGE, EMA/variance-regularized JEPA, recurrent
+      reward/done prediction and imitation controller with strict complete
+      bundles landed in `native_learning_data.py`, `native_learning.py`,
+      `state_encoder.py`, both training/ablation CLIs, `Makefile` and focused tests.
+      Qualification `20261005_193213_820367`: 8/8 terminal collection games,
+      241 co-visible edges, 407 evidence records, all components changed,
+      unchanged frozen source/native inputs; greedy trained cells time out.
+      Same-checkpoint sampling repair `20261005_194343_832447`: 4/4 terminal
+      losses, unchanged checkpoint hashes, no heuristic fallback. Non-forced
+      choice diagnostics and seeded categorical deployment are explicit.
+      This verifies a development learning path, not improved play or K12.
 
 - [x] **Replicated inference campaign and semantic chat repair** —
       `runs/model_qualification/20261005_174927_211167` completes 35/36 games
@@ -1390,6 +1427,36 @@ items stay for traceability.
 
 ### In progress
 
+- [ ] **Native graph/model development campaign (Oct 5)** — genuine
+      observation/action recorder, training-only provenance graph and complete
+      four-component training/deployment are implemented in
+      `native_learning_data.py`, `native_learning.py`,
+      `scripts/run_native_learning.py` and the native ablation factory.
+      The recorder and deployed policy share non-conceding candidates;
+      pending-decision features are separated from card identities.
+      Source, decks, native binary/card/AI inputs and checkpoints are
+      fingerprinted. EMA targets and a latent variance floor counter encoder
+      collapse. Focused native/world-model/adapter regression suite: 64 passed.
+      Qualification `20261005_192154_240832` failed the collection gate
+      (4/4 train, 1/2 validation, 0/2 test terminal); no weights were trained
+      from its incomplete games. Repaired qualification
+      `20261005_193213_820367` trained successfully but greedy deployment
+      stalled; the subsequent sampled deployment completed 4/4 losses.
+      The first full attempt (`20261005_194651_374203`) was stopped before
+      optimization after a tensor audit exposed zeroed public library/
+      opponent-hand counts; all 27 collected terminal games remain recorded.
+      v3 fixes public counts and rejects malformed/missing count data.
+      Regression suite: 65 passed; live v3 tensors verify hand/library values.
+      Full campaign `runs/native_learning/20261005_200225_435675` is active:
+      64/16/8 collection games, five training seeds, 20 epochs per component,
+      100 graph epochs, 20 episodes per first-seed intervention cell.
+      At the requested wrap-up, 32/64 training collection games are terminal;
+      remaining collection, five-seed optimization and final evaluation are
+      pending, not completed results. Leave the owned campaign running.
+      This is offline imitation/association
+      learning, not causal combo discovery, self-play promotion or K12
+      confirmatory evidence.
+
 - ✅ **Phase 1 — Stability fix (May 20, 2026) — COMPLETE**:
   * **Created** `src/integrations/phase_rs/server_lock.py` (60 LOC)
     - Windows atomic file-based locks (O_CREAT | O_EXCL)
@@ -1436,9 +1503,10 @@ items stay for traceability.
     - Sweep also now emits a `games.jsonl` (alias of `rollouts.jsonl`) so the
       adapter has a consistent manifest filename.
   * **`scripts/train_pipeline.py`** stage 4.1 — replaced TODO stub
-    - `stage_4_1_phase_rs_traces` now builds real `TrajectoryStore` objects
-      via the shared adapter helpers (`_build_trajectory`, `_load_our_deck_cards`).
-    - Stage 4.5 KG enrichment then consumes the populated store.
+    - Historical implementation built deck-summary `TrajectoryStore` objects
+      via `_build_trajectory`, not observation/action transitions. October 5
+      audit retired this optimizer path; use `scripts/run_native_learning.py`.
+    - These old summaries remain KG-enrichment metadata only.
   * **Validation**: 31 KG / trajectory / phase-rs tests pass; adapter
     dry-run verified against `runs/phase_rs_training_traces/20260520_153604`
     (1 game manifest → 1 trajectory built, pipeline completed cleanly).
@@ -1699,6 +1767,15 @@ by none/curated/induced graph factorial. Freeze deck-family/game splits,
 independent training seeds and final-test boundaries before RQ5 cross-producer
 transfer or cumulative-evidence curves. These execution gates remain queued;
 the written protocol and terminal feasibility pilots do not satisfy them.
+
+**Implemented development subset (Oct 5):** real native observation recording,
+training-only exposure/provenance induction, GraphSAGE, complete JEPA/recurrent/
+imitation model updates, strict loading, graph activation telemetry and
+initial/trained × none/induced deployment are wired and under qualification.
+The full cycle has not yet completed. Curated/shuffled graph controls,
+cross-producer graph replication, powered all-seed playing comparisons,
+reward-optimizing self-play, multi-seat control and native RNG remain queued.
+Observed co-visibility does not establish strategic synergy or refutation.
 
 #### H1 — Continuous-effects layer system (CR 613) ✅ Implemented
 
@@ -2592,7 +2669,7 @@ The engine implements the full MTG turn structure with stack, priority passing, 
 
 ### 4.3 World Model (V + M + C)
 
-**Status: ✅ Architecture complete, training pipeline wired**
+**Status: 🟡 Partial — native development training qualified; full campaign active**
 
 The full V+M+C world model with JEPA predictor and KG context fusion is implemented:
 
@@ -2609,7 +2686,7 @@ The full V+M+C world model with JEPA predictor and KG context fusion is implemen
 - `stable_worldmodel_adapter.py` — Wraps galilai/stable-worldmodel package
 - `schmidhuber_worldmodel_adapter.py` — Wraps Schmidhuber-style forward model
 
-**Training pipeline (`scripts/train_pipeline.py`) — 7 stages:**
+**Legacy training pipeline (`scripts/train_pipeline.py`) — 7 stages:**
 1. Infrastructure check (Python, PyTorch, Neo4j, CUDA, PyG)
 2. Knowledge Graph setup (Scryfall import, combos, ontology)
 3. Graph embedding training (Neo4j → PyG → GraphSAGE → 128-dim cache)
@@ -2618,7 +2695,12 @@ The full V+M+C world model with JEPA predictor and KG context fusion is implemen
 6. Dream training (V → JEPA → M → C iterative pipeline)
 7. Evaluation game (trained WorldModelAgent vs RandomAgent)
 
-**Known issue:** `train_pipeline.py` stage 6 has a stray import line that needs fixing (import outside function).
+The legacy pipeline is not native-qualified; its former `--phase-rs-traces`
+path refuses deck-summary placeholders. The replacement native pipeline trains
+a small 32-dimensional model, uses a 0.99 EMA target encoder and variance floor,
+preserves pending-decision context and freezes complete checkpoints/graph
+embeddings. Its recurrent heads use real terminal rewards; its controller uses
+producer imitation rather than CMA-ES, dream search or reward optimization.
 
 ### 4.4 Knowledge Graph & Ontology
 
@@ -2635,6 +2717,10 @@ The full V+M+C world model with JEPA predictor and KG context fusion is implemen
 - **Import pipelines:** Scryfall bulk → Neo4j, Commander Spellbook → Combo nodes, EDHREC synergies
 - **Query API:** Combos, near-combos, synergies, archetypes, counters, card similarity, vector search
 - **Graph embeddings:** GraphSAGE export → 128-dim vectors → Neo4j writeback + local cache
+- **Native development graph:** offline training-only `CO_VISIBLE` exposure,
+  win/loss/draw counts and per-game provenance → 32-dimensional GraphSAGE
+  embeddings → frozen visible-card pooling in native model decisions.
+  This does not qualify normative ontology queries, causal combos or Neo4j.
 - **GraphRAG:** Subgraph + vector + fulltext hybrid retrieval
 
 **Competency questions** (`data/competency_questions.yaml`): 32/32 covered,
@@ -2645,7 +2731,17 @@ live readiness, query compatibility and bulk-write/fallback accounting remain K1
 
 ### 4.5 Training & Self-Play
 
-**Status: ✅ All components implemented, end-to-end pipeline works**
+**Status: 🟡 Partial — native development cycle verified; full campaign active**
+
+`scripts/run_native_learning.py` is the actual native observation-to-model
+entry point. It separates whole-game train/validation data and a held-out
+control family, trains independent model seeds and reports strict four-arm
+deployment/activation evidence. First qualification failed its completion
+gate; repaired data/training and sampled deployment complete. The five-seed
+full campaign remains active. Native self-play promotion, reward-based
+policy optimization, curated/shuffled controls and multi-seat/RNG qualification
+are not implemented. The following older modules are not evidence of those
+native capabilities.
 
 - **RLTrainer:** Full production RL loop — agent pool with ELO tracking, game generation, experience collection, neural training, periodic dream training. Supports 2-player and 4-player modes.
 - **SelfPlayTrainer:** AlphaZero-inspired self-play training with experience replay.

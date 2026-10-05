@@ -145,6 +145,15 @@ def _make_picker(args: argparse.Namespace, seed: int):
         return make_tev1_picker(args, seed)
     if args.picker == "decision2":
         return make_decision2_picker(args, seed)
+    if args.picker == "native_learned":
+        from src.world_model.native_learning import NativeLearnedPicker
+
+        if not args.native_checkpoint:
+            raise ValueError("--picker native_learned requires --native-checkpoint")
+        return NativeLearnedPicker(
+            Path(args.native_checkpoint), args.native_graph == "induced", seed=seed,
+            selection=getattr(args, "native_selection", "sample"),
+        )
     if args.picker == "kl_control":
         return KLControlActionPicker(
             seed=seed,
@@ -236,6 +245,10 @@ def run(args: argparse.Namespace) -> int:
         "agent_checkpoint_sha256": (
             hashlib.sha256(Path(args.agent_checkpoint).read_bytes()).hexdigest()
             if args.agent_checkpoint else None
+        ),
+        "native_checkpoint_sha256": (
+            hashlib.sha256(Path(args.native_checkpoint).read_bytes()).hexdigest()
+            if getattr(args, "native_checkpoint", None) else None
         ),
         "agent_qualification": (
             "Archived checkpoint/native semantics and component activation require auditing"
@@ -376,7 +389,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--picker",
         help=(
             "Policy for our seat: random | prefer-nonpass | heuristic | "
-            "kl_control | tev1 | decision2 | ollama | agent:<name> (e.g. agent:heuristic, "
+            "kl_control | tev1 | decision2 | native_learned | ollama | agent:<name> "
+            "(e.g. agent:heuristic, "
             "agent:world_model, agent:fusion)"
         ),
         default="random",
@@ -401,6 +415,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--ollama-url", default="http://localhost:11434")
     parser.add_argument("--agent-checkpoint", default=None,
                         help="Explicit checkpoint for agent:world_model or agent:fusion")
+    parser.add_argument("--native-checkpoint", default=None,
+                        help="Strict complete bundle from scripts.run_native_learning")
+    parser.add_argument("--native-graph", choices=["none", "induced"], default="induced")
+    parser.add_argument("--native-selection", choices=["sample", "argmax"], default="sample")
     parser.add_argument("--agent-mode", choices=["direct", "dream_search"], default="direct")
     parser.add_argument("--agent-device", default="cpu")
     parser.add_argument("--agent-deterministic", action="store_true")
