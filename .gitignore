@@ -59,6 +59,7 @@ checkpoints/**/*.ckpt
 
 # Training artifacts
 logs/
+runs/
 data/trajectories/
 data/imports/
 data/cache/
@@ -98,7 +99,9 @@ data/card_graph_embeddings.pt
 
 *.pt
 
-presentations/repo_for_girlfriend.*# Comprehensive Rules text and any derivation carrying it. The rule text is
+presentations/repo_for_girlfriend.*
+
+# Comprehensive Rules text and any derivation carrying it. The rule text is
 # copyright Wizards of the Coast; only the extracted enumerations
 # (data/ontology/mtg-cr-types.ttl) are redistributable. Regenerate with:
 #   python scripts/fetch_rules.py && python scripts/build_ontology_from_cr.py

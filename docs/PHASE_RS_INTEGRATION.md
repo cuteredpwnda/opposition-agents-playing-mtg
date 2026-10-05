@@ -9,7 +9,9 @@ and a per-difficulty AI opponent. We vendor it as a git submodule under
 > **Status — October 5, 2026:** Pinned to `1191bba65`, protocol v106.
 > Release build, refreshed native data, and a complete live Modern game
 > with `HeuristicActionPicker` are verified. Tev1 0.8B's local decision API
-> works, but full-game pilots exceed the native 2050-token input ceiling.
+> works; an isolated same-weight 8192-context alias passes a terminal game
+> without truncation. The original tag's 2050-token context setting is not
+> a hard endpoint ceiling. See [the experiment runbook](EXPERIMENTS.md).
 > Controlled strength measurements remain pending. Native viewer
 > interactions remain queued; keyed reconnect is now live-verified in
 > [IMPLEMENTATION_PLAN.md](../IMPLEMENTATION_PLAN.md).

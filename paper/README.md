@@ -129,8 +129,12 @@ Its evaluation protocol separates deployment-stack comparisons from
 matched-context/candidate reranker ablations and describes completion-aware
 win rates, latency, shortlist coverage and failure accounting. Tev1 playing
 strength is a hypothesis; an API smoke test is not reported as a game result.
-The paper also records the local endpoint's 64 KiB/2050-token limits and
-the compact context projection; full-game Tev1 pilots remain incomplete.
+The paper records the 64 KiB body limit and compact context projection.
+The original Tev1 tag's 2050-token setting is configurable through an
+isolated same-weight 8192-context alias, not request-level options; a
+real 2906-token request passes without truncation. Larger-context gameplay
+and output-bounded chat runs are evaluated separately from the earlier
+configuration, with explicit failure/fallback accounting.
 The research manuscript is self-contained: no Markdown-document referrals,
 dated work-log paragraphs or historical Python-engine strength tables.
 It includes a research-question ablation overview, the weight/graph factorial,
@@ -138,6 +142,17 @@ an implementation-specific baseline comparison (including upstream `phase-ai`
 and its privileged information access), and a defined Buchholz tiebreak.
 Results describe current native execution, not learning effects. Wider
 deck-family and playstyle generalisation is explicitly a later study.
+The replicated table now reports 35/36 terminal games and four wins, with
+the separate 3/3 Gemma semantic repair and its one request-timeout fallback
+identified rather than mixed into the earlier configuration. Decision 2.0's
+published 255-option contract, local non-generative interface and CPU/precision
+confounds are cited. Direct Eos loading is blocked by upstream Windows
+path-fingerprint serialization; unchanged weights pass real 30/255-option
+shape checks in an isolated local Linux CPU container, without disabling
+integrity checks. Neither synthetic selection solves the instructed numerical
+task, and no Decision 2.0 MTG result is claimed. The separate full-context
+Llama/Qwen budget checks and their invalid-response fallback counts are
+reported rather than pooled with earlier configurations.
 The full executable publication plan is tracked in
 [`IMPLEMENTATION_PLAN.md`, section 6](../IMPLEMENTATION_PLAN.md#6-benchmark--evaluation-plan);
 [`RESEARCH_PIPELINES.md`](../docs/RESEARCH_PIPELINES.md) provides five Mermaid

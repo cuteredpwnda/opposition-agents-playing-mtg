@@ -10,20 +10,53 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.request
 from datetime import datetime
 from pathlib import Path
 
 from src.integrations.phase_rs import PhaseServerProcess
+from src.integrations.phase_rs.decision2_picker import add_decision2_arguments
 from src.integrations.phase_rs.server_process import REPO_ROOT
 from src.integrations.scryfall_bulk import file_sha256
 
 
-def conditions(checkpoint: Path, models: list[str]) -> list[tuple[str, list[str]]]:
+def model_snapshot(schedule: list[tuple[str, list[str]]]) -> dict[str, dict]:
+    names = sorted({
+        options[index + 1]
+        for _, options in schedule for index, option in enumerate(options[:-1])
+        if option in {"--ollama-model", "--tev1-model"}
+    })
+    if not names:
+        return {}
+    with urllib.request.urlopen("http://localhost:11434/api/tags", timeout=10) as response:
+        tags = {row["name"]: row for row in json.load(response)["models"]}
+    snapshot = {}
+    for name in names:
+        if name not in tags:
+            raise ValueError(f"Qualification model is not installed: {name}")
+        request = urllib.request.Request(
+            "http://localhost:11434/api/show",
+            data=json.dumps({"model": name}).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(request, timeout=10) as response:
+            metadata = json.load(response)
+        snapshot[name] = {
+            "digest": tags[name]["digest"],
+            "parameters": metadata.get("parameters", ""),
+            "details": metadata.get("details", {}),
+        }
+    return snapshot
+
+
+def conditions(
+    checkpoint: Path, models: list[str], tev1_model: str = "tev1:0.8b",
+) -> list[tuple[str, list[str]]]:
     rows = [("random", ["--picker", "random"]),
             ("heuristic", ["--picker", "heuristic"])]
     rows.extend((f"chat_{index}", ["--picker", "ollama", "--ollama-model", model])
                 for index, model in enumerate(models))
-    rows.append(("tev1", ["--picker", "tev1", "--tev1-model", "tev1:0.8b",
+    rows.append(("tev1", ["--picker", "tev1", "--tev1-model", tev1_model,
                          "--tev1-timeout", "30"]))
     for mode in ("direct", "dream_search"):
         rows.append((f"world_model_{mode}", [
@@ -52,12 +85,21 @@ def run(args: argparse.Namespace) -> int:
         raise ValueError("Campaign budget must be in (0, 1800]; condition budget positive")
     if args.games < 1:
         raise ValueError("games must be positive")
-    schedule = conditions(args.checkpoint, args.models)
+    schedule = conditions(args.checkpoint, args.models, args.tev1_model)
+    if args.include_decision2:
+        schedule.append(("decision2", [
+            "--picker", "decision2", "--decision2-model", args.decision2_model,
+            "--decision2-revision", args.decision2_revision,
+            "--decision2-candidates", str(args.decision2_candidates),
+            "--decision2-device", args.decision2_device,
+            "--decision2-threads", str(args.decision2_threads),
+        ]))
     if args.only:
         selected = set(args.only)
         if len(selected) != len(args.only) or selected - {name for name, _ in schedule}:
             raise ValueError("--only must name unique conditions from the configured schedule")
         schedule = [(name, options) for name, options in schedule if name in selected]
+    models = model_snapshot(schedule)
     output = args.output_dir / datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     output.mkdir(parents=True)
     deck = REPO_ROOT / "data" / "decks" / "modern" / "modern_mono_red_burn.txt"
@@ -71,6 +113,7 @@ def run(args: argparse.Namespace) -> int:
     manifest = {
         "purpose": "feasibility only, not qualified native training or causal ablation",
         "arguments": vars(args), "schedule": schedule,
+        "model_snapshot": models,
         "file_sha256": {str(p): digest for p, digest in frozen.items()},
         "blocked_combinations": [
             "Tev1+world-model critic/prior: no qualified integration",
@@ -81,7 +124,7 @@ def run(args: argparse.Namespace) -> int:
         "limitations": [
             "Archived legacy checkpoint, not native-trained dynamics",
             "Permissive checkpoint loader and chat/fusion fallback need activation audit",
-            "One game per condition; native RNG not seeded; no matched-context comparison",
+            "Native RNG not seeded; no matched-context comparison",
             "Per-game time limit is cooperative; subprocess deadline bounds stuck inference",
         ],
     }
@@ -99,6 +142,7 @@ def run(args: argparse.Namespace) -> int:
             if server._adopted:  # noqa: SLF001
                 raise ValueError("Qualification requires an owned private server")
             rows = run_conditions(args, schedule, output, deck, server.uri)
+    changed_models = model_snapshot(schedule) != models
     changed = [str(p) for p, digest in frozen.items()
                if not p.is_file() or file_sha256(p) != digest]
     summary = {
@@ -108,10 +152,12 @@ def run(args: argparse.Namespace) -> int:
                                for row in rows),
         "failed_conditions": sum(row["status"] != "finished" for row in rows),
         "changed_inputs": changed, "conditions": rows,
+        "model_snapshot_changed": changed_models,
     }
     (output / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print(f"Qualification outputs: {output}", flush=True)
-    return int(bool(changed or len(rows) != len(schedule) or summary["failed_conditions"]))
+    return int(bool(changed or changed_models or len(rows) != len(schedule)
+                    or summary["failed_conditions"]))
 
 
 def run_conditions(args, schedule, output: Path, deck: Path, uri: str) -> list[dict]:
@@ -168,6 +214,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--checkpoint", type=Path, required=True)
     parser.add_argument("--models", nargs="+", default=["llama3.2:1b", "gemma4:e2b"])
+    parser.add_argument("--tev1-model", default="tev1:0.8b",
+                        help="Installed decision-model tag, including explicit context aliases")
+    parser.add_argument("--include-decision2", action="store_true",
+                        help="Add the pinned local Decision 2.0 classifier condition")
+    add_decision2_arguments(parser)
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--games", type=int, default=1,
                         help="Replicates per condition within the shared condition deadline")

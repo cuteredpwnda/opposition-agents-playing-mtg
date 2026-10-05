@@ -34,6 +34,10 @@ their names establishes an evaluated agent:
    queries, read-only SPARQL serving and Workbench exports have distinct checks.
 3. **Action selection:** random/heuristic baselines, analytic belief-space
    KL control, general chat LLMs and Tev1 decision-tuned option selectors.
+   A pinned local Decision 2.0 adapter supports the published 255-option
+   interface, with real 30/255-option checks on a local Linux CPU container.
+   Direct Windows Eos loading is blocked by an upstream path-fingerprint
+   mismatch, not by a requirement for vLLM.
    Tev1 preferences are not calibrated win probabilities.
 4. **Latent prediction:** JEPA learns one-step next-embedding targets with
    a stopped encoder branch and standard-normal regularisation. Current
@@ -51,7 +55,7 @@ their names establishes an evaluated agent:
 | Baseline deck coverage | 18/18 terminal games across nine ordered matchups; random 2/9 wins, heuristic 3/9 | Policy ranking; at least 20 calibration games per intended condition still needed |
 | Deck pool | Three development decks plus four source-attributed historical Forge lists | Native qualification of all sourced mechanics and current metagame representativeness |
 | Ontology | Consistent import-resolved schema, focused probes, 14 read-only SPARQL checks | Full populated-graph reasoning, external modelling review and agent grounding |
-| LLM/decision models | Local inference interfaces and explicit Tev1 error accounting | Matched-context comparisons, calibration and full-game token-budget reliability |
+| LLM/decision models | 35/36 terminal games in a twelve-condition replicated campaign; separate 3/3 Gemma semantic repair; same-weight 8K Tev1 alias; Decision 2.0 adapter tests | Per-condition reliability/calibration, matched comparisons and live Decision 2.0 qualification on Windows |
 | JEPA/fusion | Local implementation and archived checkpoints | Frozen native-trained models, matched ablations and verified component activation |
 
 The local baseline campaign has **one replicate per matchup**. Do not interpret

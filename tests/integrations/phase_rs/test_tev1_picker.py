@@ -50,6 +50,7 @@ def test_systemone_request_maps_to_original_action(monkeypatch):
     assert set(criteria) == {"action_0", "action_2"}
     assert json.loads(criteria["action_2"]) == actions[2]
     assert picker.last_reasoning["probabilities"] == {"action_0": 0.5, "action_2": 0.5}
+    assert picker.last_reasoning["model_invoked"] is True
     assert picker.last_reasoning["candidate_coverage"] == 1.0
     assert picker.last_reasoning["context_projection"] == "compact_card_aware_v3"
     assert picker.last_reasoning["request_bytes"] == len(request.data)
@@ -66,6 +67,22 @@ def test_oversized_visible_context_is_not_silently_truncated(monkeypatch):
         picker.pick([{"type": "PassPriority"}, {"type": "PlayLand"}], state, 0)
     assert error.value.reason == "picker_input_too_large"
     assert picker.last_reasoning["request_bytes"] > MAX_REQUEST_BYTES
+
+
+def test_context_alias_and_actual_usage_are_preserved(monkeypatch):
+    payload = _answer(["action_0", "action_1"])
+    payload["usage"] = {"input_tokens": 2906, "output_tokens": 1}
+    requests = []
+
+    def respond(request, **kwargs):
+        requests.append(json.loads(request.data))
+        return io.BytesIO(json.dumps(payload).encode())
+
+    monkeypatch.setattr("urllib.request.urlopen", respond)
+    picker = Tev1ActionPicker(model="tev1-mtg-8k:0.8b")
+    picker.pick([{"type": "PassPriority"}, {"type": "PlayLand"}], {}, 0)
+    assert requests[0]["model"] == "tev1-mtg-8k:0.8b"
+    assert picker.last_reasoning["usage"] == payload["usage"]
 
 
 @pytest.mark.parametrize("delta", [-1, 0, 1])

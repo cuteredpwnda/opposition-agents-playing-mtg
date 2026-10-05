@@ -29,6 +29,11 @@ from src.integrations.phase_rs import (
     load_deck_data,
     run_game_sync,
 )
+from src.integrations.phase_rs.decision2_picker import (
+    Decision2ActionPicker,
+    add_decision2_arguments,
+    make_decision2_picker,
+)
 from src.integrations.phase_rs.tev1_picker import add_tev1_arguments, make_tev1_picker
 
 
@@ -56,6 +61,8 @@ def _build_picker(name: str, seed: int, args: argparse.Namespace):
         return HeuristicActionPicker(seed=seed)
     if name == "tev1":
         return make_tev1_picker(args, seed)
+    if name == "decision2":
+        return make_decision2_picker(args, seed)
     if name == "ollama":
         return OllamaActionPicker(seed=seed, model=args.ollama_model, base_url=args.ollama_url)
     if name.startswith("agent:"):
@@ -87,6 +94,8 @@ def run(args: argparse.Namespace) -> int:
         for i in range(args.games):
             seed = args.seed + i
             picker = _build_picker(args.picker, seed, args)
+            if isinstance(picker, Decision2ActionPicker):
+                picker.prepare()
             cfg = PhaseServerConfig(uri=args.uri, stream_timeout_s=args.stream_timeout)
             result = run_game_sync(
                 deck=_load_our_deck(args),
@@ -166,6 +175,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--ollama-model", default="gemma4:e2b")
     p.add_argument("--ollama-url", default="http://localhost:11434")
     add_tev1_arguments(p)
+    add_decision2_arguments(p)
     return p.parse_args()
 
 

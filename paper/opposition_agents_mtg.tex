@@ -358,7 +358,7 @@ where $\psi$ denotes the selector parameters. The selected option maps back to t
 
 The candidate generator is part of the policy: if a winning line is absent from $\mathcal S_t$, no reranker can recover it. Likewise, projection $R$ can omit strategically important context. For example, selecting removal from a shortlist can be sensible only if the supplied state distinguishes the relevant threat, available mana and target. Measuring legal output is therefore insufficient; matched-context/candidate comparisons, shortlist coverage, tactical quality and inference cost are separate measurements (\Cref{sec:decision-benchmark}).
 
-There are three possible uses, which should not be conflated: direct action selection, reranking candidates proposed by a planner, and supplying probabilities to the planner's passive prior $q_0$. Only the first is currently integrated for Tev1. None replaces the rules engine or provides the latent transition model needed for JEPA rollouts. The existing local API smoke establishes interface compatibility; full-game inference still encounters context-budget limits, and no Tev1 playing-strength result is claimed.
+There are three possible uses, which should not be conflated: direct action selection, reranking candidates proposed by a planner, and supplying probabilities to the planner's passive prior $q_0$. Only the first is currently integrated for Tev1. None replaces the rules engine or provides the latent transition model needed for JEPA rollouts. Local interface and terminal-game checks pass with a same-weight larger-context deployment; neither establishes calibrated choice quality or a Tev1 playing-strength advantage.
 
 \subsection{Self-play promotion as fixed-point iteration}
 Training combines all three signals.  The replay buffer $\mathcal{D}$ is collected by self-play between agent variants; the world model is fit on $\mathcal{D}$; and the controller is improved iteratively by the champion-vs-challenger schema implemented in \texttt{scripts/train\_pipeline.py}.  At each iteration $i$, a challenger $\pi_{i+1}$ is trained against $\pi_i$ on the latest replay window and faces the champion in a best-of-$N$ match; promotion happens iff the empirical win rate exceeds $0.55$.  This is a stochastic-approximation fixed-point operator on the policy improvement step \citep{tesauro1995temporal, silver2017mastering, silver2018alphazero, schrittwieser2020mastering}: under standard Robbins--Monro conditions it converges, in expectation, to a fixed point of the Bellman optimality operator restricted to the dynamics class $\hat T$ that the world model has learned.  Convergence in practice depends on $\hat T$ being locally accurate, which we monitor by tracking JEPA validation loss across iterations.
@@ -604,9 +604,16 @@ priority logic resumes, so \textsc{play\_land} can still beat
 
 \paragraph{Ollama LLM ($\pi^{\mathrm{LLM}}$).} The LLM is consulted as a discrete posterior over the legal-action set, never as a free-form generator. Concretely, for each decision we serialise the board state $s_t$ (life totals, hand sizes, lands, creatures) and an enumerated list $\{(i, a_i)\}_{i=0}^{|\mathcal{A}_{\mathrm{legal}}|-1}$, prompt the model to ``respond with ONLY the option number'', parse an integer $\hat\imath$ from the reply, and return $a_{\hat\imath}$. Formally,
 \begin{equation*}
-\hat\imath = \pi_{\mathrm{LLM}}\!\big(\mathrm{prompt}_t\big),\quad a^\star = a_{\mathrm{clip}(\hat\imath,\,0,\,|\mathcal{A}_{\mathrm{legal}}|-1)}.
+\hat\imath = \pi_{\mathrm{LLM}}\!\big(\mathrm{prompt}_t\big),\quad
+a^\star = a_{\hat\imath}\quad\text{if }0\leq\hat\imath<|\mathcal{A}_{\mathrm{legal}}|.
 \end{equation*}
-Illegal actions are unrepresentable by construction. We use Gemma~4-edge (\texttt{gemma4:e2b}) at temperature $0.2$ via Ollama for a $\sim$1--4\,s budget per decision. On any HTTP or parse failure the agent falls back to $\pi^{\mathrm{rand}}$ and records the event in a per-game stats dictionary.
+Only an in-range index reaches the engine; invalid replies are not clipped
+to a legal index. Native chat selection uses temperature $0.2$, disables
+thinking and caps output at 16 tokens, with a 30-second request timeout.
+Single-action choices bypass inference. HTTP/connection failures, invalid
+replies and substituted concessions are explicitly recorded as fallback
+events in decision traces. A completed game therefore need not consist
+solely of language-model decisions.
 
 \paragraph{Decision-model deployment ($\pi^{\mathrm{dec}}$).}
 \label{sec:decision-models}
@@ -634,16 +641,23 @@ Inference failures are explicit incomplete runs; no random-policy fallback
 is credited to the decision model.
 
 Input budgeting is also an interface constraint. Local Ollama 0.35.1
-rejects request bodies above 64\,KiB and decision prompts above 2050
-tokens. Raw engine snapshots exceed the body limit. Our versioned
+rejects request bodies above 64\,KiB. The installed Tev1 tag initially
+sets its context parameter to 2,050 tokens; request-level overrides do
+not change that setting in the structured endpoint. An isolated derived
+tag retains the same model weights and sets the context to 8,192 tokens.
+A 2,906-token structured request succeeds with this tag without truncation.
+This is a deployment-configuration change, not additional model training;
+extended-context decision quality must be evaluated.
+Raw engine snapshots exceed the body limit. Our versioned
 card-aware projection retains visible identities and instance IDs,
 public characteristics, life/mana and decision state, grouping equivalent
 card rows without merging instance identities. It omits hidden placeholders,
 library order, internal journals and compiled rule syntax trees; it is
 not a lossless rules-state encoding. Projection version and request bytes
 are recorded, and oversize inputs fail explicitly rather than being
-silently cropped. Compact full-game pilots still hit the token ceiling;
-a budgeted context policy must be evaluated before strength measurements.
+silently cropped. The configured context remains finite; larger positions
+can still fail explicitly. Context configurations and failure accounting
+must be held fixed within a comparison.
 
 This component can replace a chat selector at the action boundary without
 replacing the rules engine, the world model or KL planning. Using it as a
@@ -651,6 +665,46 @@ critic over world-model candidates, or as a learned passive prior, is a
 separate proposed integration. Our hypothesis is improved selection
 reliability and a favourable strength--latency trade-off, not that
 decision tuning already makes Tev1 a stronger MTG player.
+
+\paragraph{Decision 2.0: a wider categorical action domain.}
+The Decision 2.0 family \citep{vllmsr2026decision2} provides a distinct
+structured classifier interface, not a chat completion model. Its released
+choice contract accepts 2--255 options; Eos 0.8B specifies a 16,384-token
+input budget, while Kai 0.6B specifies 8,192 tokens. These limits widen the
+offered decision domain but do not remove MTG's combinatorial action space:
+larger legal sets still require a declared candidate-selection rule.
+The adapter reuses perspective filtering, card-aware projection, original
+action identities and probability validation, while allowing the wider
+option cap. Over-budget inputs and model errors remain explicit failures.
+
+The reference interface is local Transformers \texttt{system\_one}, with a
+pinned weight and custom-code revision; a vLLM inference server is not
+required merely because the publishing organisation is named vLLM Semantic
+Router. The classifier head must be retained: converting the backbone alone
+to a chat model does not reproduce this decision interface. Choice-set
+ablations at 24, 64, 128 and 255 options should report coverage, context
+budget, latency and order sensitivity separately. Generation-to-generation
+comparisons must also account for precision and hardware: the existing
+Tev1 deployment uses Q8 weights, whereas this reference CPU runtime uses
+FP32. Publisher GPU latencies are not measurements of our CPU deployment,
+and released classification scores are not MTG playing-strength results.
+
+Real Eos loading currently fails on the Windows evaluation host before any
+choice is made: the upstream checkpoint fingerprint serializes relative
+paths with platform-specific separators, whereas the published identity
+uses slash-separated keys. Every actual model/tokenizer file hash matches
+the manifest, and canonical slash-key serialization reproduces its identity.
+The integrity check is not disabled. A separate local Linux CPU check loads
+the unchanged package with Torch 2.11.0 and Transformers 5.17.0, four threads
+and a 6\,GiB memory limit. Cold preparation takes 53.7\,s; 30- and 255-option
+requests return original option keys and complete finite normalized
+probability maps, using 1,136 and 9,771 input tokens respectively, without
+generated text or truncation. Single-request forward times are 12.2 and
+136.1\,s, not a latency benchmark or publisher GPU timing.
+The synthetic fixture asks for the largest JSON-encoded amount, but neither
+output selects that maximum. Interface validity is therefore not decision
+quality. No Decision 2.0 MTG episode, larger variant or GPU result is claimed;
+direct Windows deployment still needs a portable runtime revision.
 
 \paragraph{Active Inference / KL control ($\pi^{\mathrm{KL}}$).} Maintains a categorical belief $b_t$ over hidden-information hypotheses about the opponent's hand (\texttt{holds\_removal}, \texttt{holds\_counterspell}, \texttt{holds\_threat}, \texttt{holds\_nothing}). Control costs are charged against a passive prior, while analytic forecasts supply outcome costs. Two planners are available: a belief-tree reference planner and a sampled MPPI-style approximation. Current sampled continuations use averaged stage potentials and soft aggregation, not an exact calculation of the full trajectory objective. Defaults are $H=3$, $K=48$ and selection precision $\alpha=4$ (called \texttt{beta} in configuration). Belief entropy is reported for diagnostics and is not an additive reward; this excludes that particular bonus mechanism, not every possible model-induced failure.
 
@@ -943,8 +997,9 @@ The pilot uses a fixed explicit deck and interleaves objective arms over
 the same picker-seed schedule. Replication across held-out deck archetypes,
 engine/AI seeds and seat assignments is planned after interface validation;
 we do not tune and report on the same holdout. The present chat bridge
-uses a compact context and permits random fallback, whereas Tev1 receives
-a card-aware filtered projection and surfaces inference errors. This is a
+shares Tev1's card-aware filtered projection, but offers all actions and
+permits explicitly traced random fallback; Tev1 uses a shortlist and surfaces
+inference errors. This is a
 \emph{deployment-stack} comparison until context, shortlist and fallback
 accounting are matched. Shortlists of 8, 16 and 24 options, controlled
 option permutations and a size-matched general-model comparator are
@@ -988,13 +1043,17 @@ source-attributed historical deck mirrors also completed. These checks
 establish bounded execution across the selected fixtures, not comprehensive
 mechanics qualification or a reliable playing-strength difference.
 
-\paragraph{Current policy-stack execution.}
+\paragraph{Replicated policy-stack execution.}
 A separate bounded campaign attempts twelve implemented conditions on a
 Modern mono-red burn mirror against \texttt{phase-ai} at \texttt{VeryEasy},
-with one scheduled game per condition, picker seed 7, a 1,500-action cap,
-a 135-second cooperative game deadline and a 150-second process deadline.
+with three scheduled games per condition, picker seeds 7--9, a 1,500-action cap,
+a 115-second cooperative game deadline and a shared 360-second process
+deadline per condition.
 The campaign uses the pinned protocol-106 runtime and an owned private
-server; source, checkpoint and deck hashes remain unchanged.
+server; source, checkpoint and deck hashes and local model snapshots remain
+unchanged. Tev1 uses the isolated same-weight 8,192-context alias. Chat output
+is bounded at 16 tokens with thinking disabled; this campaign precedes the
+full-action/card-aware chat prompt repair described below.
 \Cref{tab:native-policy-execution} reports all attempts, including failures.
 
 \begin{table}[ht]
@@ -1002,33 +1061,56 @@ server; source, checkpoint and deck hashes remain unchanged.
 \small
 \begin{tabularx}{\linewidth}{lclX}
 \toprule
-Condition & Completed / scheduled & Outcome & Qualification boundary \\
+Condition & Completed / scheduled & Wins & Qualification boundary \\
 \midrule
-Wire random & 1/1 & Loss & Uniform offered-action baseline \\
-Wire heuristic & 1/1 & Loss & Action-type tiers only \\
-Chat: Llama 3.2 1B & 1/1 & Loss & Fallback contribution unaudited \\
-Chat: Qwen2.5-Coder 1.5B & 1/1 & Loss & Fallback contribution unaudited \\
-Chat: Gemma4 E2B & 0/1 & Timeout & Game deadline; not a strength result \\
-Tev1 0.8B & 0/1 & HTTP error & 2,697-token prompt exceeds 2,050-token ceiling \\
-World model: direct & 1/1 & Loss & Checkpoint loading is not native learning \\
-World model: recurrent dream & 1/1 & Loss & Two rollouts, depth three; not JEPA-head planning \\
-LLM--model fusion & 1/1 & Loss & No graph supplied; activation unaudited \\
-KL control & 1/1 & Loss & Analytic forecasts and horizon planning \\
-EFE information proxy & 1/1 & Loss & One-step proxy; budget differs from KL \\
-EFE ambiguity proxy & 1/1 & Loss & One-step proxy; budget differs from KL \\
+Wire random & 3/3 & 0 & Uniform offered-action baseline \\
+Wire heuristic & 3/3 & 0 & Action-type tiers only \\
+Chat: Llama 3.2 1B & 3/3 & 1 & 57 model choices; one invalid-response fallback \\
+Chat: Qwen2.5-Coder 1.5B & 3/3 & 0 & 53 model choices; no fallback \\
+Chat: Gemma4 E2B & 2/3 & 0 & One timeout; 604 model choices across attempts \\
+Tev1 0.8B, 8K context & 3/3 & 0 & 39 model choices; no input cropping \\
+World model: direct & 3/3 & 0 & Checkpoint loading is not native learning \\
+World model: recurrent dream & 3/3 & 0 & Two rollouts, depth three; not JEPA-head planning \\
+LLM--model fusion & 3/3 & 1 & No graph supplied; activation unaudited \\
+KL control & 3/3 & 1 & Analytic forecasts and horizon planning \\
+EFE information proxy & 3/3 & 0 & One-step proxy; budget differs from KL \\
+EFE ambiguity proxy & 3/3 & 1 & One-step proxy; budget differs from KL \\
 \bottomrule
 \end{tabularx}
-\caption{Current native feasibility: ten of twelve scheduled games reach
-rules-terminal outcomes, all losses. Neither incomplete game is a draw.
-These single-game cells do not satisfy the calibration gate or establish
+\caption{Replicated native feasibility: 35 of 36 scheduled games reach
+rules-terminal outcomes, with four wins and 31 losses. The remaining timeout
+is not a draw. These three-game cells do not satisfy the calibration gate or establish
 a policy ranking, a language-model contribution, or learning improvement.}
 \label{tab:native-policy-execution}
 \end{table}
 
+Gemma's repeated subdecisions motivate a semantic prompt repair: listing only
+action types made distinct \texttt{ChooseOption} alternatives, including
+Cancel and Cast, indistinguishable. The revised prompt includes complete
+original action JSON and the shared perspective-safe card-aware projection.
+A separately frozen three-game repair check completes all three Gemma
+games, with 168 total decisions, zero wins and a 116.4-second total duration,
+under the same per-game and process limits. The activation audit identifies
+30 successful model choices, 137 forced choices, and
+one request timeout invokes the explicitly traced fallback. We do not treat
+the completed games as proof of error-free inference. The repair is reported
+separately rather than replacing the earlier timeout or mixing prompt
+versions. Native randomness remains uncontrolled, so this is evidence of
+execution, not a causal estimate of prompt quality.
+
+The other full-context chat selectors time out in a separate 165-second
+cooperative-budget check while turns continue to advance. With a declared
+585-second cooperative and 600-second process limit, Llama and Qwen each
+complete one terminal loss in 194.6 and 48.1 seconds respectively. Their
+activation audits record 18 and six successful model choices, 140 and 133
+forced choices, and six and one invalid-response fallbacks. These checks
+are not pooled with the shorter-budget campaign, and do not establish
+unaided LLM performance or reliable reply formatting.
+
 The explicit model checkpoint was not trained on the native evaluation
 distribution, and permissive parameter loading requires a loaded-key audit
 before trained-model claims. No graph-memory intervention is active in this
-campaign. The two failed conditions remain visible rather than being removed
+campaign. The incomplete attempt remains visible rather than being removed
 from the denominator or replaced by easier fallback episodes. Thus these
 measurements demonstrate which stacks execute within the declared limits,
 not the effects specified by RQ2--RQ5.

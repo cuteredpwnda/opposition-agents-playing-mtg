@@ -39,6 +39,11 @@ from src.integrations.phase_rs import (
     run_game_sync,
 )
 from src.integrations.phase_rs.client import PROTOCOL_VERSION
+from src.integrations.phase_rs.decision2_picker import (
+    Decision2ActionPicker,
+    add_decision2_arguments,
+    make_decision2_picker,
+)
 from src.integrations.phase_rs.kl_control_picker import OBJECTIVES
 from src.integrations.phase_rs.runner import GameRunResult
 from src.integrations.phase_rs.server_process import DEFAULT_SUBMODULE, REPO_ROOT
@@ -138,6 +143,8 @@ def _make_picker(args: argparse.Namespace, seed: int):
         return HeuristicActionPicker(seed=seed)
     if args.picker == "tev1":
         return make_tev1_picker(args, seed)
+    if args.picker == "decision2":
+        return make_decision2_picker(args, seed)
     if args.picker == "kl_control":
         return KLControlActionPicker(
             seed=seed,
@@ -262,6 +269,8 @@ def run(args: argparse.Namespace) -> int:
         started = time.perf_counter()
         for attempt in range(1, args.max_retries + 1):
             picker = _make_picker(picker_args, seed=game_seed)
+            if isinstance(picker, Decision2ActionPicker):
+                picker.prepare()
             cfg = PhaseServerConfig(
                 uri=args.uri, stream_timeout_s=args.stream_timeout,
                 max_message_bytes=args.max_message_mib * 1024 * 1024,
@@ -367,7 +376,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--picker",
         help=(
             "Policy for our seat: random | prefer-nonpass | heuristic | "
-            "kl_control | tev1 | ollama | agent:<name> (e.g. agent:heuristic, "
+            "kl_control | tev1 | decision2 | ollama | agent:<name> (e.g. agent:heuristic, "
             "agent:world_model, agent:fusion)"
         ),
         default="random",
@@ -398,6 +407,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--dream-rollouts", type=int, default=8)
     parser.add_argument("--dream-depth", type=int, default=10)
     add_tev1_arguments(parser)
+    add_decision2_arguments(parser)
     parser.add_argument(
         "--ai-difficulty",
         choices=["VeryEasy", "Easy", "Medium", "Hard", "VeryHard"],

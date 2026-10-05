@@ -1,4 +1,4 @@
-\begin{thebibliography}{47}
+\begin{thebibliography}{48}
 \providecommand{\natexlab}[1]{#1}
 \providecommand{\url}[1]{\texttt{#1}}
 \expandafter\ifx\csname urlstyle\endcsname\relax
@@ -366,6 +366,14 @@ Oriol Vinyals et~al.
   learning.
 \newblock \emph{Nature}, 575\penalty0 (7782):\penalty0 350--354, 2019.
 \newblock \doi{10.1038/s41586-019-1724-z}.
+
+\bibitem[{vLLM Semantic Router Team}(2026)]{vllmsr2026decision2}
+{vLLM Semantic Router Team}.
+\newblock {Decision-2.0-Eos-0.8B}: A decision 2.0 model for structured
+  decisions.
+\newblock Model weights, configuration and local inference runtime, 2026.
+\newblock URL \url{https://huggingface.co/vllm-sr/Decision-2.0-Eos-0.8B}.
+\newblock Revision 3594047d69f476f1d01cf84c593e213fc3a4dfe0; Apache-2.0.
 
 \bibitem[Williams et~al.(2017)Williams, Wagener, Goldfain, Drews, Rehg, Boots,
   and Theodorou]{williams2017mppi}

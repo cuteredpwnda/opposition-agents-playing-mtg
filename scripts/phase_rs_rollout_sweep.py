@@ -38,6 +38,11 @@ from src.integrations.phase_rs import (
     load_deck_data,
     run_game_sync,
 )
+from src.integrations.phase_rs.decision2_picker import (
+    Decision2ActionPicker,
+    add_decision2_arguments,
+    make_decision2_picker,
+)
 from src.integrations.phase_rs.tev1_picker import add_tev1_arguments, make_tev1_picker
 
 
@@ -65,6 +70,8 @@ def _build_picker(name: str, seed: int, args: argparse.Namespace):
         return HeuristicActionPicker(seed=seed)
     if name == "tev1":
         return make_tev1_picker(args, seed)
+    if name == "decision2":
+        return make_decision2_picker(args, seed)
     if name == "ollama":
         return OllamaActionPicker(
             seed=seed,
@@ -130,6 +137,8 @@ def run(args: argparse.Namespace) -> int:
                     result = None
                     for attempt in range(1, max_retries + 1):
                         picker = _build_picker(picker_name, seed, args)
+                        if isinstance(picker, Decision2ActionPicker):
+                            picker.prepare()
                         cfg = PhaseServerConfig(uri=args.uri, stream_timeout_s=args.stream_timeout)
 
                         started = time.perf_counter()
@@ -330,7 +339,7 @@ def parse_args() -> argparse.Namespace:
         nargs="+",
         default=["random", "prefer-nonpass", "heuristic"],
         help=(
-            "One or more: random, prefer-nonpass, heuristic, tev1, ollama, "
+            "One or more: random, prefer-nonpass, heuristic, tev1, decision2, ollama, "
             "agent:<name> (e.g. agent:heuristic, agent:active_inference)"
         ),
     )
@@ -360,6 +369,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--ollama-model", default="gemma4:e2b")
     p.add_argument("--ollama-url", default="http://localhost:11434")
     add_tev1_arguments(p)
+    add_decision2_arguments(p)
     # KG enrichment options (opt-in; no Neo4j required for --kg-dry-run).
     p.add_argument(
         "--kg-enrich",

@@ -26,6 +26,9 @@ class Tev1ActionPicker:
     playing strength. Coverage measures offered actions, not optimal-move recall.
     """
 
+    MAX_CANDIDATES = 24
+    REQUEST_BYTE_LIMIT: int | None = MAX_REQUEST_BYTES
+
     def __init__(
         self,
         seed: int | None = None,
@@ -35,8 +38,8 @@ class Tev1ActionPicker:
         max_candidates: int = 24,
         timeout_s: float = 120.0,
     ) -> None:
-        if not 2 <= max_candidates <= 24:
-            raise ValueError("Tev1 max_candidates must be between 2 and 24")
+        if not 2 <= max_candidates <= self.MAX_CANDIDATES:
+            raise ValueError(f"max_candidates must be between 2 and {self.MAX_CANDIDATES}")
         if not math.isfinite(timeout_s) or timeout_s <= 0:
             raise ValueError("Tev1 timeout_s must be finite and positive")
         url = urlsplit(base_url)
@@ -133,44 +136,49 @@ class Tev1ActionPicker:
         }
         data = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
         self.last_reasoning["request_bytes"] = len(data)
-        if len(data) > MAX_REQUEST_BYTES:
+        if self.REQUEST_BYTE_LIMIT is not None and len(data) > self.REQUEST_BYTE_LIMIT:
             self._fail(
                 f"Tev1 request is {len(data)} bytes, exceeding Ollama's "
                 f"{MAX_REQUEST_BYTES}-byte limit; no state or actions were truncated",
                 "picker_input_too_large",
             )
+        result = self._infer(payload, data)
+
+        try:
+            choice, probabilities, confidence = self._parse_answer(result, criteria)
+        except ValueError as exc:
+            self._fail(f"{self.name} invalid decision: {exc}", "picker_invalid_response")
+        chosen = int(choice.removeprefix("action_"))
+        self.last_reasoning.update({
+            "model_invoked": True,
+            "chosen_index": chosen,
+            "probabilities": probabilities,
+            "confidence": confidence,
+        })
+        if isinstance(result.get("usage"), dict):
+            self.last_reasoning["usage"] = result["usage"]
+        return chosen
+
+    def _infer(self, payload: dict[str, Any], data: bytes) -> Any:
         request = urllib.request.Request(
             f"{self.base_url}/v1/systemone", data=data,
             headers={"Content-Type": "application/json"}, method="POST",
         )
         try:
             with urllib.request.urlopen(request, timeout=self.timeout_s) as response:
-                result = json.loads(response.read().decode("utf-8"))
+                return json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
             detail = str(exc.reason)
             if exc.fp is not None:
                 with exc:
                     detail = exc.read(4096).decode("utf-8", errors="replace").strip()
             self._fail(
-                f"Ollama Tev1 HTTP {exc.code}: {detail or exc.reason}",
-                "picker_http_error",
+                f"Ollama Tev1 HTTP {exc.code}: {detail or exc.reason}", "picker_http_error",
             )
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
             self._fail(f"Ollama Tev1 connection failed: {exc}", "picker_connection_error")
         except (json.JSONDecodeError, UnicodeDecodeError) as exc:
             self._fail(f"Ollama Tev1 returned invalid JSON: {exc}", "picker_invalid_response")
-
-        try:
-            choice, probabilities, confidence = self._parse_answer(result, criteria)
-        except ValueError as exc:
-            self._fail(f"Ollama Tev1 invalid decision: {exc}", "picker_invalid_response")
-        chosen = int(choice.removeprefix("action_"))
-        self.last_reasoning.update({
-            "chosen_index": chosen,
-            "probabilities": probabilities,
-            "confidence": confidence,
-        })
-        return chosen
 
     @staticmethod
     def _fail(message: str, reason: str) -> NoReturn:

@@ -191,7 +191,7 @@ receive perspective-filtered observations. Treat native-AI games as
 anchor-opponent deployment comparisons, not matched-information rankings.
 The paper's baseline and ablation tables state this distinction explicitly.
 
-### Recorded current local execution
+### Recorded initial local execution
 
 `runs/model_qualification/20261005_172945_548058` attempts all twelve
 conditions after the structured-stack repair. **10/12 rules-terminal games,
@@ -201,6 +201,8 @@ explicit-model fusion and all three analytic objective stacks finish.
 Gemma4 E2B reaches the cooperative game timeout; Tev1 receives an explicit
 HTTP 400 for a 2,697-token prompt above its 2,050-token ceiling.
 
+This initial configuration is superseded by the replicated campaign below,
+but its failures are retained rather than relabelled as repaired results.
 One game per condition is feasibility evidence only. These cells do not
 satisfy the 20-game/95%-completion calibration gate. The ten losses are
 not a policy ranking. Native-trained components, graph interventions,
@@ -214,19 +216,212 @@ The dedicated `--picker tev1` uses `/v1/systemone`, not the chat picker.
 Ollama 0.35+ is required. The 0.8B model was installed and its real local
 API contract validated on Oct 5; this is not an MTG-strength result.
 Pull `tev1:4b` separately before a 4B run.
-**Full-game evaluation is not yet validated:** local Ollama 0.35.1 enforces
-64 KiB requests and a 2050-token prompt ceiling. Raw engine snapshots exceeded
-the byte limit; compact pilots reached turns 18/22 but still failed at the
-token ceiling. Do not launch a strength campaign until K6's budgeted-context
-policy is implemented. The command below is for functional investigation.
+The original `tev1:0.8b` tag specifies `num_ctx=2050`; this is not a hard
+decision-API token ceiling. Request-level `options.num_ctx` is ignored by
+the structured endpoint. Create an isolated context alias instead, without
+overwriting the original model or truncating observations:
+
+```powershell
+.\.venv\Scripts\python.exe -m scripts.configure_tev1_context
+```
+
+This derives `tev1-mtg-8k:0.8b` from the same installed weights with
+`num_ctx=8192`, verifies the parameter via `/api/show`, and leaves the
+original tag unchanged. A real 2,906-token structured-choice request
+completes, whereas the original tag rejects it. The 64 KiB request-body
+guard remains. Extended-context performance and model activation still
+need qualification; this changes deployment configuration, not learned weights.
 
 ```powershell
 .\.venv\Scripts\python.exe -m scripts.run_phase_rs_ablation `
-    --picker tev1 --tev1-model tev1:0.8b --tev1-candidates 24 `
+    --picker tev1 --tev1-model tev1-mtg-8k:0.8b --tev1-candidates 24 `
     --our-deck-file data\decks\modern\modern_mono_red_burn.txt `
     --format Modern --ai-deck "Blue Control" --ai-difficulty VeryEasy `
     --games 3 --seed 7 --autostart
 ```
+
+To rerun all twelve implemented conditions under the repaired configuration:
+
+```powershell
+.\.venv\Scripts\python.exe -m scripts.run_model_qualification `
+    --checkpoint checkpoints\jepa\jepa_final.pt `
+    --models llama3.2:1b qwen2.5-coder:1.5b gemma4:e2b `
+    --tev1-model tev1-mtg-8k:0.8b `
+    --games 3 --condition-seconds 360 --budget-seconds 1800
+```
+
+Native chat generation now disables thinking and caps generated output at
+16 tokens (the answer is an index). It skips single-action inference, places
+temperature in Ollama's `options`, and records model invocation or a specific
+random-fallback reason in the decision trace. The later semantic repair also
+uses the shared card-aware perspective projection and includes complete
+legal-action JSON: previously `ChooseOption` alternatives such as Cancel and
+Cast were represented by identical action types. Report fallback counts rather than calling
+every completed game a language-model success.
+
+Generated `runs/` outputs are ignored by Git and retained locally. Previously
+tracked research artifacts are not automatically removed by ignore rules;
+publish deliberately reviewed aggregate evidence rather than raw traces.
+
+The isolated full-game repair check in
+`runs/model_qualification/20261005_174657_499980` completes both Gemma and
+8K-context Tev1 games with rules-terminal losses, unchanged source hashes,
+and elapsed times of 20.5 and 65.3 seconds. Gemma's trace has 18 successful
+model decisions, 71 forced decisions, and zero random fallback events.
+This confirms the repaired execution path, not a policy-strength advantage.
+The replicated campaign additionally freezes model digests, parameters and
+quantization before/after execution; Tev1 traces retain actual token usage.
+
+The three-replicate twelve-condition campaign in
+`runs/model_qualification/20261005_174927_211167` completes **35/36 games**,
+with four wins and one Gemma timeout. Every condition is attempted; source
+hashes and model snapshots are unchanged. Llama, fusion, KL and the ambiguity
+proxy each win once; the other terminal outcomes are losses. Tev1 completes
+3/3 games. These are still small feasibility cells, not policy rankings or
+qualified learning ablations.
+
+Gemma's timeout accompanies repeated subdecisions (604 successful model
+choices across its three attempts), motivating the complete-action prompt
+repair rather than merely increasing the deadline. The separately frozen
+repair campaign `runs/model_qualification/20261005_182558_589785` completes
+**3/3 Gemma games**, all losses, with 168 total decisions in 116.4 seconds.
+Its activation audit records 30 successful model choices, 137 forced choices
+and one explicitly traced 30-second request-timeout fallback.
+This uses the same 115-second cooperative per-game and 360-second process
+budgets as the replicated campaign. Native RNG is not controlled, so it is
+execution evidence, not a causal estimate of the prompt change.
+
+The full-context Llama/Qwen check in
+`runs/model_qualification/20261005_183103_493572` records two game timeouts
+under a 165-second cooperative/180-second process budget, while turns
+continue advancing. Larger observations increase inference cost; these are
+not the earlier indistinguishable-choice loops. A separately frozen,
+declared-budget check `20261005_183955_919512` uses a 585-second cooperative/
+600-second process budget and completes 2/2 terminal losses:
+Llama 194.6 seconds (18 model choices, 140 forced, six invalid-response
+fallbacks), Qwen 48.1 seconds (six model choices, 133 forced, one invalid-response
+fallback). Do not pool these runs with the earlier shorter-budget results.
+Completion does not establish an unaided LLM contribution or robust reply
+formatting. Subsequent parser regressions reject negative/fractional indices
+rather than silently extracting their positive/integer parts; strict structured
+chat replies and per-model calibration remain follow-up work.
+
+### Decision 2.0: native local classifier, not a vLLM requirement
+
+The [Decision 2.0 collection](https://huggingface.co/collections/vllm-sr/decision-20)
+releases 0.6B, 0.8B, 2B, 4B, 9B and 27B variants. The published choice contract
+allows **2–255 options**. Eos 0.8B declares **16,384 input tokens**; Kai 0.6B
+declares **8,192**. This is a model/runtime change, not a drop-in weight swap
+inside Ollama's original Tev1 adapter.
+
+No migration of the engine or existing agents to vLLM is required.
+The official local Transformers `system_one` runtime scores a classifier head
+without generating chat text. Our `--picker decision2` calls that interface,
+reuses the Tev1 candidate/context/answer-validation helpers, and preserves
+original legal-action indices. It is wired into ablation, trace collection
+and rollout sweep commands. GPU inference remains optional; this machine's
+Python Torch build is CPU-only. Do not equate upstream GPU timing with local
+CPU timing.
+
+Install the optional declared dependency group:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -e ".[decision2]"
+```
+
+The default model is Eos 0.8B pinned to
+`3594047d69f476f1d01cf84c593e213fc3a4dfe0`, including the custom inference code.
+It uses the upstream manifest-verified package and retains the decision head.
+Other releases require both their model identifier and a full commit revision;
+never leave custom-code or weight revisions floating during evaluation.
+
+**Current Windows qualification blocker:** the real pinned Eos load fails with
+`Model identity differs from the scored checkpoint`. All six actual
+model/tokenizer file hashes match the published manifest. The upstream
+fingerprint serializes `str(file.relative_to(path))`, producing backslash keys
+on Windows instead of the manifest's slash keys. Hashing the same verified
+file hashes with slash keys reproduces published identity
+`d97127991870ae202017a99eb496bdc56a62afd038594a67febfab0aea9d76fe`;
+backslash keys produce
+`7aa5272a9814966a893e6ed0944c7a60ecc210510d33989d839af81387968023`.
+We do not disable the identity check, edit the Hub cache or silently substitute
+a chat model. The adapter's 255-option mapping and error paths pass unit tests.
+The bounded qualification harness records this as a pre-game model-load failure,
+not a completed episode. Direct Windows deployment needs a portable upstream
+fingerprint release; the command below does not currently pass that Windows gate.
+
+**Local Linux reference qualification passes:** an owned, isolated Linux
+container loads the unchanged, manifest-verified Eos package from the pinned
+snapshot using Torch 2.11.0+cpu and Transformers 5.17.0, four CPU threads and a
+6 GiB container limit. No vLLM, GPU or inference service is used. Cold model
+preparation takes 53.7 seconds, excluding environment installation.
+
+| Synthetic choice set | Input tokens | Returned original key | Probabilities | Forward time |
+|---|---:|---|---:|---:|
+| 30 options | 1,136 | `action_25` | 30 finite, normalized values | 12.2 s |
+| 255 options | 9,771 | `action_222` | 255 finite, normalized values | 136.1 s |
+
+Both requests complete without truncation or generated output tokens. These
+are single-request interface checks, not MTG games or a latency benchmark.
+The fixture asks for the largest JSON-encoded amount; neither output selects
+the intended maximum (`action_29` / `action_254`). Valid shapes therefore do
+not certify decision quality. Native MTG episodes, larger family variants,
+GPU deployment and candidate-order/coverage ablations remain unmeasured.
+The temporary container and model-only hard-link view are removed afterwards.
+
+The equivalent reference check on a Linux Python environment is:
+
+```python
+import json
+from transformers import AutoModel
+
+revision = "3594047d69f476f1d01cf84c593e213fc3a4dfe0"
+model = AutoModel.from_pretrained(
+    "vllm-sr/Decision-2.0-Eos-0.8B", revision=revision,
+    code_revision=revision, trust_remote_code=True, device="cpu", threads=4,
+)
+for count in (30, 255):
+    criteria = {
+        f"action_{i}": json.dumps({"type": "ChooseOption", "data": {"amount": i}})
+        for i in range(count)
+    }
+    result = model.system_one(
+        state={"goal": "Choose the largest offered amount."},
+        questions={"move": {
+            "type": "choice", "instructions": "Choose the largest amount.",
+            "criteria": criteria,
+        }},
+    )
+    answer = result["answers"]["move"]
+    assert not answer.get("error")
+    assert answer["choice"] in criteria
+    assert set(answer["probabilities"]) == set(criteria)
+    print(result["usage"], answer["choice"])
+```
+
+
+```powershell
+.\.venv\Scripts\python.exe -m scripts.run_phase_rs_ablation `
+    --picker decision2 --decision2-candidates 255 --decision2-device cpu `
+    --decision2-threads 4 `
+    --our-deck-file data\decks\modern\modern_mono_red_burn.txt `
+    --ai-deck-file data\decks\modern\modern_mono_red_burn.txt `
+    --format Modern --ai-difficulty VeryEasy --games 1 --seed 7 `
+    --max-retries 1 --max-game-seconds 600 --max-actions 1500 --autostart
+```
+
+The CLI prepares the model before creating a live game and reuses its loaded
+runtime across replicate picker seeds; preparation time is retained separately
+in model decision telemetry. The qualification harness supports
+`--include-decision2 --only decision2`, the same pinned model arguments, and a
+process deadline that also bounds preparation. Candidate
+caps 24/64/128/255 are proposed matched-input ablations, not established
+MTG improvements. Sets above the cap still use seeded heuristic tiers and
+retain pass; token-budget overflow fails rather than cropping card state.
+Choice confidence is normalized entropy in Decision 2.0's runtime and is
+not calibrated winning probability. Precision differs from the Q8 Ollama
+baseline; report this confound rather than attributing all differences to
+new training.
 
 The same picker/flags are available in `examples/play_phase_rs.py`,
 `scripts/collect_phase_rs_traces.py` and `scripts/phase_rs_rollout_sweep.py`.
@@ -254,9 +449,10 @@ fallback occurs. Latency aggregates include attempted decisions in the retained
 game trace (including forced decisions and explicit inference errors).
 Separate forced decisions and cold starts when interpreting performance.
 
-This initial deployment comparison is not a clean decision-tuning ablation:
-the existing chat picker receives a compact context and silently permits
-fallback, whereas Tev1 uses a card-aware filtered projection and explicit failures.
+This deployment comparison is not a clean decision-tuning ablation:
+chat and Tev1 now share the card-aware projection, but chat sees all offered
+actions and permits explicitly traced fallback, while Tev1 applies a shortlist
+and surfaces inference errors.
 Match context/candidates, account for chat fallback, add a size-matched
 general Qwen3.5 comparator and control engine RNG/seat assignment before
 making causal claims. The paper's decision-model benchmark subsection

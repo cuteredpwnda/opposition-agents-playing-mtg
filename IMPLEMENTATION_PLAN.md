@@ -19,8 +19,18 @@ Signed native data refresh, complete format defaults and v106 mulligan-phase
 handling are verified by a live Modern game (14 turns, 150 controlled actions).
 K2 now has an interleaved objective benchmark harness, but no new gameplay
 strength results are claimed. The Tev1 shortlist adapter and local 0.8B API
-smoke are implemented, but full-game Tev1 evaluation remains blocked by the
-local API's 2050-token prompt ceiling, even after card-aware compaction.
+smoke are implemented. The original tag's 2050-token context configuration
+is now isolated to that tag: a same-weight 8192-context alias passes both
+a 2906-token request and a terminal full-game repair check without truncation.
+Replicated execution and matched-comparison qualification remain distinct gates.
+The twelve-condition replicated campaign completes 35/36 games (four wins,
+one Gemma timeout). A separate full-action/card-aware prompt repair completes
+3/3 Gemma games, with 30 model choices, 137 forced choices and one explicitly
+recorded request-timeout fallback. Decision 2.0's pinned local Transformers
+adapter supports the published 255-option contract without vLLM. Unchanged Eos
+weights pass real 30/255-option checks on an owned local Linux CPU container,
+but direct Windows loading is blocked by upstream path-fingerprint portability.
+No integrity check is bypassed and no Decision 2.0 MTG result is claimed.
 The paper now explains decision models and separates
 deployment comparisons from controlled ablations. See section 6.
 
@@ -186,10 +196,11 @@ qualification remain pending.
   pending. The v106 release build and runtime gate are complete; see K1 for
   the version-independent build command. Keyed reconnect is now verified;
   long-pod qualification is still pending.
-- Ollama 0.35.1's decision API rejects prompts above 2050 tokens and bodies
-  above 64 KiB. The Tev1 adapter now uses a versioned card-aware projection;
-  full-game pilots still hit the token ceiling. Budgeted state/action context
-  needs a documented selection policy before strength evaluation.
+- Ollama 0.35.1 rejects request bodies above 64 KiB; the original Tev1 tag
+  sets `num_ctx=2050`, but this is not a hard endpoint ceiling. A separate
+  8192-context alias passes a terminal game without truncation. Positions
+  above the configured context/body budget still fail explicitly; extended
+  context and matched selector quality remain evaluation prerequisites.
 - The role/situation pattern has no population path: roles are produced by
   gameplay, and the trace-to-graph writer for combat situations is not built.
 - The `tree` planner's continuation set is degenerate, so deep belief branching
@@ -218,6 +229,57 @@ Iterative bug-hunt + mechanic coverage session driven by inspection of
 items stay for traceability.
 
 ### Done
+
+- [x] **Replicated inference campaign and semantic chat repair** —
+      `runs/model_qualification/20261005_174927_211167` completes 35/36 games
+      across twelve conditions, with unchanged source hashes/model snapshots;
+      Llama, fusion, KL and the ambiguity proxy each win once. The Gemma
+      timeout is retained as incomplete, not a draw. `agent_bridge.py` now
+      includes complete action JSON and the shared card-aware projection,
+      avoiding indistinguishable Cancel/Cast `ChooseOption` descriptions.
+      The separate `20261005_182558_589785` repair check completes 3/3 losses,
+      168 decisions, including one traced 30-second inference fallback.
+      Updated aggregate results and configuration boundaries in the agents
+      manuscript, README and experiment runbook; learning/graph claims remain
+      blocked on K12.
+      Full-context Llama/Qwen follow-ups retain their two 165-second-budget
+      timeouts. A separately declared 585/600-second game/process check
+      (`20261005_183955_919512`) completes 2/2 losses, with six/one explicitly
+      traced invalid-response fallbacks. Parser regressions reject negative,
+      fractional and scientific-notation indices instead of stripping signs
+      or accepting numeric prefixes.
+
+- [x] **Decision 2.0 local adapter and wider option-space wiring** —
+      `decision2_picker.py`, all three native experiment CLI factories and
+      the qualification harness support pinned local Transformers
+      `system_one`, 2–255 candidates, explicit token/load errors and original
+      action identity. CLI preparation occurs before live-game creation;
+      runtime reuse retains independent per-picker seeded RNG. Optional
+      dependencies, shared citation and tests are included. Real Eos loading
+      exposes an upstream Windows fingerprint portability defect: verified
+      model bytes match the manifest, but relative path keys use backslashes.
+      Cache/source bytes and integrity checks are not modified. K6 remains
+      Partial. An owned local Linux CPU container subsequently passes real
+      30/255-option shape checks: 1,136/9,771 input tokens, complete probability
+      maps, 12.2/136.1-second forwards and 53.7-second cold preparation.
+      Neither synthetic choice solves the instructed maximum-amount task.
+      This is reference interface qualification, not decision quality or an
+      MTG episode. Owned temporary resources are cleaned; original weights
+      remain cached.
+
+- [x] **Local inference-limit repair and generated-output exclusion** —
+      `scripts/configure_tev1_context.py` creates/verifies an isolated
+      `tev1-mtg-8k:0.8b` alias using the original model weights and `num_ctx=8192`;
+      request-level context options do not work for `/v1/systemone`.
+      Chat generation now disables thinking, caps output at 16 tokens,
+      supplies temperature through `options`, skips forced inference, and
+      emits explicit model/fallback telemetry. `runs/` is Git-ignored;
+      existing tracked artifacts are retained, not silently deleted.
+      Full-game repair check `runs/model_qualification/20261005_174657_499980`
+      completes Gemma and Tev1 2/2 terminal losses in 20.5/65.3 seconds,
+      unchanged source hashes. Gemma uses 18 model decisions, 71 forced
+      decisions and zero random fallback events. All local model digests,
+      configured context and quantization are frozen by the campaign harness.
 
 - [x] **Self-contained scientific evaluation and native-stack repair** —
       removed historical Python-engine strength tables and dated work-log
@@ -1493,9 +1555,9 @@ list, so the agent cannot tell a targeting decision from a mode choice.
 Each has a different shape of belief dependence and should be planned
 differently.
 
-#### K6 — Local decision-model evaluation (Tev1)
+#### K6 — Local decision-model evaluation (Tev1 / Decision 2.0) 🟡 Partial
 
-**Adapter implemented; full-game evaluation blocked on input budgeting.**
+**Adapter and context-configuration repair implemented; controlled evaluation pending.**
 The user selected a
 maximum-24 heuristic shortlist, with action coverage recorded. The local
 0.8B API smoke passes; 4B has not been installed/evaluated. Actual pilots
@@ -1503,10 +1565,28 @@ exposed 64 KiB requests and a 2050-token prompt ceiling in Ollama 0.35.1.
 The versioned card-aware projection removes hidden placeholders, library
 order, internal journals and compiled rule ASTs, and groups identical visible
 instances while retaining their IDs. It does not silently truncate observations.
-Compact pilots still failed late in games at the token ceiling.
-**Next:** implement and evaluate an explicit token-budgeted context policy
-(including what information/actions may be excluded and coverage reporting),
-then run full game pilots, vary shortlist size/source and option order, match context and
+The ceiling is the original tag's `num_ctx`, not a hard API limit: an isolated
+same-weight 8192-context alias passes a terminal game with no cropping.
+Chat output is bounded and its forced/model/fallback decisions are traceable.
+The 8K Tev1 alias completes 3/3 games in the replicated campaign. The separate
+Gemma semantic repair completes 3/3, with one explicitly traced request-timeout
+fallback; this does not meet the per-condition 20-game calibration gate.
+Decision 2.0 adds a pinned local 255-option adapter with a declared 16,384-token
+Eos context; larger-model/GPU execution is not measured. Real Eos preparation
+fails on Windows because upstream checkpoint identity hashes platform-specific
+relative path strings. All actual fingerprint-file bytes match the manifest,
+and canonical slash-key hashing reproduces the published identity.
+An isolated local Linux reference run now verifies real 30/255-choice output
+shapes with unchanged weights and intact identity checks. Larger choices are
+expensive on CPU (136.1 seconds for the single 9,771-token/255-option fixture);
+neither synthetic response is a correct maximum-amount answer.
+**Next:** obtain a portable upstream Windows runtime revision and qualify
+native MTG episodes on the Linux deployment, without bypassing manifest/identity
+checks. Measure warm/cold cost and cap-dependent reliability before large
+campaigns. Qualify structured chat replies (the full-context Llama/Qwen checks
+still have invalid-response fallback), per-model input-token usage and
+replicated larger-context full games; retain explicit
+budget failures, vary shortlist size/source and option order, match context and
 candidate sets with a size-matched general Qwen3.5 comparator, and instrument
 the existing chat picker's random fallback. Candidate coverage is not
 optimal-move recall. Keep deployment-stack results distinct from isolated
@@ -2602,8 +2682,14 @@ live readiness, query compatibility and bulk-write/fallback accounting remain K1
   qualification remains pending (K7). Budgets and transport failures remain
   explicit incomplete outcomes.
 - Experimental Tev1 decision adapter with card-aware context and explicit
-  input/inference failures; full-game evaluation still blocked by the local
-  endpoint's observed 2050-token ceiling.
+  input/inference failures; a same-weight 8192-context alias removes the
+  original tag's 2050-token configuration blocker and passes a terminal
+  full-game check without cropping. Controlled strength evaluation remains pending.
+- Pinned local Decision 2.0 classifier adapter, optional dependencies and all
+  native experiment CLI factories support the published 255-option contract;
+  real 30/255-option inference passes on an owned Linux CPU container.
+  Direct Windows Eos loading is blocked by upstream path-fingerprint portability.
+  This remains Partial, not MTG qualification or demonstrated decision quality.
 - Keyed Full-session restore retains the issued generation and player credential
   and validates the restored seat/revision; forced native disconnect verified.
 - Pending: native viewer-interaction planning (K5), engine RNG seeding, general
@@ -2965,8 +3051,9 @@ Null/harmful effects are reportable; integration failures are distinct.
 5. **Decision-model pilot (K6):** local Tev1 0.8B/4B versus heuristic,
    ordinary Ollama chat and KL control. Record decision latency p50/p95,
    invalid-choice/API-error rate, option count and shortlist coverage.
-   First resolve the observed 2050-token decision-endpoint ceiling through a
-   documented budgeted projection; current full-game Tev1 pilots are incomplete.
+   Use the documented same-weight 8192-context alias rather than the original
+   tag's 2050-token context configuration; retain explicit failures for larger
+   inputs and qualify replicated full games before strength comparisons.
    Evaluate a fresh held-out deck/seed pool after tuning. Model confidence
    must be evaluated for calibration separately from playing strength.
 6. **Architecture ablations:** extend to KG, JEPA and dreaming once the
@@ -3007,9 +3094,9 @@ status tracker.
 |---|---|---|
 | Ontology is reusable and logically consistent | Versioned CR vocabulary, OWL/SHACL/competency validation, licences, data generation instructions and ABox conformance sample | Re-run on the frozen October snapshot; not inferred from card count |
 | Native bridge supports Commander pods | Four legal 100-card decks, four 40-life players, commanders/priority/elimination exercised, genuine terminal games and failure accounting | One Python host + three native AI seats wired; initial pod reached turn 34 but transport closed, so not a completed pod |
-| One policy stack performs differently from another | Same declared observation/action interface, deck/difficulty strata, independent repeated games, effect sizes and uncertainty | Runtime-ready random, heuristic and objective stacks; first pilot only |
+| One policy stack performs differently from another | Same declared observation/action interface, deck/difficulty strata, independent repeated games, effect sizes and uncertainty | Replicated feasibility: 35/36 games across twelve conditions; three-game cells are not calibrated strength evidence |
 | KL objective itself improves control | Equal action candidates, transition/belief model, horizon, exhaustive/scoring budget and selection rule, plus objective-only tests | Blocked: current KL horizon search and one-step EFE are different stacks |
-| Decision tuning improves selection | Size-matched general model, identical context/options, option-order controls, no uncounted chat fallback and held-out tasks | Blocked: Tev1 input budget; matched chat/error accounting pending |
+| Decision tuning improves selection | Size-matched general model, identical context/options, option-order controls, no uncounted chat fallback and held-out tasks | Deployment gates partly pass: 8K Tev1 3/3 terminal games, Linux Eos 30/255-option API checks, traced chat fallback; matched/calibrated quality study remains pending |
 | KG grounding / induced learning helps | With/without frozen KG under identical policies; provenance-safe train/holdout split and blinded held-out games | Native integration and promotion policy not validated |
 | JEPA / learned dreaming helps | Native trace/action semantics, transition prediction quality, frozen trained checkpoints, matched rollout budgets and held-out policy ablation | Legacy checkpoints are not evidence for native dynamics |
 
