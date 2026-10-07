@@ -21,11 +21,11 @@ class SchmidhuberWorldModelAdapter(WorldModel):
 
         # Minimal forward model: simple MLP from (z, a) -> z' + done
         self.forward_model = nn.Sequential(
-            nn.Linear(c.latent_dim + c.controller.action_dim, 512),
+            nn.Linear(c.encoder.latent_dim + c.controller.action_dim, 512),
             nn.ReLU(),
             nn.Linear(512, 512),
             nn.ReLU(),
-            nn.Linear(512, c.latent_dim + 1),
+            nn.Linear(512, c.encoder.latent_dim + 1),
         )
 
     def fit(self, trajectories, epochs: int = 5, batch_size: int = 64, lr: float = 1e-3, device: str = "cpu"):

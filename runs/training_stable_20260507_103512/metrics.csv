@@ -1,0 +1,2 @@
+epoch,train/total,train/prediction,train/kl
+0,1.4686059951782227,1.4186060428619385,0.5

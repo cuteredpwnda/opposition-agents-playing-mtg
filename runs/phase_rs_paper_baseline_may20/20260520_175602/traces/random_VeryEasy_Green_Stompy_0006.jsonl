@@ -1,0 +1,96 @@
+{"event": "game_started", "our_seat": 0, "turn": 1, "phase": "Untap", "legal_action_types": ["MulliganDecision", "MulliganDecision"]}
+{"event": "decision", "turn": 1, "phase": "Untap", "seat": 0, "chosen_index": 1, "chosen_type": "MulliganDecision", "legal_action_types": ["MulliganDecision", "MulliganDecision"]}
+{"event": "decision", "turn": 1, "phase": "Untap", "seat": 0, "chosen_index": 1, "chosen_type": "MulliganDecision", "legal_action_types": ["MulliganDecision", "MulliganDecision"]}
+{"event": "decision", "turn": 1, "phase": "Untap", "seat": 0, "chosen_index": 1, "chosen_type": "MulliganDecision", "legal_action_types": ["MulliganDecision", "MulliganDecision"]}
+{"event": "decision", "turn": 1, "phase": "Untap", "seat": 0, "chosen_index": 0, "chosen_type": "MulliganDecision", "legal_action_types": ["MulliganDecision", "MulliganDecision"]}
+{"event": "decision", "turn": 1, "phase": "Untap", "seat": 0, "chosen_index": 24, "chosen_type": "SelectCards", "legal_action_types": ["SelectCards", "SelectCards", "SelectCards", "SelectCards", "SelectCards", "SelectCards", "SelectCards", "SelectCards", "SelectCards", "SelectCards", "SelectCards", "SelectCards", "SelectCards", "SelectCards", "SelectCards", "SelectCards", "SelectCards", "SelectCards", "SelectCards", "SelectCards", "SelectCards", "SelectCards", "SelectCards", "SelectCards", "SelectCards", "SelectCards", "SelectCards", "SelectCards", "SelectCards", "SelectCards", "SelectCards", "SelectCards", "SelectCards", "SelectCards", "SelectCards"]}
+{"event": "decision", "turn": 1, "phase": "Upkeep", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 1, "phase": "PreCombatMain", "seat": 0, "chosen_index": 1, "chosen_type": "PlayLand", "legal_action_types": ["PassPriority", "PlayLand"]}
+{"event": "decision", "turn": 1, "phase": "PreCombatMain", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 1, "phase": "PostCombatMain", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 1, "phase": "End", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 2, "phase": "Upkeep", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 2, "phase": "Draw", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 2, "phase": "PreCombatMain", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 2, "phase": "PostCombatMain", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 2, "phase": "End", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 3, "phase": "Upkeep", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 3, "phase": "Draw", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 3, "phase": "PreCombatMain", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 3, "phase": "PostCombatMain", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 3, "phase": "End", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 4, "phase": "Upkeep", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 4, "phase": "Draw", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 4, "phase": "PreCombatMain", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 4, "phase": "PreCombatMain", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 4, "phase": "PostCombatMain", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 4, "phase": "End", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 5, "phase": "Upkeep", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 5, "phase": "Draw", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 5, "phase": "PreCombatMain", "seat": 0, "chosen_index": 1, "chosen_type": "PlayLand", "legal_action_types": ["PassPriority", "PlayLand"]}
+{"event": "decision", "turn": 5, "phase": "PreCombatMain", "seat": 0, "chosen_index": 1, "chosen_type": "CastSpell", "legal_action_types": ["PassPriority", "CastSpell", "ActivateAbility"]}
+{"event": "decision", "turn": 5, "phase": "PreCombatMain", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 5, "phase": "PreCombatMain", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 5, "phase": "DeclareAttackers", "seat": 0, "chosen_index": 0, "chosen_type": "DeclareAttackers", "legal_action_types": ["DeclareAttackers", "DeclareAttackers"]}
+{"event": "decision", "turn": 5, "phase": "PostCombatMain", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 5, "phase": "End", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 6, "phase": "Upkeep", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 6, "phase": "Draw", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 6, "phase": "PreCombatMain", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 6, "phase": "PreCombatMain", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 6, "phase": "DeclareAttackers", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 6, "phase": "DeclareBlockers", "seat": 0, "chosen_index": 1, "chosen_type": "DeclareBlockers", "legal_action_types": ["DeclareBlockers", "DeclareBlockers"]}
+{"event": "decision", "turn": 6, "phase": "DeclareBlockers", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 6, "phase": "PostCombatMain", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 6, "phase": "End", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 7, "phase": "Upkeep", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 7, "phase": "Draw", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 7, "phase": "PreCombatMain", "seat": 0, "chosen_index": 1, "chosen_type": "CastSpell", "legal_action_types": ["PassPriority", "CastSpell"]}
+{"event": "decision", "turn": 7, "phase": "PreCombatMain", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 7, "phase": "PreCombatMain", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 7, "phase": "PostCombatMain", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 7, "phase": "End", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 8, "phase": "Upkeep", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 8, "phase": "Draw", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 8, "phase": "PreCombatMain", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 8, "phase": "PreCombatMain", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 8, "phase": "PreCombatMain", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 8, "phase": "DeclareAttackers", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 8, "phase": "DeclareBlockers", "seat": 0, "chosen_index": 0, "chosen_type": "DeclareBlockers", "legal_action_types": ["DeclareBlockers", "DeclareBlockers"]}
+{"event": "decision", "turn": 8, "phase": "DeclareBlockers", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 8, "phase": "PostCombatMain", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 8, "phase": "End", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 9, "phase": "Upkeep", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 9, "phase": "Draw", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 9, "phase": "PreCombatMain", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority", "CastSpell"]}
+{"event": "decision", "turn": 9, "phase": "DeclareAttackers", "seat": 0, "chosen_index": 1, "chosen_type": "DeclareAttackers", "legal_action_types": ["DeclareAttackers", "DeclareAttackers"]}
+{"event": "decision", "turn": 9, "phase": "DeclareAttackers", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 9, "phase": "DeclareBlockers", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 9, "phase": "CombatDamage", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 9, "phase": "CombatDamage", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 9, "phase": "PostCombatMain", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority", "CastSpell"]}
+{"event": "decision", "turn": 9, "phase": "End", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 10, "phase": "Upkeep", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 10, "phase": "Draw", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 10, "phase": "PreCombatMain", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 10, "phase": "PreCombatMain", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 10, "phase": "DeclareAttackers", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 10, "phase": "DeclareBlockers", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 10, "phase": "PostCombatMain", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 10, "phase": "End", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 11, "phase": "Upkeep", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 11, "phase": "Draw", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 11, "phase": "PreCombatMain", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority", "CastSpell"]}
+{"event": "decision", "turn": 11, "phase": "PostCombatMain", "seat": 0, "chosen_index": 1, "chosen_type": "CastSpell", "legal_action_types": ["PassPriority", "CastSpell"]}
+{"event": "decision", "turn": 11, "phase": "PostCombatMain", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 11, "phase": "PostCombatMain", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 11, "phase": "End", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 12, "phase": "Upkeep", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 12, "phase": "Draw", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 12, "phase": "PreCombatMain", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 12, "phase": "PreCombatMain", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 12, "phase": "PreCombatMain", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 12, "phase": "DeclareAttackers", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "decision", "turn": 12, "phase": "DeclareBlockers", "seat": 0, "chosen_index": 1, "chosen_type": "DeclareBlockers", "legal_action_types": ["DeclareBlockers", "DeclareBlockers", "DeclareBlockers", "DeclareBlockers"]}
+{"event": "decision", "turn": 12, "phase": "DeclareBlockers", "seat": 0, "chosen_index": 0, "chosen_type": "PassPriority", "legal_action_types": ["PassPriority"]}
+{"event": "game_over", "winner": 1, "reason": "game_rules", "turn": 12}

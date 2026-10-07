@@ -44,6 +44,7 @@ class StateEncoderConfig:
     # Dual-input JEPA: set > 0 to fuse KG context before the bottleneck.
     # Must match KGContextEncoderConfig.kg_embed_dim.
     kg_embed_dim: int = 0
+    decision_context_dim: int = 0
 
 
 class SetEncoder(nn.Module):
@@ -123,6 +124,10 @@ class StateEncoder(nn.Module):
         self.phase_encoder = nn.Sequential(
             nn.Linear(12 + 4, c.hidden_dim // 8),  # phase_onehot(12) + turn_features(4)
             nn.ReLU(),
+        )
+        self.decision_proj = (
+            nn.Linear(c.decision_context_dim, c.hidden_dim // 8)
+            if c.decision_context_dim > 0 else None
         )
 
         # Compute fusion input dimension
@@ -216,6 +221,8 @@ class StateEncoder(nn.Module):
         # Phase/turn
         phase_turn = torch.cat([features["phase_encoding"], features["turn_features"]], dim=-1)
         phase_enc = self.phase_encoder(phase_turn)
+        if self.decision_proj is not None:
+            phase_enc = phase_enc + self.decision_proj(features["decision_context"])
 
         # Fuse and return full hidden representation for loss targets
         hidden = self._fuse_features(
@@ -305,6 +312,8 @@ class StateEncoder(nn.Module):
             player_enc = self.player_encoder(player_feats)
             phase_turn = torch.cat([features["phase_encoding"], features["turn_features"]], dim=-1)
             phase_enc = self.phase_encoder(phase_turn)
+            if self.decision_proj is not None:
+                phase_enc = phase_enc + self.decision_proj(features["decision_context"])
 
             target = torch.cat(
                 [hand_enc, bf_enc, opp_bf_enc, gy_enc, stack_enc, player_enc, phase_enc],

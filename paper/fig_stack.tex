@@ -38,11 +38,11 @@
   \node[sym] (eng) at (4.5,  0.0) {\textbf{Game Engine}\\
         zones, stack, priority,\\phases, combat, triggers,\\state-based actions};
   \node[sym] (rb)  at (4.5, -2.6) {\textbf{Replay Buffer}\\
-        trajectories $(s_t,a_t,r_t)$};
+        transitions $(o_t,a_t,o_{t+1},r_t)$};
 
   % Column 3: world model V/M/C (x=11; box width 5.0cm -> west=8.5, east=13.5)
-  \node[learn] (V) at (11,  2.4) {V: state encoder\\(Set-Transformer + KG ctx)};
-  \node[learn] (M) at (11,  0.0) {M: MDN-LSTM dynamics\\+ JEPA target head};
+  \node[learn] (V) at (11,  2.4) {V: observation encoder\\(Set-Transformer + KG ctx)};
+  \node[learn] (M) at (11,  0.0) {M: MDN-LSTM dynamics\\Separate JEPA predictor};
   \node[learn] (C) at (11, -2.4) {C: controller\\(policy + value heads)};
   \begin{pgfonlayer}{background}
     \node[grp, fit=(V)(M)(C)] (wm) {};
@@ -87,7 +87,7 @@
 
   % --- world-model training: rb -> M (lane x=7.4), rb -> V (lane x=7.8)
   \draw[flow] (rb.east) -- (7.4, -2.6) -- (7.4, 0) -- (M.west);
-  \node[elabel] at (7.4, -1.6) {train (JEPA)};
+  \node[elabel] at (7.4, -1.6) {training};
   \draw[flow] (rb.east) -- (7.8, -2.6) -- (7.8, 2.4) -- (V.west);
   \node[elabel] at (7.8, 1.4) {features};
 

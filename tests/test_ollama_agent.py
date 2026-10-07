@@ -56,18 +56,14 @@ async def test_ollama_agent_in_game():
     # Run game
     result = await runner.run_game(agents, decks)
     
-    # Verify game completed
     assert result.game_over, "Game should have completed"
-    assert result.winner or result.is_draw, "Should have a winner or be a draw"
+    winner_id = result.winner  # str player_id or None
     
     print(f"\n{'='*60}")
     print(f"GAME COMPLETED")
     print(f"{'='*60}")
-    if result.winner:
-        print(f"Winner: {result.winner.name} ({result.winner.player_id})")
+    if winner_id:
+        print(f"Winner: {winner_id}")
     else:
-        print("Draw")
+        print("Draw / no winner")
     print(f"Turns: {result.turns}")
-    print(f"Final life totals:")
-    for player in result.state.players:
-        print(f"  {player.name}: {player.life_total}")

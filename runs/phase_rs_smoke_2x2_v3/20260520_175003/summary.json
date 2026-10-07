@@ -1,0 +1,77 @@
+{
+  "pickers": [
+    "random",
+    "heuristic"
+  ],
+  "difficulties": [
+    "VeryEasy",
+    "Easy"
+  ],
+  "ai_decks": [
+    "Red Deck Wins"
+  ],
+  "format": "Standard",
+  "games_per_cell": 2,
+  "autostart": true,
+  "seed": 7,
+  "uri": "ws://127.0.0.1:9374/ws",
+  "stream_timeout": 120.0,
+  "cells": [
+    {
+      "picker": "random",
+      "ai_difficulty": "VeryEasy",
+      "ai_deck": "Red Deck Wins",
+      "games": 2,
+      "wins": 0,
+      "losses": 2,
+      "draws": 0,
+      "timeouts": 0,
+      "win_rate": 0.0,
+      "avg_elapsed_sec": 37.992651900000055,
+      "avg_turns": 11.5,
+      "avg_actions": 104.5
+    },
+    {
+      "picker": "random",
+      "ai_difficulty": "Easy",
+      "ai_deck": "Red Deck Wins",
+      "games": 2,
+      "wins": 0,
+      "losses": 2,
+      "draws": 0,
+      "timeouts": 0,
+      "win_rate": 0.0,
+      "avg_elapsed_sec": 32.87961975000508,
+      "avg_turns": 8.0,
+      "avg_actions": 84.0
+    },
+    {
+      "picker": "heuristic",
+      "ai_difficulty": "VeryEasy",
+      "ai_deck": "Red Deck Wins",
+      "games": 2,
+      "wins": 1,
+      "losses": 1,
+      "draws": 0,
+      "timeouts": 0,
+      "win_rate": 0.5,
+      "avg_elapsed_sec": 41.49672540000029,
+      "avg_turns": 13.5,
+      "avg_actions": 122.0
+    },
+    {
+      "picker": "heuristic",
+      "ai_difficulty": "Easy",
+      "ai_deck": "Red Deck Wins",
+      "games": 2,
+      "wins": 0,
+      "losses": 2,
+      "draws": 0,
+      "timeouts": 0,
+      "win_rate": 0.0,
+      "avg_elapsed_sec": 34.90456890000132,
+      "avg_turns": 10.5,
+      "avg_actions": 95.0
+    }
+  ]
+}

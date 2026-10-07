@@ -1,0 +1,3 @@
+{"picker": "random", "ai_difficulty": "VeryEasy", "game_index": 1, "seed": 7, "winner_seat": 1, "our_seat": 0, "result": "loss", "reason": "game_rules", "turns": 2, "actions": 5, "elapsed_sec": 0.8149523999964003}
+{"picker": "random", "ai_difficulty": "VeryEasy", "game_index": 2, "seed": 8, "winner_seat": 1, "our_seat": 0, "result": "loss", "reason": "game_rules", "turns": 2, "actions": 5, "elapsed_sec": 0.5987095000018599}
+{"picker": "random", "ai_difficulty": "VeryEasy", "game_index": 3, "seed": 9, "winner_seat": 1, "our_seat": 0, "result": "loss", "reason": "game_rules", "turns": 2, "actions": 5, "elapsed_sec": 0.6068659000011394}

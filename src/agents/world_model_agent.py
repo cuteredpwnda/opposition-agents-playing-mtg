@@ -24,7 +24,7 @@ except ImportError:
     raise ImportError("WorldModelAgent requires PyTorch and NumPy.")
 
 from src.agents.base_agent import MTGAgent
-from src.engine.game_state import Action, GameState, Zone
+from src.engine_legacy.game_state import Action, GameState, Zone
 from src.world_model.card_embeddings import CardEmbeddingModel
 from src.world_model.game_tokenizer import GameTokenizer
 from src.world_model.world_model import WorldModel
@@ -96,7 +96,7 @@ class WorldModelAgent(MTGAgent):
         # offers it for debug parity, and an untrained or stochastic
         # controller would otherwise forfeit games at random.  Keeping
         # PASS_PRIORITY ensures the agent can still cleanly end its turn.
-        from src.engine.game_state import ActionType as _AT
+        from src.engine_legacy.game_state import ActionType as _AT
         non_concede = [a for a in legal_actions if a.action_type != _AT.CONCEDE]
         if non_concede:
             legal_actions = non_concede

@@ -18,8 +18,8 @@ from dataclasses import dataclass
 from typing import Optional
 from enum import Enum
 
-from src.engine.game_state import GameState, Zone
-from src.engine.knowledge_graph import MTGKnowledgeGraph
+from src.engine_legacy.game_state import GameState, Zone
+from src.engine_legacy.knowledge_graph import MTGKnowledgeGraph
 
 
 class Strategy(str, Enum):

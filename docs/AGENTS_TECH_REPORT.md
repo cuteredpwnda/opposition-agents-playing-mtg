@@ -1,15 +1,36 @@
 # Agent Zoo — Technical Implementation Report
 
+## Phase-rs-First (May 2026 Update)
+
+**As of May 20, 2026**, all agents now run on the **phase-rs Rust engine** via WebSocket bridge.
+The integration is defined in [`src/integrations/phase_rs/`](../src/integrations/phase_rs/):
+
+- **Protocol**: WebSocket v6 with typed envelopes (phase-server format)
+- **Bridge**: Opaque action picker → phase-rs GameAction dict → index selection (no state translation yet)
+- **Entry point**: `scripts/phase_rs_rollout_sweep.py` for benchmarking; `examples/play_edh_pod.py` for demos
+- **Trace collection**: Per-game JSONL with decision-level events (turn, phase, action index, legal types)
+
+The Python engine (`src/engine/`) remains for:
+- Unit testing agent decision logic in isolation
+- Debugging rules without network latency
+- Research on rule-space changes (not currently used for production training)
+
+For new ablation runs, see [`docs/TRAINING_ABLATIONS_AND_KG_INTEGRATION.md`](TRAINING_ABLATIONS_AND_KG_INTEGRATION.md).
+
+---
+
+## 1. Agents on Phase-rs
+
 This document is the engineering reference for every agent in
-[src/agents/](src/agents/). It is paired with the scientific writeup in
-[paper/opposition_agents_mtg.tex](paper/opposition_agents_mtg.tex)
+[src/agents/](../src/agents/). It is paired with the scientific writeup in
+[paper/opposition_agents_mtg.tex](../paper/opposition_agents_mtg.tex)
 (section "Agent Zoo: Algorithmic Specification"), but where the paper
 focuses on objectives and pseudocode, this report focuses on *exactly
 what the code does*: class signatures, control flow, configuration, and
 failure modes.
 
 All agents implement the same one-method protocol declared in
-[src/agents/base_agent.py](src/agents/base_agent.py):
+[src/agents/base_agent.py](../src/agents/base_agent.py):
 
 ```python
 class MTGAgent:
@@ -28,7 +49,19 @@ side-effect free on the public game state, but they do mutate their own
 internal state (caches, beliefs, hidden RNN state) and write a
 `ReasoningTrace` accessible via `agent.last_reasoning` for logging.
 
-The full registry lives in [src/agents/__init__.py](src/agents/__init__.py).
+### Phase-rs Integration Note
+
+On phase-rs, agents do not see a full Python `GameState`. Instead, they receive:
+- **Raw phase-rs state dict** (board cards, hand, mana pool, etc.) — opaque to agent logic
+- **Legal actions** as a list of JSON dicts with `type` and optional `data`
+- **Expected output**: index into the legal actions list (0-based)
+
+Simple agents like `RandomAgent` and `HeuristicAgent` work directly on this opaque interface via
+[`src/integrations/phase_rs/agent_bridge.py`](../src/integrations/phase_rs/agent_bridge.py).
+Complex agents (LLM, world model) still see a full Python `GameState` by using a thin translation layer
+(TODO: finish `phase_action_to_engine_action` in adapter.py).
+
+The full registry lives in [src/agents/__init__.py](../src/agents/__init__.py).
 You can construct any agent by short name:
 
 ```python
@@ -47,7 +80,7 @@ prior.
 
 ---
 
-## 1. RandomAgent
+## 2. RandomAgent
 
 **File:** [src/agents/random_agent.py](src/agents/random_agent.py)
 **Role:** baseline / smoke test. Stronger than uniform random — uses

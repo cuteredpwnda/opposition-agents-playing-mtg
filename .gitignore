@@ -9,6 +9,8 @@ __pycache__/
 dist/
 build/
 .venv/
+.tools/
+.phase-rs-server.lock
 venv/
 
 # Debug and test output
@@ -38,6 +40,9 @@ data/scryfall/
 
 # Large embeddings / dataset directories
 data/embeddings/
+
+# Local-only draft of the phase-rs upstream introduction (do not commit)
+docs/PHASE_RS_UPSTREAM_INTRO.md
 data/datasets/
 
 # Graphify generated artifacts (regenerable via /graphify)
@@ -54,6 +59,7 @@ checkpoints/**/*.ckpt
 
 # Training artifacts
 logs/
+runs/
 data/trajectories/
 data/imports/
 data/cache/
@@ -65,6 +71,8 @@ requirements_frozen*.txt
 .idea/
 
 # LaTeX outputs
+paper/*.bbl
+paper/*.blg
 *.aux
 *.log
 *.nav
@@ -92,3 +100,12 @@ data/card_graph_embeddings.pt
 *.pt
 
 presentations/repo_for_girlfriend.*
+
+# Comprehensive Rules text and any derivation carrying it. The rule text is
+# copyright Wizards of the Coast; only the extracted enumerations
+# (data/ontology/mtg-cr-types.ttl) are redistributable. Regenerate with:
+#   python scripts/fetch_rules.py && python scripts/build_ontology_from_cr.py
+data/rules/MagicCompRules*.txt
+data/rules/latest.txt
+data/ontology/mtg-cr-rules.ttl
+data/ontology/mtg-cr-derived.ttl

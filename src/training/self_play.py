@@ -89,7 +89,7 @@ class SelfPlayTrainer:
         """
         import asyncio
         from src.agents.llm_agent import LLMAgent
-        from src.orchestrator.game_runner import GameRunner, GameConfig
+        from src.orchestrator_legacy.game_runner import GameRunner, GameConfig
 
         sem = asyncio.Semaphore(max(1, int(self.config.num_parallel_games)))
 
@@ -208,7 +208,7 @@ class SelfPlayTrainer:
         """
         import asyncio
         from src.agents.random_agent import RandomAgent
-        from src.orchestrator.game_runner import GameRunner, GameConfig
+        from src.orchestrator_legacy.game_runner import GameRunner, GameConfig
         
         wins = 0
         total = 0

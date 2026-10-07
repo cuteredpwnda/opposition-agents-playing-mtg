@@ -34,7 +34,8 @@ class Settings(BaseSettings):
     scryfall_cache_db: str = "data/card_cache.db"
 
     # Paths
-    ontology_path: str = "data/ontology/mtg-ontology-v1.0.owl"
+    ontology_path: str = "data/ontology/mtg-ontology-v2.0.ttl"
+    ontology_vocabulary_path: str = "data/ontology/mtg-cr-types.ttl"
     shacl_shapes_path: str = "data/ontology/mtg-shapes.ttl"
     comprehensive_rules_path: str = "data/comprehensive_rules.txt"
 

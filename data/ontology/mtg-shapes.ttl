@@ -8,6 +8,17 @@
 # Used by n10s: CALL n10s.validation.shacl.import.fetch(..., 'Turtle')
 # ===========================================================================
 
+mtg:TemporalOrderingShape
+    a sh:NodeShape ;
+    sh:targetSubjectsOf mtg:precedes ;
+    sh:sparql [
+        sh:message "Temporal precedence must not contain a cycle." ;
+        sh:select """
+            PREFIX mtg: <http://purl.org/mtg/ontology#>
+            SELECT $this WHERE { $this mtg:precedes+ $this }
+        """ ;
+    ] .
+
 # ---------------------------------------------------------------------------
 # Card shape — validate all Card nodes
 # ---------------------------------------------------------------------------

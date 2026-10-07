@@ -15,7 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable
 
-from src.engine.game_state import CardInstance
+from src.engine_legacy.game_state import CardInstance
 
 
 # Imported lazily to avoid a circular import with ``agent_strategies`` at

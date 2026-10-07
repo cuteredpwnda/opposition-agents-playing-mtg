@@ -1,11 +1,11 @@
 # Development & Deployment Guide
 
-> **Status (May 2026):** Engine and orchestrator are stable for two-player
-> games. Run `python examples/demo_game_simple.py` for a complete match
-> (now defaults to up to 40 turns with deterministic timeout tie-breakers).
-> Mulligan behaviour is configurable via `GameSimulator.setup_game(
-> mulligan_enabled=..., max_mulligans=...)` and `GameConfig.mulligan_enabled`
-> / `GameConfig.max_mulligans`.
+> **Status (May 2026):** Phase-rs is now the authoritative runtime engine.
+> Python agents play end-to-end games via WebSocket bridge (adapter.py).
+> Training is phase-rs-first: collect traces → JEPA → dream training.
+> Run `python examples/play_edh_pod.py --max-turns 6 --seed 7 --model none`
+> for a quick 4-player pod. See [docs/PHASE_RS_INTEGRATION.md](docs/PHASE_RS_INTEGRATION.md)
+> for setup details.
 
 ## Local Development Setup
 
@@ -43,6 +43,48 @@ docker-compose up -d neo4j
 cp .env.example .env
 # Edit .env with your settings
 ```
+
+### Phase-RS Runtime Setup
+
+Phase-rs (Rust MTG engine) is the authoritative game runtime:
+
+1. Initialize the submodule (first time only):
+```bash
+git submodule update --init --recursive external/phase-rs
+```
+
+2. Start phase-server:
+```bash
+cd external/phase-rs
+cargo build --release 2>&1 | tee build.log
+./target/release/phase-server --port 9374 &
+cd ../..
+```
+
+   Or use automatic startup (Python will spin up the server):
+```bash
+python examples/play_edh_pod.py --autostart --max-turns 6
+```
+
+3. Collect traces from phase-rs games (new: phase-rs-first):
+```bash
+# Single run with heuristic agent
+python scripts/collect_phase_rs_traces.py --games 16 --picker agent:heuristic --autostart
+
+# Ablation suite
+python scripts/run_phase_rs_ablation.py --games 10 --picker agent:heuristic --autostart
+
+# Rollout sweep (cartesian product)
+python scripts/phase_rs_rollout_sweep.py --pickers random agent:heuristic --difficulties VeryEasy Medium --games-per-cell 3 --autostart
+```
+
+4. Train JEPA on phase-rs traces (phase-rs-first):
+```bash
+# New stage 4.1: collect traces, feed into JEPA training
+python scripts/train_pipeline.py --phase-rs-traces --num-games 64 --num-stages 5
+```
+
+See [docs/PHASE_RS_INTEGRATION.md](docs/PHASE_RS_INTEGRATION.md) for full reference.
 
 ### Generated Environment Snapshots
 

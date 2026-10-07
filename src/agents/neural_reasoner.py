@@ -23,7 +23,7 @@ except ImportError:
     global_mean_pool = None
     _HAS_PYG = False
 
-from src.engine.game_state import GameState, Phase, Zone
+from src.engine_legacy.game_state import GameState, Phase, Zone
 
 if not _HAS_PYG:
     class NeuralReasoningModule:

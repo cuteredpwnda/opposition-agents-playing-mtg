@@ -2,8 +2,183 @@
 
 **Status**: Design Document for Systematic Ontology Evolution  
 **Tool**: [OntologyExtender](https://github.com/DataScienceLabFHSWF/OntologyExtender) (MIT License, HITL Multi-Agent Framework)  
-**Current Ontology**: [mtg-ontology-v1.1.owl](../data/ontology/mtg-ontology-v1.1.owl) (~1000 lines, 7 layers)  
+**Current Ontology**: [mtg-ontology-v2.0.ttl](../data/ontology/mtg-ontology-v2.0.ttl)
 **Target**: Comprehensive representation of Magic: The Gathering rules and strategic concepts
+
+---
+
+## Current implementation and KG Workbench import (October 2026)
+
+The sections below retain historical design context; implemented status and
+remaining work are tracked in [IMPLEMENTATION_PLAN.md](../IMPLEMENTATION_PLAN.md).
+
+The current separation is **conceptual and data-layer modularity**, not yet a set
+of independently importable OWL domain modules:
+
+| Layer | Meaning | Current source |
+|---|---|---|
+| Rules/vocabulary | Normative rule references, card types, subtypes and keywords | [schema](../data/ontology/mtg-ontology-v2.0.ttl) and separate generated [factual vocabulary](../data/ontology/mtg-cr-types.ttl) |
+| Card descriptions | Immutable card designs/printings, abilities and qualities | Schema; Scryfall ABox builder |
+| Gameplay | Objects, zones, players, events and situation-relative roles | Schema; game execution belongs to phase-rs, not OWL |
+| Strategy | Combos, pieces, outcomes, answers, archetypes and curated synergies | Schema and optional graph import/query code |
+| Decisions | Agent beliefs, policies, objectives and decisions | Distinct `mtgd:` namespace in the schema |
+| Learned evidence | Reified induced synergies, support/refutation counts and run provenance | Separate schema layer; not automatically promoted to curated facts |
+
+The workbench exporter groups these into six editor modules plus an external
+dependency module. These groupings are a review view, **not an OWL import
+dependency graph**, and do not prove that card/strategy instances have been
+written to Neo4j or used by agents.
+
+### How the ontology was constructed
+
+The process is **author-directed and LLM-assisted**, with two construction
+tracks and a validation feedback loop. It is not an autonomous LLM extraction
+of the Comprehensive Rules, and it does not establish that OntologyExtender
+or MASEO was executed. The historical design proposals later in this guide
+must not be read as execution records.
+
+| Step | What happened | LLM role | Authoritative output |
+|---|---|---|---|
+| 1. Scope and requirements | Define card/rules/gameplay/strategy/decision/evidence boundaries; formulate versioned questions | Assistance with formulation and design discussion | [32 competency questions](../data/competency_questions.yaml), not an independent gold benchmark |
+| 2. Conceptual modelling | Revise the earlier schema using DUL identity, role/situation and quality/region patterns; express relations and OWL constraints | Drafting and revising schema/tooling proposals in an interactive coding workflow | [Curated schema](../data/ontology/mtg-ontology-v2.0.ttl), with named-term epistemic annotations and selected rationale/CQ links |
+| 3. Normative vocabulary | Parse a fixed CR revision by rule number and anchor; emit typed terms, identifiers and source links | No LLM call during extraction; coding assistance is distinct from runtime inference | [Generator](../scripts/build_ontology_from_cr.py) and [factual vocabulary](../data/ontology/mtg-cr-types.ttl); rule-text tree remains local |
+| 4. Validation | Check syntax, CQ queries, SHACL, OWLAPI/HermiT and declared Scryfall type-line corpora | Assistance with checker development and interpreting diagnostics; outputs come from tools | Explicit reports with input hashes and enabled/skipped/failing scopes |
+| 5. Revision | Correct missing concepts, namespace collisions and illegal property characteristics; add regressions | Assisted, defect-driven source/code revisions | Maintained schema/parser/tests; checks are rerun rather than accepting a plausible proposal |
+| 6. Packaging | Preserve authoritative RDF and provenance; create editor projections and queryable snapshots | Tooling assistance, not a new source of domain facts | Turtle/import lock, workbench JSON, lossless RDF/JSON and read-only Fuseki snapshot |
+
+```mermaid
+flowchart TD
+    A["Scope and versioned sources"] --> B["Competency questions"]
+    B --> C["LLM-assisted conceptual schema"]
+    A --> D["Deterministic CR vocabulary extraction"]
+    C --> E["RDF with source and epistemic provenance"]
+    D --> E
+    E --> F["CQ, logical, SHACL and corpus checks"]
+    F -->|"Schema defects"| C
+    F -->|"Extraction defects"| D
+    F -->|"Disclosed qualification scope"| G["Review and distribution artefacts"]
+```
+
+**Concrete example: Vehicle.** Modelling places Vehicle under artifact
+subtypes, not among the fifteen card types. Deterministic extraction reads the
+enumeration at CR 205.3g and emits a source-grounded term. The schema expresses
+the artifact-subtype implication, while the parser checks explicit card type
+lines. The CR supplies the fact; the LLM does not invent the authoritative list.
+
+Here, **curated does not mean independently expert-verified**. It distinguishes
+maintained assertions from induced gameplay evidence. Independent modelling
+review is still pending. Existing uses of "hand-authored schema" mean the
+non-rule-generated schema track, not proof of exclusively unaided authorship.
+
+Artifact regeneration is supported by versioned source/code and hashes, but
+there is no complete frozen prompt/model/acceptance history for historical
+construction. Do not invent model names, prompt counts or approval logs.
+Future assisted revisions should archive model ID, prompt/context, proposed
+diff, motivating CQ/source, validation results and acceptance rationale.
+The [ontology paper](../paper/mtg_ontology.tex) now distinguishes this
+retrospective account from that prospective provenance requirement.
+
+In [KG Workbench](https://github.com/DataScienceLabFHSWF/kg-workbench), choose
+the ontology JSON import action and upload
+[mtg-workbench.json](../data/ontology/mtg-workbench.json). It includes classes,
+named parent links, typed relations, datatype attributes, all 32 competency
+questions (with original YAML in notes), and factual vocabulary examples.
+It does not contain full Comprehensive Rules text or the whole Scryfall corpus.
+Module references and all class/relation references are self-contained.
+
+The export targets the workbench's import contract at revision
+`4d61c37f4e52c22c344aab004ada7622bec9fead`, validated using its actual Zod
+schema. Regenerate all three files with:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\export_ontology_workbench.py
+```
+
+- [mtg-workbench.json](../data/ontology/mtg-workbench.json): import this into the editor.
+- [mtg-workbench.report.json](../data/ontology/mtg-workbench.report.json):
+  source SHA-256 hashes, target revision, counts and projection warnings.
+- [mtg-workbench.rdf.json](../data/ontology/mtg-workbench.rdf.json):
+  lossless RDF/JSON of the asserted local schema + factual vocabulary, including
+  anonymous restrictions, literal datatypes/languages and property-chain lists.
+  This companion is **not** a workbench ontology-import file; it does not fetch
+  or resolve external OWL imports.
+
+Workbench cannot preserve arbitrary OWL axioms. Union domains/ranges expand into
+display pairs; inverse endpoints can be recovered, but otherwise unspecified
+endpoints display as `owl:Thing` with warnings. Only one named parent is supported.
+Keys, restrictions, disjointness, chains and the full RDF remain authoritative
+in Turtle/the RDF companion. Do not round-trip editor JSON over the authoritative
+Turtle or mistake vocabulary examples for a populated combo knowledge base.
+
+### Runtime setup safety
+
+[N10sSetup](../src/knowledge/n10s_setup.py) now defaults to the v2.0 Turtle
+schema, imports the separate factual vocabulary, verifies connectivity before
+setup, preserves compatible graph configuration and refuses incompatible config
+instead of dropping it. RDF imports require explicit `OK` status and positive
+parsed/loaded counts; full setup returns these reports. Legacy `Card` indexes
+remain for compatibility, alongside v2.0 `CardDesign`/`CardPrinting` indexes.
+The training KG stage stops on setup failure rather than silently skipping it.
+
+The mounted [bootstrap Cypher](../neo4j/init/01_init_n10s.cypher) is a **manual,
+fresh-database-only** example; stock Neo4j does not run that directory automatically.
+Neither mocked setup tests nor successful file exports constitute live import
+qualification. Read-only readiness/manifests, remaining query-label reconciliation,
+bulk-write accounting, bounded runtime prefetch and strict benchmark fallback
+policy remain K10; this setup does not qualify a live Neo4j import.
+
+### Pinned reasoning and read-only RDF service
+
+Install the declared ontology extra and, on Windows x64, the checksum-pinned
+local JDK/Fuseki distributions; these do not change system PATH or JAVA_HOME:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -e ".[ontology]"
+powershell -NoProfile -File scripts\install_ontology_tools.ps1
+.\.venv\Scripts\python.exe scripts\fetch_ontology_imports.py
+.\.venv\Scripts\python.exe scripts\validate_ontology.py --reasoner-report .tools\ontology-schema-report.json
+```
+
+The import lock fixes DUL, PROV-O, SKOS and OWL-Time bytes. Downloads verify
+hashes; `--update-lock` is an explicit revision operation, not the default.
+The checker materialises the closure as RDF/XML, freezes its Java source and
+runs actual OWLAPI/HermiT, with no Java-side network imports. `owlready2` supplies
+the bundled HermiT jar, rather than loading Turtle through a Windows file URI.
+`--java` can select a JDK explicitly. Reports record source/checker/jar hashes.
+
+The tested schema plus pinned dependencies is consistent, with no unsatisfiable
+named classes. The raw dependency closure nevertheless has 37 OWLAPI profile
+violations, including PROV annotation/object-property punning and SKOS RDF-list
+references. External documents are not rewritten to hide these diagnostics.
+`--require-dl-profile` fails on those violations and cannot be combined with
+`--no-imports` or `--skip-reasoner`. Focused local-schema object/event ABox probes
+pass for a valid individual and reject a disjoint double classification.
+The larger run using `--reasoner-vocabulary data\ontology\mtg-cr-types.ttl`
+exceeded 600 seconds: its consistency is **not qualified**. Full corpus reasoning,
+independent alignment review and profiling that larger input remain release gates.
+
+Run the opt-in RDF endpoint in the foreground:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\serve_ontology.py --port 3030
+```
+
+[serve_ontology.py](../scripts/serve_ontology.py) binds localhost only and loads
+a frozen TriG snapshot into a memory dataset. It exposes `/mtg/query` and the
+read-only `/mtg/data` Graph Store endpoint, not an update endpoint. Six named
+graphs preserve the schema, vocabulary and four imported sources; the default
+graph is the asserted local schema/vocabulary union, not inferred triples.
+The run directory contains the snapshot, config and hash/count manifest.
+`--build-only` prepares these files without starting a server. This is a
+reproducible read-only review service, **not a persistent TDB deployment**.
+
+A real isolated Fuseki smoke verified 6,222 default triples, all six source
+graph counts, 14/14 CQ queries and HTTP 405 on an update attempt. The temporary
+test service is stopped after validation; no automatic service or agent query
+integration is enabled. Fuseki provides canonical RDF/SPARQL access, HermiT
+logical analysis, and Neo4j optional strategic projections. Benchmark agents
+still need qualified writes and bounded, versioned prefetch rather than
+unbounded SPARQL requests in the decision hot path.
 
 ---
 

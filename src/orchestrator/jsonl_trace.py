@@ -106,6 +106,7 @@ class JsonlActionTrace:
         action: Action,
         reward: float = 0.0,
         done: bool = False,
+        game_state=None,
         reasoning: dict[str, Any] | None = None,
         agent_name: str | None = None,
     ) -> None:

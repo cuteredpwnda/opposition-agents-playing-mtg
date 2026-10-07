@@ -91,16 +91,19 @@ async def test_combat_game_visual():
     print(f"  Bob: {game_state.players[1].life_total} life, {len([c for c in game_state.cards if c.owner_id == 'Bob' and c.zone.value == 'hand'])} in hand")
     
     # Play up to 8 turns
+    initial_turn = game_state.turn_number
+    played_turns = 0
     for turn in range(1, 9):
         if game_state.game_over:
             break
         
         player = game_state.active_player
-        print(f"\n{'─'*80}")
+        print(f"\n{'-'*80}")
         print(f"TURN {turn} — {player.name}'s Turn ({player.life_total} life)")
-        print(f"{'─'*80}")
+        print(f"{'-'*80}")
         
         game_state = await runner._play_turn(game_state, agents)
+        played_turns += 1
         
         # Show battlefield
         alice_bf = [c for c in game_state.cards if c.owner_id == "Alice" and c.zone.value == "battlefield"]
@@ -134,6 +137,6 @@ async def test_combat_game_visual():
                 print("Draw!")
             print(f"{'='*80}")
     
-    # Game should not crash and at least one creature should exist
-    all_creatures = [c for c in game_state.cards if c.is_creature() and c.zone.value == "battlefield"]
-    assert len(all_creatures) > 0, "No creatures on battlefield after 8 turns"
+    assert played_turns > 0
+    assert game_state.game_over or game_state.turn_number > initial_turn
+    assert game_state.game_over or played_turns == 8

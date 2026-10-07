@@ -27,9 +27,18 @@ import argparse
 import asyncio
 import json
 import sys
+import tempfile
 from pathlib import Path
 
 import httpx
+
+from src.integrations.scryfall_bulk import (
+    HEADERS,
+    bulk_download_info,
+    download_bulk,
+    fetch_bulk_metadata,
+    file_sha256,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = PROJECT_ROOT / "data" / "scryfall"
@@ -38,41 +47,16 @@ ORACLE_PATH = DATA_DIR / "oracle-cards.json"
 RULINGS_PATH = DATA_DIR / "rulings.json"
 INDEX_PATH = DATA_DIR / "by_name.json"
 
-USER_AGENT = "OppositionAgentsMTG/1.0 (research)"
-HEADERS = {"User-Agent": USER_AGENT, "Accept": "application/json"}
-
-
 async def fetch_bulk_url(client: httpx.AsyncClient, bulk_type: str) -> tuple[str, int]:
     """Look up the download URL + size for a bulk-data type."""
-    resp = await client.get("https://api.scryfall.com/bulk-data")
-    resp.raise_for_status()
-    for item in resp.json()["data"]:
-        if item["type"] == bulk_type:
-            return item["download_uri"], item.get("size", 0)
-    raise ValueError(f"bulk type '{bulk_type}' not found")
+    url, size, _ = bulk_download_info(await fetch_bulk_metadata(client, bulk_type))
+    return url, size
 
 
 async def download_file(client: httpx.AsyncClient, url: str, out_path: Path) -> None:
-    """Stream a large file to disk with a simple progress indicator."""
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    print(f"  -> {url}")
-    print(f"     writing to {out_path}")
-
-    async with client.stream("GET", url, follow_redirects=True) as resp:
-        resp.raise_for_status()
-        total = int(resp.headers.get("content-length", 0))
-        downloaded = 0
-        chunk_size = 1 << 20  # 1 MB
-
-        with out_path.open("wb") as f:
-            async for chunk in resp.aiter_bytes(chunk_size=chunk_size):
-                f.write(chunk)
-                downloaded += len(chunk)
-                if total:
-                    pct = 100 * downloaded / total
-                    print(f"\r     {downloaded/1e6:.1f} / {total/1e6:.1f} MB "
-                          f"({pct:.1f}%)", end="", flush=True)
-        print()
+    """Download either legacy JSON or the current gzip JSONL representation."""
+    field = "jsonl_download_uri" if url.endswith(".jsonl.gz") else "download_uri"
+    await download_bulk(client, {"type": "bulk", field: url}, out_path)
 
 
 def build_name_index(oracle_path: Path, index_path: Path) -> int:
@@ -93,33 +77,49 @@ def build_name_index(oracle_path: Path, index_path: Path) -> int:
 async def main(args) -> int:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-    async with httpx.AsyncClient(headers=HEADERS, timeout=120.0) as client:
-
-        # --- Oracle cards -------------------------------------------------
-        if ORACLE_PATH.exists() and not args.refresh:
-            print(f"Skipping oracle-cards (exists: {ORACLE_PATH.stat().st_size/1e6:.1f} MB) "
-                  f"— use --refresh to redownload")
-        else:
-            print("Fetching oracle-cards bulk URL...")
-            url, size = await fetch_bulk_url(client, "oracle_cards")
-            print(f"  size: {size/1e6:.1f} MB")
-            await download_file(client, url, ORACLE_PATH)
-
-        # --- Rulings (errata + judge clarifications) ---------------------
-        if args.skip_rulings:
-            print("Skipping rulings (--skip-rulings)")
-        elif RULINGS_PATH.exists() and not args.refresh:
-            print(f"Skipping rulings (exists: {RULINGS_PATH.stat().st_size/1e6:.1f} MB) "
-                  f"— use --refresh to redownload")
-        else:
-            print("\nFetching rulings bulk URL...")
-            url, size = await fetch_bulk_url(client, "rulings")
-            print(f"  size: {size/1e6:.1f} MB")
-            await download_file(client, url, RULINGS_PATH)
-
-        # --- Name index --------------------------------------------------
-        if ORACLE_PATH.exists():
-            build_name_index(ORACLE_PATH, INDEX_PATH)
+    manifest_path = DATA_DIR / "snapshot_manifest.json"
+    manifest = json.loads(manifest_path.read_text("utf-8")) if manifest_path.exists() else {}
+    entries = manifest.get("files", {})
+    with tempfile.TemporaryDirectory(prefix=".refresh-", dir=DATA_DIR) as directory:
+        stage = Path(directory)
+        replacements: list[tuple[Path, Path]] = []
+        async with httpx.AsyncClient(headers=HEADERS, timeout=120.0) as client:
+            for kind, path in (("oracle_cards", ORACLE_PATH), ("rulings", RULINGS_PATH)):
+                if kind == "rulings" and args.skip_rulings:
+                    print("Skipping rulings (--skip-rulings)")
+                    continue
+                if path.exists() and not args.refresh:
+                    print(f"Keeping existing {path.name}; use --refresh to update")
+                    entries.setdefault(path.name, {"status": "existing; source date unknown"})
+                    entries[path.name].update(
+                        {"sha256": file_sha256(path), "bytes": path.stat().st_size}
+                    )
+                    continue
+                item = await fetch_bulk_metadata(client, kind)
+                url, size, _ = bulk_download_info(item)
+                print(f"Downloading {kind}: {size / 1e6:.1f} MB from {url}", flush=True)
+                staged = stage / path.name
+                entries[path.name] = await download_bulk(client, item, staged)
+                replacements.append((staged, path))
+        staged_oracle = stage / ORACLE_PATH.name
+        source = staged_oracle if staged_oracle.exists() else ORACLE_PATH
+        staged_index = stage / INDEX_PATH.name
+        build_name_index(source, staged_index)
+        entries[INDEX_PATH.name] = {
+            "sha256": file_sha256(staged_index), "bytes": staged_index.stat().st_size,
+            "oracle_sha256": entries[ORACLE_PATH.name]["sha256"],
+        }
+        replacements.append((staged_index, INDEX_PATH))
+        staged_manifest = stage / manifest_path.name
+        staged_manifest.write_text(
+            json.dumps({"schema_version": 1, "files": entries}, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        # All downloads and the dependent index are validated before publication.
+        # The manifest is published last; verify hashes before consuming a snapshot.
+        for staged, destination in replacements:
+            staged.replace(destination)
+        staged_manifest.replace(manifest_path)
 
     print("\nDone! Cached files:")
     for p in (ORACLE_PATH, RULINGS_PATH, INDEX_PATH):

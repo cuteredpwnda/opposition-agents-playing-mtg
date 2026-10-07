@@ -1,0 +1,25 @@
+{
+  "workbench_revision": "4d61c37f4e52c22c344aab004ada7622bec9fead",
+  "source_sha256": {
+    "mtg-ontology-v2.0.ttl": "b0faea97861a04306e4c40e981bf4622f13b35a3e681c87192fd410360ff2e6c",
+    "mtg-cr-types.ttl": "785d9b13c7f6c0ac0c9f6ca5b61b454cd018a2c994207e6dad2c89ef731c965c",
+    "competency_questions.yaml": "b922321f674189eb88d2bbb1a2ea91601d997b84834be5d6fa4c6ec4a125d4ec"
+  },
+  "exporter_sha256": "ff72677ae2604e3f610b8a2118654955a6256971332bfbd62cbf6adda75ab626",
+  "projection_notice": "Review projection, not an OWL round-trip or rules engine. Modules are editor groupings, not independent owl:imports. Named classes and one named parent per class are shown. Union endpoints expand into separate display relations, not additional RDF axioms. Missing relation endpoints use owl:Thing, not an invented domain/range assertion. Restrictions, multiple inheritance, keys, property chains, disjointness, annotations and imports remain authoritative in Turtle and the companion RDF JSON. Vocabulary individuals are class examples, not a populated card/combo database. External class stubs do not imply that their ontologies were loaded or validated.",
+  "warnings": [
+    "http://purl.org/mtg/ontology#groundedIn: unspecified endpoints displayed as owl:Thing",
+    "http://purl.org/mtg/ontology#involvedIn: unspecified endpoints displayed as owl:Thing",
+    "http://purl.org/mtg/ontology#cardCoveragePct: unspecified attribute domain displayed as owl:Thing",
+    "http://purl.org/mtg/ontology/decision#Decision: only one of 2 named parents displayed"
+  ],
+  "counts": {
+    "schema_named_classes": 62,
+    "display_classes": 81,
+    "display_relations": 47,
+    "object_properties": 35,
+    "datatype_properties": 18,
+    "competency_questions": 32,
+    "examples": 888
+  }
+}

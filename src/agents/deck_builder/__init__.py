@@ -13,6 +13,8 @@ from src.agents.deck_builder.constraints import (
     commander_color_identity,
     validate_full_deck,
 )
+from src.agents.deck_builder.evaluator import DeckEvaluator, EvalResult
+from src.agents.deck_builder.mutator import DeckMutator, MutationLog, MutationStep
 from src.agents.deck_builder.scorer import CardScorer
 
 __all__ = [
@@ -21,4 +23,9 @@ __all__ = [
     "CardScorer",
     "commander_color_identity",
     "validate_full_deck",
+    "DeckEvaluator",
+    "EvalResult",
+    "DeckMutator",
+    "MutationLog",
+    "MutationStep",
 ]

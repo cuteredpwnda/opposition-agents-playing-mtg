@@ -29,10 +29,10 @@ def test_derive_seed_is_deterministic():
 def test_ablation_sweep_help_exits_zero():
     """The CLI parser at least produces help without crashing."""
     repo_root = Path(__file__).resolve().parents[1]
-    script = repo_root / "scripts" / "ablation_sweep.py"
+    script = repo_root / "scripts" / "phase_rs_rollout_sweep.py"
     result = subprocess.run(
         [sys.executable, str(script), "--help"],
         capture_output=True, text=True, timeout=30,
     )
     assert result.returncode == 0, result.stderr
-    assert "--sweep" in result.stdout
+    assert "--pickers" in result.stdout

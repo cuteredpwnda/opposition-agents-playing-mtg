@@ -18,8 +18,11 @@
 \usepackage{algorithm}
 \usepackage{algpseudocode}
 \usepackage[hidelinks]{hyperref}
+\usepackage{xurl}
+\newcommand{\doi}[1]{\href{https://doi.org/#1}{doi:\nolinkurl{#1}}}
 \usepackage{enumitem}
 \usepackage{titlesec}
+\usepackage[numbers]{natbib}
 
 \titleformat{\section}{\Large\bfseries}{\thesection}{0.6em}{}
 \titleformat{\subsection}{\large\bfseries}{\thesubsection}{0.5em}{}
@@ -64,6 +67,56 @@ traces each agent emits.  All cited paths are workspace-relative.
 \tableofcontents
 \bigskip
 
+\section*{Native runtime configuration}
+
+The current native target is phase-rs 0.102.0, protocol 106 \cite{phase2026engine},
+from \url{https://github.com/phase-rs/phase}. The bridge sends
+engine-authored complete format configurations and retains incomplete outcomes
+for time, turn, action and transport limits. Four-player Commander currently
+means one Python-controlled seat and three native AI opponents with explicit
+decks, not four independent Python agents; terminal pods remain unqualified.
+
+Full-session reconnect now retains the server-issued generation and player
+credential, submits the native \texttt{Reconnect} frame, and requires a matching
+\texttt{GameStarted} session, controlled seat and non-stale revision before
+reporting success. Credentials are not included in gameplay traces. A successful
+handshake alone does not restore a game.
+
+The analytic KL model distinguishes cancellation from casting subdecisions.
+For an observed pending cast it forecasts one generic completion macro-step;
+repeated rollout subdecisions cannot repeatedly create board value, and these
+internal choices do not invent opponent attacks or advance the turn. This
+repairs the cancellation/mode tie. In two-player snapshots, simple fixed-damage
+player/object targets use native effect/target identities, including
+self-versus-opponent direction. Multiplayer snapshots and other effects retain
+coarse forecasts: the latent opponent-life minimum is not a specific player's
+life. This is not a general card-, mode-
+or target-exact transition model. Native interaction planning and matched objective budgets
+remain separate research gates.
+
+Ontology construction is author-directed and LLM-assisted at the schema/tooling
+level; the rule-vocabulary generator performs deterministic parsing without
+runtime LLM calls. The companion ontology paper separates requirements,
+modelling, extraction, validation, revision and packaging, and discloses
+incomplete historical prompt/model provenance.
+The ontology vocabulary has been refreshed from the September 25 rules revision.
+Direct document provenance no longer depends on materialising the optional
+local rule-text graph. Corpus audits declare format and auxiliary-object
+exclusions and retain unknown-type denominators; resource validation results
+belong in the companion ontology paper rather than being treated as agent
+performance.
+
+At runtime the local type/subtype vocabulary is an in-process cached index.
+Strategic graph access is optional Neo4j/Cypher, with partial caches in the
+KG-aware heuristic. An opt-in localhost read-only Fuseki snapshot is now
+implemented and query-verified, but not wired into agent decisions.
+Current n10s setup uses v2.0 Turtle, preserves compatible configuration and
+checks import counts; existing KG fallback behaviour and live writes still
+need qualification before live
+ontology grounding or successful writes are claimed. Docker availability is
+not required for the offline factual resource audits reported in the companion
+paper.
+
 % =========================================================================
 \section{Theoretical background (1 page)}
 \label{sec:tech-theory}
@@ -77,14 +130,15 @@ state (opponent hands and library order).  Concretely:
   \item $\mathcal{S}$: full \texttt{GameState} including all players' zones, the
         stack, mana pools, life totals, and bookkeeping flags.  Conservatively
         $|\mathcal{S}| > 10^{800}$.
-  \item $\mathcal{O}$: controlled-perspective filter from
-        \texttt{src/engine/zones.py}; only the active player's hand,
-        library top, and revealed permanents are visible.
-  \item $\mathcal{A}$: legal \texttt{Action} list assembled by
-        \texttt{src/engine/priority\_loop.py}, typically
+  \item $\mathcal{O}$: seat-filtered snapshot emitted by phase-rs
+        \texttt{StateUpdate}, then projected into our policy view by
+        \texttt{src/integrations/phase\_rs/adapter.py}.
+  \item $\mathcal{A}$: legal action list from phase-rs wire messages,
+        mapped into internal \texttt{Action} values by the same adapter,
+        typically
         $|\mathcal{A}| \in [1, 60]$.
-  \item $T$: the rules engine itself --- deterministic given the random
-        seed and the active player's choices.
+  \item $T$: phase-rs runtime transition system (Rust engine), deterministic
+        given the random seed and chosen actions.
   \item $R$: terminal $\pm 1$ on win/loss; agents may shape via $\Delta$life,
         $\Delta$cards, $\Delta$tempo when training a value head.
 \end{itemize}
@@ -96,10 +150,10 @@ state (opponent hands and library order).  Concretely:
         $o_t \to a_t$ directly, no internal state.
   \item \emph{Model-based} (World-Model): learn $\hat T$ in latent space
         and pick $\arg\max_a \mathbb{E}_{\hat T}[V(s_{t+H})]$.
-  \item \emph{Belief-driven} (Active-Inference, LLM-Fusion):
-        maintain a belief $b_t$ over hidden state and minimise expected
-        free energy $G(\pi) = \underbrace{-\mathbb{E}_q[R]}_{\text{pragmatic}}
-        \,+\, \underbrace{-\mathbb{E}_q[\mathrm{KL}(b_{t+1}\|b_t)]}_{\text{epistemic}}$.
+  \item \emph{Belief-driven} (KL-Control, LLM-Fusion):
+        maintain a belief $b_t$ over hidden state and minimise
+        $G(\pi) = \mathrm{KL}(Q(\eta|\pi)\|P_0(\eta)) + \mathbb{E}_Q[V(\eta)]$
+        closed-loop over that belief.
 \end{enumerate}
 %
 A self-contained derivation is in \S\ref{sec:tech-foundations}.  See
@@ -129,10 +183,10 @@ class MTGAgent(Protocol):
     ) -> Action: ...
 \end{lstlisting}
 %
-Agents must \emph{never} mutate \texttt{game\_state}; only the rules engine in
-\texttt{src/engine/} is allowed to.  An agent that returns an action not in
+Agents must \emph{never} mutate \texttt{game\_state}; only the engine is
+allowed to.  An agent that returns an action not in
 \texttt{legal\_actions} is treated as a forfeit by
-\texttt{src/orchestrator/priority\_loop.py}.
+the phase-rs integration runner.
 
 Determinism: any RNG owned by an agent must be a \texttt{random.Random}
 instance constructed from the seed passed by the runner.  This
@@ -152,9 +206,9 @@ Random              & \texttt{random\_agent.py}           & Uniform over legal a
 Heuristic           & \texttt{heuristic\_agent.py}        & Hand-tuned action priorities. \\
 KG-Heuristic        & \texttt{kg\_heuristic\_agent.py}    & Heuristic + Neo4j combo lookup. \\
 Ollama (LLM)        & \texttt{ollama\_agent.py}           & Local LLM picks an action index. \\
-Active-Inference    & \texttt{active\_inference\_agent.py}& Bayesian belief, EFE minimisation. \\
+KL-Control          & \texttt{kl\_control.py}             & Belief-space KL control / path-integral MPC. \\
 World-Model         & \texttt{world\_model\_agent.py}     & V+M+C latent rollouts. \\
-LLM-Fusion          & \texttt{llm\_fusion\_agent.py}      & Weighted vote of all four signals. \\
+LLM-Fusion          & \texttt{llm\_fusion\_agent.py}      & Weighted vote of all four signals (legacy). \\
 Human               & \texttt{human\_agent.py}            & Stdin prompt, used for debugging. \\
 \bottomrule
 \end{tabularx}
@@ -270,27 +324,122 @@ return legal_actions[idx % len(legal_actions)]
 Failure modes: timeout $\to$ fall back to HeuristicAgent; non-integer
 reply $\to$ fall back to RandomAgent over a small legal-action subset.
 
-\subsection{ActiveInferenceAgent}
-\textbf{File:} \texttt{src/agents/active\_inference\_agent.py}.
+\subsection{ActiveInferenceAgent / KLControlActionPicker}
 
-Maintains a Dirichlet belief over the opponent's hand composition and
-minimises expected free energy:
+\textbf{Files:} \texttt{src/agents/kl\_control.py} (objective and planners),
+\texttt{src/agents/mtg\_transition.py} (generative model),
+\texttt{src/integrations/phase\_rs/kl\_control\_picker.py} (phase-rs driver).
+
+\medskip\noindent\textbf{Objective.} Belief-space KL control --- the
+canonical discretisation of continuous-time Active Inference
+\cite{kaufmann2026aifcontrol}:
 %
 \begin{equation}
-G(\pi) \;=\; -\,\mathbb{E}_{q(s'|\pi)}[R(s')]
-            \;-\; \mathrm{KL}\!\left[q(s'|\pi)\,\|\,b_t\right].
+G(\pi) \;=\; \underbrace{\mathrm{KL}\!\big(Q(\eta\mid\pi)\,\|\,P_0(\eta)\big)}_{\text{control cost}}
+            \;+\; \underbrace{\mathbb{E}_{Q(\eta\mid\pi)}\!\big[V(\eta)\big]}_{\text{risk}},
+\qquad V(\eta) = -\log p(\eta).
+\label{eq:tech-kl}
 \end{equation}
 %
-The first term is the pragmatic value (favouring high-utility outcomes),
-the second is the epistemic value (favouring information gain).  Belief
-update on each opponent action uses Bayes' rule with a card-likelihood
-table seeded from the decklist (see \texttt{docs/OPPONENT\_MODELING\_WITH\_DECKLIST.md}).
+Note what is \emph{not} there: no additive information-gain bonus and no
+ambiguity (likelihood-entropy) penalty. Both are surrogate terms with
+known failure modes, and neither is needed --- exploration comes from
+evaluating $\pi$ closed-loop over belief states, which is Fel'dbaum's
+dual control effect.
+
+\medskip\noindent\textbf{Components.}
+\begin{itemize}[leftmargin=1.2em, itemsep=1pt]
+  \item \texttt{LatentState} --- the plant coordinates $\eta$: life totals,
+        board power, permanent counts, hand and library size, turn, and the
+        two terminal flags. Deliberately small and \emph{physical}.
+  \item \texttt{PreferencePotential} --- $V(\eta)$, the single place goals
+        are encoded. Defined over game state, never over observations, which
+        is what rules out transducer wireheading.
+  \item \texttt{BeliefState} --- categorical over hidden-information
+        hypotheses, with \texttt{update()} (Bayes), \texttt{entropy()}
+        (diagnostic only) and \texttt{expectation()}.
+  \item \texttt{MTGTransitionModel} --- analytic $p(\eta' \mid \eta, a, h)$.
+        The hypothesis enters exactly where hidden information bites: a
+        counterspell blanks a cast, removal blanks a board commitment, a
+        hidden threat accelerates the opponent's clock.
+  \item \texttt{BeliefSpaceKLControl} --- the planner, with two engines.
+  \item \texttt{LegacyEFE} --- the two extant factorisations, for ablation
+        only.
+\end{itemize}
+
+\medskip\noindent\textbf{Planner engines.}
+\begin{center}\small
+\begin{tabular}{lp{9cm}}
+\toprule
+Engine & Behaviour \\
+\midrule
+\texttt{tree} & Exact closed-loop dynamic programming over the belief tree
+  with observation branching. Reference semantics; exponential in horizon. \\
+\texttt{mppi} & Model Predictive Path Integral. Samples $K$ continuations
+  from the passive prior, rolls each forward $H$ steps, aggregates terminal
+  potentials with the softmin operator. Default; linear in $K \cdot H$. \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\medskip\noindent\textbf{The passive prior is load-bearing.} $q(a)$ is the
+reference measure the control cost is charged against, so
+$C_{\mathrm{action}}(a) = -\log q(a) + c_{\mathrm{move}}$. Heuristic, KG and
+LLM signals \emph{shape} $q$ via
+\texttt{mtg\_transition.passive\_prior(actions, extra\_scores)}. This is
+where the four hand-set fusion weights went: they are no longer a separate
+additive stage with free coefficients.
+
+\medskip\noindent\textbf{Configuration} (\texttt{KLControlConfig}).
+\begin{center}\small
+\begin{tabular}{lcp{7.5cm}}
+\toprule
+Parameter & Default & Role \\
+\midrule
+\texttt{horizon} & 3 & Planning depth $H$. \\
+\texttt{beta} & 4.0 & Bounded-rationality precision. $\beta\!\to\!\infty$ gives the deterministic Bellman minimiser; $\beta\!\to\!0$ gives the passive prior. \\
+\texttt{rollouts} & 48 & $K$, MPPI sample count. \\
+\texttt{engine} & \texttt{mppi} & \texttt{mppi} or \texttt{tree}. \\
+\texttt{move\_cost} & 0.1 & Additive stage cost, in nats. \\
+\texttt{discount} & 1.0 & Per-step discount on the potential. \\
+\texttt{seed} & --- & Threads through both RNGs; required for determinism. \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\medskip\noindent\textbf{Objective selection for ablation.} The picker takes
+\path{--objective kl|efe_infogain|efe_ambiguity}. All three share the
+belief, transition model, potential, prior and seed, so they differ in
+nothing but the scoring function. Expected failure modes of the two legacy
+arms, in MTG terms:
+\begin{itemize}[leftmargin=1.2em, itemsep=1pt]
+  \item \texttt{efe\_infogain} --- noisy-TV capture: compulsive
+        scry/surveil/cantrip loops that buy information with no bearing on
+        the win condition.
+  \item \texttt{efe\_ambiguity} --- scotophobia: refusing profitable attacks
+        into possible blockers, or casts into open mana, purely because the
+        outcome distribution is wide.
+\end{itemize}
+
+\medskip\noindent\textbf{Invariant under test.}
+\texttt{tests/test\_kl\_control.py} asserts that sharpening the belief
+without changing the plant state leaves the control cost unmoved. That is
+the structural property distinguishing \eqref{eq:tech-kl} from
+\texttt{efe\_infogain}, and it is the one a future refactor is most likely
+to break.
+
+\medskip\noindent\textbf{Decision traces.} \texttt{PlanResult.as\_trace()}
+emits the full decomposition --- $G$, control cost, risk, the Gibbs policy,
+belief entropy, and the top-$k$ candidates --- keyed to the ontology's
+\texttt{mtgd:} decision vocabulary, so a decision can be written into the
+knowledge graph as a \texttt{prov:Activity} rather than only into a log
+file.
 
 \subsection{WorldModelAgent}
 \textbf{File:} \texttt{src/agents/world\_model\_agent.py}.
-\textbf{Backbone:} \texttt{src/world\_model/world\_model.py}.
+\textbf{Backbone:} \path{src/world_model/world_model.py}.
 
-Training now uses the external \texttt{stable-pretraining} orchestration layer and the surrounding \texttt{stable-worldmodel} research stack rather than a bespoke in-repo trainer. Concretely, \texttt{scripts/train\_stable\_worldmodel.py} wraps the local MTG \texttt{WorldModel} in a \texttt{stable\_pretraining.Module} and drives optimisation through \texttt{stable\_pretraining.Manager}; this mirrors the software split used by LeWorldModel, which keeps the architecture and loss local while delegating training/runtime plumbing to the upstream libraries \cite{balestriero2025stable,maes_lelidec2026swm,maes_lelidec2026lewm}.
+Training now uses the external \texttt{stable-pretraining} orchestration layer and the surrounding \texttt{stable-worldmodel} research stack rather than a bespoke in-repo trainer. Concretely, \path{scripts/train_stable_worldmodel.py} wraps the local MTG \texttt{WorldModel} in a \texttt{stable\_pretraining.Module} and drives optimisation through \texttt{stable\_pretraining.Manager}; this mirrors the software split used by LeWorldModel, which keeps the architecture and loss local while delegating training/runtime plumbing to the upstream libraries \cite{balestriero2025stable,maes_lelidec2026swm,maes_lelidec2026lewm}.
 
 \medskip\noindent\textbf{Components} (V+M+C, after Ha \& Schmidhuber).
 \begin{align*}
@@ -404,8 +553,8 @@ Symptoms: repeated \texttt{PASS\_PRIORITY} despite non-trivial board states.
 
 Checklist:
 \begin{itemize}[leftmargin=1.2em, itemsep=1pt]
-      \item Inspect \texttt{legal\_actions} logs from \texttt{src/orchestrator/priority\_loop.py}; if only pass/concede exist, the issue is engine-side rather than policy-side.
-      \item Verify stack resolution path in \texttt{src/engine/stack.py} and trigger enqueueing in \texttt{src/engine/triggered\_abilities.py}.
+      \item Inspect \texttt{legal\_actions} logs from \path{src/orchestrator/priority_loop.py}; if only pass/concede exist, the issue is engine-side rather than policy-side.
+      \item Verify stack resolution path in \path{src/engine/stack.py} and trigger enqueueing in \path{src/engine/triggered_abilities.py}.
       \item Confirm current phase allows the expected action class (main phase vs combat priority windows).
 \end{itemize}
 
@@ -414,8 +563,8 @@ Symptoms: board develops, but attackers are never declared.
 
 Checklist:
 \begin{itemize}[leftmargin=1.2em, itemsep=1pt]
-      \item Check \texttt{src/engine/combat.py:legal\_attackers} output for summoning-sickness and tap-state filtering.
-      \item Ensure power/toughness modifiers from equipment and temporary effects reach \texttt{effective\_power}/\texttt{effective\_toughness}.
+      \item Check \path{src/engine/combat.py:legal_attackers} output for summoning-sickness and tap-state filtering.
+      \item Ensure power/toughness modifiers from equipment and temporary effects reach \path{effective_power} and \path{effective_toughness}.
       \item For heuristic agents, inspect \texttt{ACTION\_PRIORITIES} and tiebreak functions for accidental over-penalisation of combat lines.
 \end{itemize}
 
@@ -434,7 +583,7 @@ Symptoms: long think times or fallback-only behaviour.
 
 Checklist:
 \begin{itemize}[leftmargin=1.2em, itemsep=1pt]
-      \item Verify Ollama endpoint and model are available (see \texttt{docs/OLLAMA\_SETUP.md}).
+      \item Verify that the configured Ollama endpoint responds and that the selected model is installed.
       \item Lower \texttt{top\_n} and increase \texttt{obvious\_threshold} to reduce LLM calls under load.
       \item Confirm timeout fallback path returns a legal action and records the fallback reason in reasoning traces.
 \end{itemize}
@@ -540,19 +689,27 @@ all our policies are approximations.
 \subsection{World models as latent imagination}
 Following Ha \& Schmidhuber and Hafner et~al.\ (Dreamer), we factor the
 agent as $V$ (encoder), $M$ (recurrent dynamics), and $C$ (controller).
-Training the dynamics jointly minimises
+The one-step JEPA stage jointly optimises the observation encoder and
+predictor, using the same encoder under stop-gradient on the target branch:
 %
 \begin{equation}
-\mathcal{L}_{\text{dyn}} = \sum_t \big\| \hat z_{t+1} - \mathrm{sg}(z_{t+1}) \big\|^2_2
-   + \beta \cdot \mathrm{KL}(q(z_t|o_t) \,\|\, p(z_t|h_{t-1})),
+\mathcal{L}_{\text{JEPA}} =
+ \mathbb E_{\mathcal D}\!\left[
+ \mathrm{MSE}\!\left(\hat z_{t+1},\mathrm{sg}(E_\phi(o_{t+1}))\right)
+ +\beta_J\mathrm{KL}\!\left(q_\phi(z|o_t)\,\|\,\mathcal N(0,I)\right)
+ \right],
 \end{equation}
 %
-where $\mathrm{sg}$ is stop-gradient.  We follow the JEPA recipe of
-LeCun \& Assran: predict in representation space, not in pixel space.
-The single tunable knob is $\beta$ (\texttt{--jepa-beta}, default $1.0$).
+where $\mathcal D$ contains consecutive transitions and optional KG context
+is suppressed in the notation. Prediction targets an embedding, not a
+complete symbolic successor state. $\beta_J$ (\texttt{--jepa-beta}, default
+$1.0$) weights encoder regularisation; the reference is a standard normal,
+not an LSTM-conditioned prior. Dream search currently uses separate
+recurrent dynamics and accumulates predicted rewards. This stage does not
+train that recurrent model or establish an $H$-step JEPA rollout objective.
 In the current repository this loss is still computed by the local MTG model, but the optimisation loop, callback stack, and checkpoint orchestration are delegated to \texttt{stable-pretraining}; \texttt{stable-worldmodel} remains the upstream runtime substrate around data collection and world-model evaluation conventions \cite{balestriero2025stable,maes_lelidec2026swm}.
 
-\subsection{Free energy and active inference}
+\subsection{Free energy, active inference, and optimal control}
 Friston's free-energy principle frames perception and action as joint
 inference.  The variational free energy is
 %
@@ -561,17 +718,26 @@ F[q] = \underbrace{\mathbb{E}_q[\log q(s) - \log p(o,s)]}_{\text{evidence bound}
      = \mathrm{KL}(q\|p(s|o)) - \log p(o).
 \end{equation}
 %
-Action selection minimises \emph{expected} free energy,
-which decomposes as
+Action selection minimises \emph{expected} free energy. Kaufmann
+\cite{kaufmann2026aifcontrol} establishes that on path space this
+functional is the relative entropy of the controlled path measure against
+a preference-tilted target, which by Girsanov's theorem is finite-horizon
+path-integral stochastic MPC; its canonical discretisation is
+belief-space KL control,
 %
 \begin{equation}
-G(\pi) = \underbrace{-\mathbb{E}_q[\log p(o\mid C)]}_{\text{pragmatic}}
-        + \underbrace{-\mathbb{E}_q[\mathrm{KL}(q(s\mid o,\pi) \,\|\, q(s\mid \pi))]}_{\text{epistemic}}.
+G(\pi) = \mathrm{KL}\!\big(Q(\eta\mid\pi)\,\|\,P_0(\eta)\big)
+       + \mathbb{E}_{Q(\eta\mid\pi)}[V(\eta)].
 \end{equation}
 %
-The pragmatic term encodes goal-seeking; the epistemic term encodes
-information-gathering.  Bayesian RL is recovered when the prior $C$
-is uniform, and pure exploration is recovered when rewards are flat.
+The conventional pragmatic/epistemic split is therefore not a derivation
+but a pair of surrogate objectives, which agree only when the sensory
+preference is exactly the pushforward of the state preference.  Under a
+finite deliberation budget the hard $\min$ becomes a softmin and policy
+selection follows $p_\beta(\pi) \propto q(\pi)e^{-\beta G(\pi)}$; a single
+precision $\beta$ interpolates between the deterministic Bellman minimiser
+and the passive prior.  This is what
+\texttt{src/agents/kl\_control.py} implements.
 
 \subsection{Knowledge-graph grounding}
 Cards form an inductive graph $\mathcal{G}=(V,E)$ with edges for
@@ -605,38 +771,58 @@ operator and converges (in expectation) provided the dynamics model is
 locally accurate.
 
 % =========================================================================
+\section{Ontology-backed decision provenance}
+\label{sec:decision-ontology}
+
+Reasoning traces answer ``what did the agent score?''. They do not answer
+``why is this decision defensible?'', because a JSON blob in
+\texttt{runs/} has no schema a third party can rely on and no link to the
+domain vocabulary. The v2.0 ontology therefore carries a decision module
+in its own namespace, \texttt{mtgd:}, so decisions can be written into the
+same graph as the game they occur in.
+
+\begin{center}\small
+\begin{tabular}{lll}
+\toprule
+Term & Aligned to & Carries \\
+\midrule
+\texttt{mtgd:Decision} & \texttt{mtg:GameAction}, \texttt{prov:Activity} & one action selection \\
+\texttt{mtgd:ExpectedFreeEnergy} & \texttt{dul:Parameter} & \texttt{controlCost}, \texttt{risk} \\
+\texttt{mtgd:BeliefState} & \texttt{dul:InformationObject} & \texttt{beliefEntropy} \\
+\texttt{mtgd:Policy} & \texttt{dul:Plan} & \texttt{precision} ($\beta$) \\
+\texttt{mtgd:PreferencePotential} & \texttt{dul:Parameter} & the goal specification \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Because \texttt{mtgd:Decision} is a \texttt{prov:Activity}, ``why did seat~0
+attack on turn~6?'' is a graph query returning the objective
+decomposition, the belief it was taken under, and the policy precision in
+force --- rather than a log grep. This is also what makes the agent layer
+auditable in the same way the card data is: an explanation grounded in
+domain terms with provenance attached, instead of a saliency score.
+
+The mapping is intentionally lossless in one direction only. Traces are
+the source of truth at runtime (cheap, always written); graph
+materialisation is a post-processing step over the trace files, so a
+Neo4j outage can never block play.
+
+% =========================================================================
 \section{Where to look next}
 \begin{itemize}[leftmargin=*]
-  \item Companion paper: \texttt{paper/opposition\_agents\_mtg.tex}.
-  \item Single source of truth: \texttt{IMPLEMENTATION\_PLAN.md}.
-  \item Engine docs: \texttt{ARCHITECTURE.md}, \texttt{DEVELOPMENT.md}.
-  \item World-model design: \texttt{docs/WORLD\_MODEL\_DESIGN.md}.
-  \item Opponent modelling: \texttt{docs/OPPONENT\_MODELING\_WITH\_DECKLIST.md}.
+  \item Companion paper: \path{paper/opposition_agents_mtg.tex}.
+  \item Control objective implementation: \path{src/agents/kl_control.py}.
+  \item Ontology: \path{data/ontology/mtg-ontology-v2.0.ttl},
+        validated by \path{scripts/validate_ontology.py}.
+  \item Competency questions: \path{data/competency_questions.yaml}.
+  \item Native rules engine and built-in opponent: \cite{phase2026engine}.
+  \item World-model implementation: \path{src/world_model/}.
 \end{itemize}
 
 % =========================================================================
-\section{References}
+\renewcommand{\bibsection}{\section{References}}
 
-\begin{thebibliography}{9}
-
-\bibitem{balestriero2025stable}
-R.~Balestriero, H.~Van~Assel, S.~BuGhanem, and L.~Maes.
-\newblock stable-pretraining-v1: Foundation Model Research Made Simple.
-\newblock \emph{arXiv:2511.19484}, 2025.
-\newblock Software: \url{https://github.com/galilai-group/stable-pretraining}.
-
-\bibitem{maes_lelidec2026swm}
-L.~Maes, Q.~Le~Lidec, D.~Haramati, N.~Massaudi, D.~Scieur, Y.~LeCun, and R.~Balestriero.
-\newblock stable-worldmodel-v1: Reproducible World Modeling Research and Evaluation.
-\newblock \emph{arXiv:2602.08968}, 2026.
-\newblock Software: \url{https://github.com/galilai-group/stable-worldmodel}.
-
-\bibitem{maes_lelidec2026lewm}
-L.~Maes, Q.~Le~Lidec, D.~Scieur, Y.~LeCun, and R.~Balestriero.
-\newblock LeWorldModel: Stable End-to-End Joint-Embedding Predictive Architecture from Pixels.
-\newblock \emph{arXiv preprint}, 2026.
-\newblock Software: \url{https://github.com/lucas-maes/le-wm}.
-
-\end{thebibliography}
+\bibliographystyle{plainnat}
+\bibliography{references}
 
 \end{document}
