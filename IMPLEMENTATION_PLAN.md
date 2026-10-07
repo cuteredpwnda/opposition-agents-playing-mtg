@@ -52,10 +52,20 @@ library/opponent-hand counts. Campaign `20261005_194651_374203` was stopped
 before optimization, retaining 27 terminal datasets and a stopped-run summary.
 Feature version v3 preserves public counts without hidden identities; focused
 compatibility suite: 65 passed, lint clean for the new/changed native modules.
-Fresh campaign `20261005_200225_435675` is now collecting 64/16/8 games before
-five training seeds and 80 playing evaluations; live tensors verify public
-hand/library counts are retained.
-No completed full native campaign or learning benefit is claimed yet.
+Full campaign `20261005_200225_435675` is complete: 64/64 training, 16/16
+validation and 8/8 test games reached terminal outcomes; all four components
+updated in each of five training seeds. The training-only graph has 290
+co-visibility edges from 5,977 game-level evidence records. Across 20
+first-seed games per W0/W1 × no/induced-graph cell, the arms yielded,
+respectively: W0/no graph 0 wins, 17/20 complete; W0/induced 1 win, 20/20;
+W1/no graph 0 wins, 20/20; W1/induced 0 wins, 18/20. The interrupted final
+cell was resumed without replacing its 15 retained attempts; final source,
+deck, binary and native-data fingerprints all match. No condition reaches a
+reliable playing-strength or induced-graph-benefit conclusion; completion is
+below 95% for two cells. JEPA validation MSE and non-forced imitation accuracy
+increase/improve on average, but validation non-forced NLL worsens, and these
+predictive measures do not establish stronger play. The run is development
+evidence, not completion of confirmatory K12/RQ1--RQ5.
 
 **Publication feasibility gates (Oct 5):** the full Scryfall oracle/rulings
 cache is refreshed (38,706 oracle records, 79,706 rulings, 38,201 indexed names).
@@ -1427,7 +1437,7 @@ items stay for traceability.
 
 ### In progress
 
-- [ ] **Native graph/model development campaign (Oct 5)** — genuine
+- [x] **Native graph/model development campaign (Oct 5)** — genuine
       observation/action recorder, training-only provenance graph and complete
       four-component training/deployment are implemented in
       `native_learning_data.py`, `native_learning.py`,
@@ -1447,12 +1457,16 @@ items stay for traceability.
       opponent-hand counts; all 27 collected terminal games remain recorded.
       v3 fixes public counts and rejects malformed/missing count data.
       Regression suite: 65 passed; live v3 tensors verify hand/library values.
-      Full campaign `runs/native_learning/20261005_200225_435675` is active:
-      64/16/8 collection games, five training seeds, 20 epochs per component,
-      100 graph epochs, 20 episodes per first-seed intervention cell.
-      At the requested wrap-up, 32/64 training collection games are terminal;
-      remaining collection, five-seed optimization and final evaluation are
-      pending, not completed results. Leave the owned campaign running.
+      Full campaign `runs/native_learning/20261005_200225_435675` completed
+      64/16/8 terminal games, five training seeds, all four model-component
+      updates, a 290-edge/5,977-evidence training graph and 20 evaluation
+      attempts in each of four initial/trained × none/induced graph cells.
+      The interrupted last cell resumed at games 16--20 with its five missing
+      attempts; all final source and native input hashes match. Evaluation
+      results: W0/no graph 0 wins, 17 terminal/20; W0/induced 1 win, 20/20;
+      W1/no graph 0 wins, 20/20; W1/induced 0 wins, 18/20. Two cells are
+      below the 95% completion gate; no playing-strength/graph benefit claim.
+      This completes the offline development run, not confirmatory K12/RQ1--RQ5.
       This is offline imitation/association
       learning, not causal combo discovery, self-play promotion or K12
       confirmatory evidence.
@@ -2669,7 +2683,7 @@ The engine implements the full MTG turn structure with stack, priority passing, 
 
 ### 4.3 World Model (V + M + C)
 
-**Status: 🟡 Partial — native development training qualified; full campaign active**
+**Status: 🟡 Partial — native development run completed; scientific qualification pending**
 
 The full V+M+C world model with JEPA predictor and KG context fusion is implemented:
 
@@ -2731,14 +2745,15 @@ live readiness, query compatibility and bulk-write/fallback accounting remain K1
 
 ### 4.5 Training & Self-Play
 
-**Status: 🟡 Partial — native development cycle verified; full campaign active**
+**Status: 🟡 Partial — native development cycle completed; confirmation pending**
 
 `scripts/run_native_learning.py` is the actual native observation-to-model
 entry point. It separates whole-game train/validation data and a held-out
 control family, trains independent model seeds and reports strict four-arm
 deployment/activation evidence. First qualification failed its completion
 gate; repaired data/training and sampled deployment complete. The five-seed
-full campaign remains active. Native self-play promotion, reward-based
+full campaign is complete; two of four playing cells miss the 95% completion
+gate and no arm establishes a win advantage. Native self-play promotion, reward-based
 policy optimization, curated/shuffled controls and multi-seat/RNG qualification
 are not implemented. The following older modules are not evidence of those
 native capabilities.

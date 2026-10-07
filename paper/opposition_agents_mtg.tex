@@ -1126,9 +1126,12 @@ It records perspective-filtered numeric observations and complete original
 legal actions at controlled-seat decisions; hidden hand/library identities
 and face-down names are excluded. A frozen burn anchor is used throughout.
 Four training games from burn/green stompy, two independent validation games
-and two held-out blue-white control games all reach rules-terminal outcomes.
-Only training observations induce the 241 co-visible card-pair edges and
-407 producer/deck/source provenance records. This is observational association,
+and two held-out blue-white control games all reach rules-terminal outcomes
+in the initial qualification. The subsequent full development campaign
+collects 64 training, 16 validation and eight held-out blue-white control
+games; all 88 games reach rules-terminal outcomes. Its training-only graph
+contains 290 co-visible card-pair edges from 5,977 per-game
+producer/deck/source evidence records. This is observational association,
 not causal synergy or a populated normative ontology.
 
 GraphSAGE learns 32-dimensional card context. A small 32-dimensional latent
@@ -1136,8 +1139,9 @@ model then trains an EMA-target JEPA encoder/predictor (target momentum 0.99,
 batch standard-deviation floor 0.05, variance weight 10, KL weight 0.001),
 recurrent latent/reward/terminal heads and a producer-imitation controller.
 Targets span successive controlled decisions, including opponent activity,
-not engine microsteps. All four model components change; complete bundles
-load strictly and frozen source/native-input hashes remain unchanged.
+not engine microsteps. All four model components change for each of five independent training
+seeds; complete bundles load strictly and final frozen source/native-input
+hashes remain unchanged.
 Hashed card/action features and fixed zone capacities remain compression
 limitations. No reward-maximizing or dream-policy training is claimed.
 
@@ -1154,10 +1158,43 @@ library/opponent-hand counts. The initial full collection attempt was stopped
 before optimization, retaining its 27 terminal datasets. Feature version~3
 restores those public counts without hidden identities, rejects malformed
 counts and passes a live observation check; the fresh full run uses this version.
-The full development campaign schedules 64/16/8 collection games, five
-training seeds, 20 epochs per neural component, 100 graph epochs and
-20 episodes per first-seed intervention cell. It is running, with results
-pending. Curated/shuffled graph controls, all-seed playing effects,
+The completed campaign uses 20 neural epochs and 100 graph epochs and evaluates
+20 episodes per first-seed intervention cell. Across training seeds, held-out
+JEPA MSE falls from 0.0130 (SD 0.0037) initially to 0.0062 (SD 0.0021) on
+validation; trained test MSE is 0.0040 (SD 0.0010). Non-forced imitation
+accuracy rises from 0.346 (SD 0.031) to 0.418 (SD 0.008) on validation and is
+0.472 (SD 0.010) on test, while validation non-forced NLL worsens from 1.106
+(SD 0.004) to 1.166 (SD 0.014). The trained test has no computed initial-model
+baseline. The divergence between accuracy and NLL makes the predictive result
+mixed; neither metric establishes better play.
+
+\begin{table}[ht]
+\centering
+\small
+\begin{tabularx}{\linewidth}{lccc}
+\toprule
+Frozen policy / graph & Rules-terminal & Wins / terminal & Incomplete \\
+\midrule
+Initial weights / none & 17/20 (85\%) & 0/17 & 3 timeouts \\
+Initial weights / induced & 20/20 (100\%) & 1/20 & 0 \\
+Trained weights / none & 20/20 (100\%) & 0/20 & 0 \\
+Trained weights / induced & 18/20 (90\%) & 0/18 & 2 timeouts \\
+\bottomrule
+\end{tabularx}
+\caption{First-seed held-out control-deck episodes versus a fixed VeryEasy
+burn anchor. Completed-game win-rate Wilson 95\% intervals, respectively,
+are 0--18.4\%, 0.9--23.6\%, 0--16.1\% and 0--17.6\%. The final five
+induced-graph attempts were resumed with the original checkpoints and seed
+schedule. Timeouts remain incomplete; two cells fall below 95\% completion.
+These 20-game cells, uncontrolled native RNG and a privileged-information
+anchor are feasibility evidence, not a powered causal comparison.}
+\label{tab:native-learning-development}
+\end{table}
+
+The evaluation shows no reliable evidence that training or induced graph
+context improves playing strength. The run evaluates only one of five trained
+policy seeds in play; native shuffles and anchor-AI randomness are uncontrolled.
+Curated/shuffled graph controls, all-seed playing effects,
 native RNG/multi-seat control and powered RQ2--RQ5 comparisons remain open.
 Long Commander pods and live ontology-grounded decisions remain unqualified.
 A read-only ontology snapshot supports resource queries independently of

@@ -552,9 +552,53 @@ after a tensor audit exposed zeroed public library/opponent-hand counts; its
 27 terminal datasets and stopped summary remain retained. Feature v3 restores
 public counts while continuing to exclude hidden identities, rejects malformed
 counts and passes the live tensor check.
-Fresh full campaign `runs/native_learning/20261005_200225_435675` is running the
-64/16/8-game collection, five training seeds and 80 first-seed intervention
-episodes; results are pending, not inferred from the small qualification.
+
+### Completed full development campaign
+
+`runs/native_learning/20261005_200225_435675` completed **88/88 collection
+games** (64 train, 16 validation, 8 held-out test), all rules-terminal. The
+training-only graph contains **290 co-visibility edges and 5,977 per-game
+evidence records**. All four components updated for each of five independent
+training seeds. Final source, deck, native executable and native data hashes
+match the original manifest.
+
+Five-seed held-out diagnostics (mean ± sample SD over seeds):
+
+| Metric | Initial validation | Trained validation | Trained test |
+|---|---:|---:|---:|
+| JEPA MSE | 0.0130 ± 0.0037 | 0.0062 ± 0.0021 | 0.0040 ± 0.0010 |
+| Non-forced imitation accuracy | 0.346 ± 0.031 | 0.418 ± 0.008 | 0.472 ± 0.010 |
+| Non-forced imitation NLL | 1.106 ± 0.004 | 1.166 ± 0.014 | 0.986 ± 0.012 |
+
+Test values are trained-model diagnostics; an initial-model test baseline was
+not calculated. Accuracy increases while validation NLL worsens, so predictive
+evidence is mixed. All-decision accuracy is omitted because it is inflated by
+mandatory actions. Lower JEPA error and greater action agreement do not measure
+policy strength.
+
+The first training seed's frozen W0/W1 × no/induced graph-policy cells each
+attempt 20 fresh control-deck games against the fixed VeryEasy burn anchor:
+
+| Frozen policy / graph context | Rules-terminal | Wins among terminal games | Incomplete |
+|---|---:|---:|---:|
+| W0, no induced graph | 17/20 (85%) | 0/17 | 3 timeouts |
+| W0, induced graph | 20/20 (100%) | 1/20 | 0 |
+| W1, no induced graph | 20/20 (100%) | 0/20 | 0 |
+| W1, induced graph | 18/20 (90%) | 0/18 | 2 timeouts |
+
+Completed-game win-rate Wilson 95% intervals are 0--18.4%, 0.9--23.6%,
+0--16.1%, and 0--17.6%, respectively. Timeouts are retained as incomplete,
+never recoded as losses or draws. Evaluation completion is below 95% in two
+cells; the table is a feasibility/development result, not a powered causal
+comparison. Engine RNG is uncontrolled, only one of five trained policy seeds
+was evaluated in play, and the native anchor has privileged internal state.
+The results provide **no reliable evidence that training or induced graph
+context improves playing strength**.
+
+The final induced-graph cell was interrupted after 15 attempts. The five
+remaining games were appended as attempts 16--20 with the original checkpoint,
+picker-seed schedule and unchanged frozen-input hashes. The complete aggregate
+summary and per-game traces are preserved in the run directory.
 
 The `W0` bundle has untrained model weights but shares the training-derived
 frozen graph with `W1` in graph-enabled conditions. Diagnostic latent MSE is
