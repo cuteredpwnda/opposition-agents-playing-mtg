@@ -1801,9 +1801,10 @@ pending; the completion check alone does not qualify a strength campaign.
 
 **v374 four-deck benchmark (Nov 25):** after the MPPI, observation and
 pending-payment fixes, KL, EFE-infogain and EFE-ambiguity completed 60/60
-Modern games, winning 11/20, 12/20 and 10/20. Random and heuristic each won
-14/25. Every interval overlaps. On Tron, the KL family won 6/15, while both
-baselines won 10/10, which needs diagnosis. Next steps are noisy-TV and
+Modern games, winning 11/20, 12/20 and 10/20. With the same five-game budget
+per cell, random and heuristic each won 10/20; an identical Hardened Scales
+baseline rerun is reported separately. Every interval overlaps. On Tron, the
+KL family won 6/15, while each baseline won 5/5, which needs diagnosis. Next steps are noisy-TV and
 scotophobia instrumentation, larger cells against a stronger opponent and
 engine RNG seeding. None of the running planners implements dual-control
 exploration: tree continuations are `[None]`, and MPPI does not branch the

@@ -66,12 +66,13 @@ with no action caps.
 |---|---:|---:|---:|---:|---:|
 | Mono-Red Burn | 1/5 | 1/5 | 3/5 | 3/5 | 2/5 |
 | Death's Shadow | 0/5 | 1/5 | 0/5 | 2/5 | 3/5 |
-| Hardened Scales | 8/10 | 7/10 | 5/5 | 5/5 | 4/5 |
+| Hardened Scales | 4/5 | 3/5 | 5/5 | 5/5 | 4/5 |
 | Mono-Green Tron | 5/5 | 5/5 | 3/5 | 2/5 | 1/5 |
-| **Total** | 14/25 | 14/25 | 11/20 | 12/20 | 10/20 |
+| **Total** | 10/20 | 10/20 | 11/20 | 12/20 | 10/20 |
 
-The Hardened Scales baselines combine the original run with an identical
-rerun. The first Death's Shadow attempt was rejected before play because its
+The Hardened Scales baseline cells are the original five-game runs. An
+identical rerun, not included in the table, won 4/5 for random and 4/5 for
+heuristic. The first Death's Shadow attempt was rejected before play because its
 list contained Bayou and Underground Sea. The list is now Modern-legal; the
 table reports only the legal rerun.
 
@@ -97,7 +98,7 @@ Interpretation: this is one weak opponent with five games per cell, so every
 horizon planning is compared with one-step EFE scoring. The benchmark verifies
 that every arm completes games across four archetypes. It does not rank
 objectives or show that active inference beats the baselines. Tron is the
-clearest warning sign: both baselines won 10/10, while the KL family won 6/15.
+clearest warning sign: each baseline won 5/5, while the KL family won 6/15.
 
 ### Protocol-v374 native shared-graph learning campaign
 
