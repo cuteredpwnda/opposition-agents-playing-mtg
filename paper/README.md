@@ -67,7 +67,10 @@ track's scope, page limit and submission dates. No deadline is assumed.
   is not a full OWL 2 DL profile certificate. Schema-plus-vocabulary reasoning
   exceeded a 600-second budget and remains unqualified.
 - Read-only local Fuseki snapshot: six source graphs, 6,222 default triples,
-  14/14 CQ SPARQL checks and rejected update (HTTP 405); no agent grounding claim.
+  14/14 schema-level SPARQL checks and rejected update (HTTP 405); no agent
+  grounding or populated-question answerability claim. The 32 authored
+  questions were checked for required terms, not all executed end to end;
+  the broader discovery-question list remains untested.
 - Modern: 22,718 eligible records / 23,483 clean type lines.
 - Commander cards: 32,068 eligible records / 32,914 clean type lines, explicitly
   excluding sticker sheets. Auxiliary/nonstandard source residuals are retained.
@@ -150,7 +153,9 @@ confounds are cited. Direct Eos loading is blocked by upstream Windows
 path-fingerprint serialization; unchanged weights pass real 30/255-option
 shape checks in an isolated local Linux CPU container, without disabling
 integrity checks. Neither synthetic selection solves the instructed numerical
-task, and no Decision 2.0 MTG result is claimed. The separate full-context
+task. A later pinned Linux-CUDA run completed one 45-turn MTG game using a
+two-candidate shortlist; it demonstrates execution, not playing strength.
+The separate full-context
 Llama/Qwen budget checks and their invalid-response fallback counts are
 reported rather than pooled with earlier configurations.
 The full executable publication plan is tracked in

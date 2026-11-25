@@ -1,4 +1,4 @@
-"""WebSocket client for phase-rs ``phase-server`` (protocol v106).
+"""WebSocket client for phase-rs ``phase-server`` (protocol v374).
 
 Schema source: ``external/phase-rs/crates/server-core/src/protocol.rs``.
 
@@ -21,16 +21,16 @@ import asyncio
 import json
 import logging
 import uuid
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from typing import Any, AsyncIterator
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 
-# Mirror of PROTOCOL_VERSION in lobby-broker/src/protocol.rs, re-exported by
-# server-core/src/protocol.rs. Bump when the
-# upstream constant changes; mismatched clients are rejected at handshake.
-PROTOCOL_VERSION = 106
+# The upstream Full version is generated from protocol/baseline.json and
+# protocol/changes. Mismatched clients are rejected at handshake.
+PROTOCOL_VERSION = 374
 
 # Our identity advertised to phase-server. The version string is informational;
 # only ``protocol_version`` gates compatibility.
@@ -56,6 +56,7 @@ class PhaseServerConfig:
     client_version: str = DEFAULT_CLIENT_VERSION
     build_commit: str = DEFAULT_BUILD_COMMIT
     max_message_bytes: int = 2 * 1024 * 1024
+    expected_server_commit: str | None = None
 
     def __post_init__(self) -> None:
         if not 1024 <= self.max_message_bytes <= 64 * 1024 * 1024:
@@ -154,7 +155,7 @@ class ActionRejected:
 
 @dataclass
 class ActionFailed:
-    """Operational failure while processing one submitted action/interaction."""
+    """A stream condition the runner cannot safely continue past."""
 
     message: str
     reason: str = "action_failed"
@@ -264,6 +265,19 @@ def parse_server_message(
             message=f"AI driver fault: {json.dumps(data['fault'], sort_keys=True)}",
             reason="ai_driver_fault",
         )
+    if msg_type == "StateWithheld":
+        return ActionFailed(
+            message=(
+                f"Server applied state revision {data['state_revision']} but withheld "
+                f"{data['withheld']['type']}: {data['reason']}"
+            ),
+            reason="state_withheld",
+        )
+    if msg_type == "ActionNoOp":
+        return ActionFailed(
+            message="Server accepted a no-op without sending a replacement state",
+            reason="action_noop",
+        )
     return (msg_type, data)
 
 
@@ -271,7 +285,7 @@ def parse_server_message(
 
 
 class PhaseServerClient:
-    """Async context-managed WebSocket client speaking phase-server protocol v106.
+    """Async context-managed WebSocket client speaking phase-server protocol v374.
 
     Typical use::
 
@@ -294,7 +308,7 @@ class PhaseServerClient:
         self.config = config or PhaseServerConfig()
         self._ws: Any = None
 
-    async def __aenter__(self) -> "PhaseServerClient":
+    async def __aenter__(self) -> PhaseServerClient:
         try:
             import websockets  # type: ignore[import-not-found]
         except ImportError as exc:  # pragma: no cover — surfaced at runtime
@@ -412,6 +426,15 @@ class PhaseServerClient:
                 f"src/integrations/phase_rs/client.py after reviewing upstream "
                 f"protocol.rs changes."
             )
+        expected = self.config.expected_server_commit
+        actual = hello.build_commit
+        if expected is not None and (
+            len(actual) < 7 or not all(c in "0123456789abcdef" for c in actual)
+            or not expected.startswith(actual)
+        ):
+            raise PhaseServerError(
+                f"server build mismatch: server={actual!r}, expected checkout={expected!r}"
+            )
         await self._send(
             "ClientHello",
             {
@@ -441,7 +464,7 @@ class PhaseServerClient:
         ``ai_difficulty`` is one of ``VeryEasy``, ``Easy``, ``Medium``,
         ``Hard``, ``VeryHard`` (see ``AiDifficulty`` in
         ``phase-ai/src/config.rs``).
-        
+
         ``format_name`` is one of ``Standard``, ``Pioneer``, ``Modern``,
         ``Legacy``, ``Vintage``, ``Commander``, ``Brawl``, ``HistoricBrawl``,
         etc. Defaults to ``Standard`` if not specified.

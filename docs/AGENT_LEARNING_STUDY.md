@@ -177,6 +177,22 @@ Blinded human/tactical review or independent rules/proof checks should assess
 sampled relations where applicable. Observed associations remain defeasible;
 causal card-synergy claims require additional interventions.
 
+**Current development operationalization (not a qualified study):** curated
+combo facts are read from the frozen local Spellbook snapshot only when the
+record is status `OK` and legal in Modern. Original combo hyperedges and source
+identifiers are retained; the graph encoder also uses their pairwise
+projections. Sampled pairs absent from that corpus are unlabeled non-edges for
+contrastive training, not verified non-combos. The induced relation is
+controlled-seat battlefield co-presence across training games, with exposed
+never-co-present pairs and producer/game/deck provenance. It is an observed
+association, not an estimate of card synergy. The current `Kshuffle` diagnostic
+permutes card identity over the frozen embedding rows while preserving topology
+and degree; it is **not** edge rewiring and does not yet satisfy the final
+type/support-matched randomization protocol. A separate Hardened Scales test
+stratum overlaps curated-combo cards; it is exploratory and does not replace the
+Azorius holdout. Its overlap and any incomplete combo packages must be
+disclosed in results.
+
 ## Study D — Minimal factorial, not every possible combination (RQ4)
 
 After B and C qualify, run the **2 × 3 core factorial**:

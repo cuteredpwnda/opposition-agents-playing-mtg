@@ -25,6 +25,7 @@ import re
 import urllib.error
 import urllib.request
 from typing import Any, Protocol
+from urllib.parse import urlsplit
 
 from src.integrations.phase_rs.adapter import (
     engine_action_to_phase_action,
@@ -43,6 +44,10 @@ class PickerError(RuntimeError):
     def __init__(self, message: str, *, reason: str) -> None:
         super().__init__(message)
         self.reason = reason
+
+
+class _InvalidModelResponseError(ValueError):
+    """The inference service returned a malformed response."""
 
 
 class ActionPicker(Protocol):
@@ -175,8 +180,8 @@ class OllamaActionPicker:
     """LLM-backed picker for phase-rs legal-action lists.
 
     This picker sends a compact state/action summary to a local Ollama model
-    and expects a single integer index in response. If Ollama is unavailable
-    or returns malformed output, it falls back to a deterministic random pick.
+    and expects an action index. Strict mode requests and validates a JSON
+    schema; legacy random mode falls back when inference fails.
     """
 
     name = "phase_rs_ollama"
@@ -187,12 +192,18 @@ class OllamaActionPicker:
         model: str = "gemma4:e2b",
         base_url: str = "http://localhost:11434",
         timeout_s: float = 30.0,
+        failure_policy: str = "random",
     ) -> None:
+        if timeout_s <= 0:
+            raise ValueError("Ollama timeout must be positive")
+        if failure_policy not in {"error", "random"}:
+            raise ValueError("Ollama failure_policy must be error or random")
         self._rng = random.Random(seed)
         self._fallback = RandomActionPicker(seed=seed)
         self._model = model
         self._base_url = base_url.rstrip("/")
         self._timeout_s = timeout_s
+        self._failure_policy = failure_policy
         self._available = self._check_ollama_available()
         self.last_reasoning: dict[str, Any] = {}
 
@@ -205,16 +216,37 @@ class OllamaActionPicker:
         if not legal_actions:
             raise ValueError("OllamaActionPicker received empty legal_actions")
         self.last_reasoning = {"model": self._model, "legal_action_count": len(legal_actions)}
-        if not self._available:
-            return self._fallback_pick(legal_actions, state, seat, "model_unavailable")
         if len(legal_actions) == 1:
             self.last_reasoning.update({"forced": True, "chosen_index": 0})
             return 0
+        if not self._available:
+            return self._inference_failure(
+                legal_actions, state, seat,
+                f"model {self._model!r} is unavailable", "picker_model_unavailable",
+            )
+
+        eligible_indices = list(range(len(legal_actions)))
+        if self._failure_policy == "error":
+            non_concede = [
+                i for i, action in enumerate(legal_actions)
+                if action.get("type") != "Concede"
+            ]
+            if non_concede:
+                eligible_indices = non_concede
+            self.last_reasoning.update({
+                "candidate_indices": eligible_indices,
+                "response_format": "json_schema",
+            })
 
         try:
-            prompt = self._build_prompt(legal_actions, state, seat)
-            response = self._ollama_generate(prompt)
-            idx = self._parse_index(response, len(legal_actions))
+            prompt = self._build_prompt(legal_actions, state, seat, eligible_indices)
+            self.last_reasoning["model_request_attempted"] = True
+            response = self._ollama_generate(prompt, eligible_indices)
+            idx = (
+                self._parse_structured_index(response, eligible_indices)
+                if self._failure_policy == "error"
+                else self._parse_index(response, len(legal_actions))
+            )
             if idx is not None:
                 # Prevent accidental LLM concessions.
                 if legal_actions[idx].get("type") == "Concede":
@@ -224,6 +256,11 @@ class OllamaActionPicker:
                         if action.get("type") != "Concede"
                     ]
                     if non_concede:
+                        if self._failure_policy == "error":
+                            return self._inference_failure(
+                                legal_actions, state, seat,
+                                "concession is not an eligible action", "picker_invalid_response",
+                            )
                         chosen = self._rng.choice(non_concede)
                         self.last_reasoning.update({
                             "chosen_index": chosen, "fallback_reason": "model_concession",
@@ -232,11 +269,44 @@ class OllamaActionPicker:
                         return chosen
                 self.last_reasoning.update({"chosen_index": idx, "model_invoked": True})
                 return idx
+        except urllib.error.HTTPError as exc:
+            detail = str(exc.reason)
+            if exc.fp is not None:
+                with exc:
+                    detail = exc.read(4096).decode("utf-8", errors="replace").strip()
+            return self._inference_failure(
+                legal_actions, state, seat,
+                f"Chat service HTTP {exc.code}: {detail or exc.reason}",
+                "picker_http_error",
+            )
+        except (_InvalidModelResponseError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+            return self._inference_failure(
+                legal_actions, state, seat, str(exc), "picker_invalid_response",
+            )
         except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
-            logger.warning("OllamaActionPicker inference failed: %s", exc)
-            return self._fallback_pick(legal_actions, state, seat, "inference_error")
+            logger.warning("Chat picker inference failed: %s", exc)
+            return self._inference_failure(
+                legal_actions, state, seat, str(exc), "picker_inference_error",
+            )
 
-        return self._fallback_pick(legal_actions, state, seat, "invalid_response")
+        return self._inference_failure(
+            legal_actions, state, seat, "response did not contain one valid action index",
+            "picker_invalid_response",
+        )
+
+    def _inference_failure(
+        self, legal_actions, state, seat, detail: str, reason: str,
+    ) -> int:
+        self.last_reasoning.update({"model_error_reason": reason, "model_error": detail})
+        if self._failure_policy == "error":
+            raise PickerError(f"Chat picker failed: {detail}", reason=reason)
+        fallback_reason = {
+            "picker_inference_error": "inference_error",
+            "picker_invalid_response": "invalid_response",
+            "picker_http_error": "inference_error",
+            "picker_model_unavailable": "model_unavailable",
+        }[reason]
+        return self._fallback_pick(legal_actions, state, seat, fallback_reason)
 
     def _fallback_pick(self, legal_actions, state, seat, reason: str) -> int:
         chosen = self._fallback.pick(legal_actions, state, seat)
@@ -258,11 +328,21 @@ class OllamaActionPicker:
                         models,
                     )
                 return available
-        except Exception as exc:  # pragma: no cover - runtime path
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError, TypeError,
+                AttributeError) as exc:  # pragma: no cover - runtime path
             logger.warning("Ollama unavailable for phase-rs picker: %s", exc)
             return False
 
-    def _ollama_generate(self, prompt: str) -> str:
+    @staticmethod
+    def _choice_schema(eligible_indices: list[int]) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {"index": {"type": "integer", "enum": eligible_indices}},
+            "required": ["index"],
+            "additionalProperties": False,
+        }
+
+    def _ollama_generate(self, prompt: str, eligible_indices: list[int]) -> str:
         body = {
             "model": self._model,
             "prompt": prompt,
@@ -271,6 +351,8 @@ class OllamaActionPicker:
             "options": {"temperature": 0.2, "num_predict": 16},
             "keep_alive": "30m",
         }
+        if self._failure_policy == "error":
+            body["format"] = self._choice_schema(eligible_indices)
         data = json.dumps(body).encode("utf-8")
         req = urllib.request.Request(
             f"{self._base_url}/api/generate",
@@ -280,7 +362,22 @@ class OllamaActionPicker:
         )
         with urllib.request.urlopen(req, timeout=self._timeout_s) as resp:  # nosec B310
             payload = json.loads(resp.read().decode("utf-8"))
-        return str(payload.get("response", "")).strip()
+        if not isinstance(payload, dict) or not isinstance(payload.get("response"), str):
+            raise _InvalidModelResponseError("Ollama returned a malformed response")
+        return payload["response"].strip()
+
+    @staticmethod
+    def _parse_structured_index(text: str, eligible_indices: list[int]) -> int | None:
+        try:
+            response = json.loads(text)
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(response, dict) or set(response) != {"index"}:
+            return None
+        idx = response["index"]
+        if type(idx) is not int or idx not in eligible_indices:
+            return None
+        return idx
 
     @staticmethod
     def _parse_index(text: str, n: int) -> int | None:
@@ -297,19 +394,27 @@ class OllamaActionPicker:
         legal_actions: list[dict[str, Any]],
         state: dict[str, Any],
         seat: int,
+        eligible_indices: list[int] | None = None,
     ) -> str:
         context = decision_context(state, seat)
         self.last_reasoning["context_projection"] = CONTEXT_PROJECTION
         action_lines = []
-        for i, action in enumerate(legal_actions):
+        indices = eligible_indices if eligible_indices is not None else range(len(legal_actions))
+        for i in indices:
+            action = legal_actions[i]
             action_lines.append(
                 f"[{i}] {json.dumps(action, separators=(',', ':'), ensure_ascii=False)}"
             )
 
+        instruction = (
+            'Choose the best action index. Return ONLY JSON: {"index": <integer>}.'
+            if self._failure_policy == "error"
+            else "Choose the best action index. Respond with ONLY the integer index."
+        )
         return "\n".join(
             [
                 "You are an expert Magic: The Gathering player.",
-                "Choose the best action index. Respond with ONLY the integer index.",
+                instruction,
                 "",
                 "Objects use equivalent IDs as row keys in object_fields order. "
                 "Missing flags are false, collections empty, characteristics unknown. "
@@ -321,6 +426,84 @@ class OllamaActionPicker:
                 *action_lines,
             ]
         )
+
+
+class OpenAICompatibleActionPicker(OllamaActionPicker):
+    """Strict local OpenAI-compatible chat picker, including vLLM servers."""
+
+    def __init__(
+        self,
+        seed: int | None = None,
+        model: str = "Qwen/Qwen3-0.6B",
+        base_url: str = "http://localhost:8000/v1",
+        timeout_s: float = 120.0,
+        api_key: str | None = None,
+    ) -> None:
+        url = urlsplit(base_url)
+        if url.scheme not in {"http", "https"} or url.hostname not in {
+            "localhost", "127.0.0.1", "::1",
+        }:
+            raise ValueError("OpenAI-compatible benchmark inference requires a local URL")
+        self._api_key = api_key
+        super().__init__(
+            seed=seed,
+            model=model,
+            base_url=base_url,
+            timeout_s=timeout_s,
+            failure_policy="error",
+        )
+        self.name = f"phase_rs_openai_compatible:{model}"
+
+    def _check_ollama_available(self) -> bool:
+        return True
+
+    def _ollama_generate(self, prompt: str, eligible_indices: list[int]) -> str:
+        body = {
+            "model": self._model,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "Select one legal action. Return JSON containing only an "
+                        "integer field named index."
+                    ),
+                },
+                {"role": "user", "content": prompt},
+            ],
+            "temperature": 0.0,
+            "max_tokens": 16,
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "action_index",
+                    "schema": self._choice_schema(eligible_indices),
+                },
+            },
+        }
+        headers = {"Content-Type": "application/json"}
+        if self._api_key:
+            headers["Authorization"] = f"Bearer {self._api_key}"
+        request = urllib.request.Request(
+            f"{self._base_url}/chat/completions",
+            data=json.dumps(body).encode("utf-8"),
+            headers=headers,
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=self._timeout_s) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        if not isinstance(payload, dict):
+            raise _InvalidModelResponseError("OpenAI-compatible response is not an object")
+        self.last_reasoning["backend"] = "openai_compatible_chat_completions"
+        self.last_reasoning["usage"] = payload.get("usage")
+        try:
+            content = payload["choices"][0]["message"]["content"]
+        except (IndexError, KeyError, TypeError) as exc:
+            raise _InvalidModelResponseError(
+                f"malformed OpenAI-compatible response: {exc}"
+            ) from exc
+        if not isinstance(content, str):
+            raise _InvalidModelResponseError("OpenAI-compatible response content is not text")
+        return content
 
 
 class AgentActionPicker:

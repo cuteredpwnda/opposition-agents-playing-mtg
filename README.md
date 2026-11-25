@@ -10,13 +10,13 @@ observability** in Magic: The Gathering. It combines a provenance-aware
 ontology, Python action selectors, latent world-model research and the
 **phase-rs Rust rules runtime**.
 
-> **October 2026 status:** phase-rs is pinned to protocol **106**. Python
-> selectors drive one native seat through the WebSocket bridge. An 18-game
-> three-deck baseline campaign completes, but this is feasibility evidence,
-> not a powered comparison. Native KG grounding, learned rollout qualification,
-> decision-model input budgets and controlled objective ablations remain
-> separate gates. [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) is the
-> source of truth; older examples below include legacy Python-engine paths.
+> **November 2026 status:** the phase-rs checkout has advanced to protocol
+> **374**; its rebuilt server, format export and live-game qualification are
+> in progress. Existing gameplay evidence used the older protocol **106**
+> runtime. Python selectors drive one native seat through the WebSocket
+> bridge; the earlier 18-game baseline is feasibility evidence, not a powered
+> comparison. [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) tracks the
+> remaining runtime and research gates.
 
 > Review the [research drafts and build instructions](paper/README.md).
 > These manuscripts are not yet submission-ready performance claims.
@@ -33,12 +33,14 @@ their names establishes an evaluated agent:
    facts from induced strategic evidence. Schema reasoning, SHACL, competency
    queries, read-only SPARQL serving and Workbench exports have distinct checks.
 3. **Action selection:** random/heuristic baselines, analytic belief-space
-   KL control, general chat LLMs and Tev1 decision-tuned option selectors.
+   KL control, general chat LLMs and Tev1/Liquid d1 decision-tuned option selectors.
    A pinned local Decision 2.0 adapter supports the published 255-option
    interface, with real 30/255-option checks on a local Linux CPU container.
    Direct Windows Eos loading is blocked by an upstream path-fingerprint
    mismatch, not by a requirement for vLLM.
-   Tev1 preferences are not calibrated win probabilities.
+   Liquid d1 uses its native pinned Transformers `system_one` head; stock
+   generative vLLM serving does not expose that classifier contract. Tev1 and
+   d1 preferences are not calibrated MTG win probabilities.
 4. **Latent prediction:** JEPA learns one-step next-embedding targets with
    a stopped encoder branch and standard-normal regularisation. Current
    dream search uses a separate recurrent dynamics/reward path; archived
@@ -51,11 +53,11 @@ their names establishes an evaluated agent:
 
 | Area | Evidence available | Not yet established |
 |---|---|---|
-| Native bridge | Protocol 106, reconnect/failure tests, terminal Modern games | Seeded native replay and controlled seat rotation |
+| Native bridge | Historical protocol 106 reconnect/failure tests and terminal Modern games | Protocol 374 runtime qualification, seeded native replay and controlled seat rotation |
 | Baseline deck coverage | 18/18 terminal games across nine ordered matchups; random 2/9 wins, heuristic 3/9 | Policy ranking; at least 20 calibration games per intended condition still needed |
 | Deck pool | Three development decks plus four source-attributed historical Forge lists | Native qualification of all sourced mechanics and current metagame representativeness |
 | Ontology | Consistent import-resolved schema, focused probes, 14 read-only SPARQL checks | Full populated-graph reasoning, external modelling review and agent grounding |
-| LLM/decision models | 35/36 terminal games in a twelve-condition replicated campaign; separate 3/3 Gemma semantic repair; same-weight 8K Tev1 alias; Decision 2.0 adapter tests | Per-condition reliability/calibration, matched comparisons and live Decision 2.0 qualification on Windows |
+| LLM/decision models | 35/36 terminal games in a twelve-condition replicated campaign; same-weight 8K Tev1 alias; pinned Liquid d1-omni CPU smoke; Decision 2.0 adapter tests | Per-condition reliability/calibration, matched comparisons, d1-3B GPU qualification and live Decision 2.0 qualification on Windows |
 | JEPA/fusion | Local implementation and archived checkpoints | Frozen native-trained models, matched ablations and verified component activation |
 
 The local baseline campaign has **one replicate per matchup**. Do not interpret
@@ -753,7 +755,7 @@ python -m src.training.benchmark_suite \
     --output-dir runs/bench-baseline
 ```
 
-Add the LLM baseline (requires Ollama running with `gemma4:e2b` — see [docs/OLLAMA_SETUP.md](docs/OLLAMA_SETUP.md)):
+Add the LLM baseline (current comparison defaults exclude Gemma; see [docs/OLLAMA_SETUP.md](docs/OLLAMA_SETUP.md)):
 
 ```bash
 python -m src.training.benchmark_suite --include-llm --parallel 2
@@ -764,7 +766,7 @@ python -m src.training.benchmark_suite --include-llm --parallel 2
 | Workload | Hardware target | Wall-clock (rough) |
 |---|---|---|
 | Random + Heuristic baselines, 6 archetypes × 6 pairings × 10 games | **Laptop / desktop CPU** (1–4 cores) | minutes |
-| LLM baseline (Ollama `gemma4:e2b`), 100 games | Single workstation with **8+ GB VRAM** *or* CPU-only Ollama | tens of minutes |
+| LLM baseline (Ollama Llama/Qwen), 100 games | Single workstation with **8+ GB VRAM** *or* CPU-only Ollama | tens of minutes |
 | Full self-play loop ([src/training/self_play.py](src/training/self_play.py)) for 1k iterations | **GPU server** (≥1× consumer GPU, ≥32 GB RAM) | hours–days |
 | World-model + neural-reasoner training on stored trajectories | **GPU server** with PyTorch (CUDA) | hours |
 
@@ -772,7 +774,9 @@ In short: **the benchmark suite and all symbolic agents run fine on this laptop 
 
 ### Default LLM
 
-The default tag is **`gemma4:e2b`** in the chat/fusion configuration.
+The phase-rs benchmark default is **`llama3.2:1b`** with explicit inference
+failure rather than random fallback. Gemma is excluded from the current
+comparison after its Commander screen produced no accepted model choices.
 Use `--ollama-model` to select an installed model for a native chat pilot.
 No size-matched MTG advantage is established by choosing this default.
 

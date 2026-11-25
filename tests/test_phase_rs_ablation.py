@@ -102,6 +102,7 @@ def test_objective_schedule_and_outputs(tmp_path, monkeypatch):
     output = next(tmp_path.iterdir())
     manifest = json.loads((output / "config.json").read_text())
     assert manifest["phase_rs_commit"] == "test-revision"
+    assert "checkout only" in manifest["phase_rs_commit_scope"]
     assert len(manifest["deck_sha256"]) == 64
     assert "picker only" in manifest["seed_scope"]
     rows = [json.loads(line) for line in (output / "games.jsonl").read_text().splitlines()]
@@ -115,6 +116,17 @@ def test_objective_schedule_and_outputs(tmp_path, monkeypatch):
         assert cell["wins"] == 2
         assert cell["win_rate"] == 1.0
         assert cell["win_rate_ci95"] == pytest.approx([0.3423802275, 1.0])
+
+
+def test_ablation_manifest_does_not_store_vllm_api_key(tmp_path, monkeypatch):
+    _mock_runtime(monkeypatch)
+    monkeypatch.setattr(ablation, "run_game_sync", lambda **_: _result())
+    args = _args(tmp_path, "--games", "1", "--objectives", "kl",
+                 "--vllm-api-key", "example-secret")
+    assert ablation.run(args) == 0
+    manifest = (next(tmp_path.iterdir()) / "config.json").read_text()
+    assert "example-secret" not in manifest
+    assert "vllm_api_key" not in json.loads(manifest)["config"]
 
 
 def test_incomplete_games_are_not_draws_and_fail_run(tmp_path, monkeypatch):
@@ -147,6 +159,55 @@ def test_explicit_ai_deck_does_not_report_unused_starter_name(tmp_path, monkeypa
     summary = json.loads((next(tmp_path.iterdir()) / "summary.json").read_text())
     assert summary["ai_deck"] is None
     assert summary["ai_deck_files"] == ["ai.txt"]
+
+
+@pytest.mark.parametrize(
+    ("picker_name", "factory_name", "count_attr", "count"),
+    [
+        ("tev1", "make_tev1_picker", "tev1_candidates", 8),
+        ("decision2", "make_decision2_picker", "decision2_candidates", 128),
+    ],
+)
+def test_commander_preserves_explicit_decision_model_candidate_limit(
+    monkeypatch, picker_name, factory_name, count_attr, count,
+):
+    args = ablation.parse_args([
+        "--picker", picker_name, "--format", "Commander",
+        f"--{count_attr.replace('_', '-')}", str(count),
+    ])
+    sentinel = object()
+    calls = []
+    monkeypatch.setattr(
+        ablation, factory_name,
+        lambda received, seed: calls.append((received, seed)) or sentinel,
+    )
+    assert ablation._make_picker(args, 17) is sentinel
+    assert calls == [(args, 17)]
+    assert getattr(calls[0][0], count_attr) == count
+
+
+def test_liquid_d1_factory_receives_explicit_candidate_limit(monkeypatch):
+    args = ablation.parse_args([
+        "--picker", "liquid_d1", "--format", "Commander",
+        "--liquid-d1-model", "LiquidAI/d1-3B",
+        "--liquid-d1-candidates", "64",
+    ])
+    sentinel = object()
+    calls = []
+    monkeypatch.setattr(
+        ablation, "make_liquid_d1_picker",
+        lambda received, seed: calls.append((received, seed)) or sentinel,
+    )
+    assert ablation._make_picker(args, 17) is sentinel
+    assert calls == [(args, 17)]
+    assert args.liquid_d1_candidates == 64
+
+
+def test_ablation_chat_defaults_are_strict_and_exclude_gemma():
+    args = ablation.parse_args([])
+    assert args.ollama_model == "llama3.2:1b"
+    assert args.ollama_timeout == 120.0
+    assert args.chat_failure_policy == "error"
 
 
 def test_retry_evidence_is_preserved(tmp_path, monkeypatch):

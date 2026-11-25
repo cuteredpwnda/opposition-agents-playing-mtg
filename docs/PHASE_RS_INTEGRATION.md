@@ -6,14 +6,12 @@ and a per-difficulty AI opponent. We vendor it as a git submodule under
 `external/phase-rs/` and talk to it from Python via a small adapter in
 `src/integrations/phase_rs/`.
 
-> **Status — October 5, 2026:** Pinned to `1191bba65`, protocol v106.
-> Release build, refreshed native data, and a complete live Modern game
-> with `HeuristicActionPicker` are verified. Tev1 0.8B's local decision API
-> works; an isolated same-weight 8192-context alias passes a terminal game
-> without truncation. The original tag's 2050-token context setting is not
-> a hard endpoint ceiling. See [the experiment runbook](EXPERIMENTS.md).
-> Controlled strength measurements remain pending. Native viewer
-> interactions remain queued; keyed reconnect is now live-verified in
+> **Status — November 2026:** Pinned to `b42447bc3`, Full protocol v374.
+> Rebuild, engine-authored format export and live-game qualification are in
+> progress. Earlier release builds, Modern games, Commander checks, Tev1
+> qualification and reconnect verification used `1191bba65` / v106; they
+> do not establish that the new pin works. Controlled strength measurements
+> and native viewer-interaction coverage remain pending. See
 > [IMPLEMENTATION_PLAN.md](../IMPLEMENTATION_PLAN.md).
 
 ### Session restore and casting-model limits
@@ -62,9 +60,8 @@ differential-conformance check.
 ```
 
 Protocol source: [`external/phase-rs/crates/server-core/src/protocol.rs`][protocol].
-Wire version: `PROTOCOL_VERSION = 106` (upstream `1191bba65`, October 2026;
-the constant now lives in `lobby-broker/src/protocol.rs` and is re-exported
-by `server-core`). Our parser is validated against
+Full version: `PROTOCOL_VERSION = 374` (upstream `b42447bc3`), computed by
+upstream from `protocol/baseline.json` and `protocol/changes`. Our parser is validated against
 phase-rs's own `fixtures/adapter-contract/*.json` files via
 `tests/integrations/phase_rs/test_protocol_envelopes.py`.
 
@@ -181,37 +178,33 @@ server can run headless and our agents only need the WebSocket.
 
 ## Engine update checklist
 
-1. Build the pinned server using the MSVC discovery command under K1 in
-   [IMPLEMENTATION_PLAN.md](../IMPLEMENTATION_PLAN.md).
-2. If old cached card data no longer deserializes, let the server refresh it
-   through its signed bootstrap. For this release, set
-   `PHASE_DATA_MANIFEST_URL=https://data.phase-rs.dev/desktop/release-server-v0.102.0.json`
-   in the environment of the server you launch. The native bootstrap verifies
-   hashes and quarantines incompatible data as `.unusable`; do not edit card JSON.
+1. Build the pinned server with the upstream `server-release` profile using
+   the MSVC discovery command under K1 in
+   [IMPLEMENTATION_PLAN.md](../IMPLEMENTATION_PLAN.md). The launcher prefers
+   that profile over older release/debug binaries; the client rejects an
+   incompatible protocol before creating a game.
+2. Verify the pinned revision's signed data-bootstrap requirements. Use an
+   isolated `PHASE_DATA_DIR` when checking a new engine so an incompatible
+   cache cannot be quarantined or replaced in a shared existing data directory.
+   Do not assume the previous v0.102.0 manifest is appropriate for this pin.
 3. Regenerate `src/integrations/phase_rs/format_defaults.json` after engine
-   updates. Protocol v106 requires complete `FormatConfig` payloads: passing
+   updates. Complete `FormatConfig` payloads are required: passing
    only `{"format": "Modern"}` is rejected. The snapshot is exported from
    `GameFormat::registry()`, not guessed Python defaults.
 
 The exporter needs the engine `.rlib` and **the exact serde_json dependency
 linked into that engine**, not whichever serde_json file is newest. Inspect
 the engine with `rustc -Z ls=root <engine-rlib>` in the pinned nightly toolchain.
-After the current release build, the verified libraries are:
+After a `server-release` build, discover the new engine and matching serde
+libraries in `external\phase-rs\target\server-release\deps`, then pass them
+to `python -m scripts.export_phase_rs_formats --engine-rlib ... --serde-json-rlib ...`
+in the initialized MSVC environment. Library hashes change with builds;
+do not reuse old paths. The exporter records checkout/protocol provenance.
 
-```powershell
-# Run in the repository root with the same initialized MSVC environment.
-.\.venv\Scripts\python.exe -m scripts.export_phase_rs_formats `
-  --engine-rlib external\phase-rs\target\release\deps\libengine-996fedad16fa4767.rlib `
-  --serde-json-rlib external\phase-rs\target\release\deps\libserde_json-5f0d4f6fc327e23f.rlib
-```
-
-Library hashes change with builds; rediscover them instead of reusing stale
-paths. The exporter uses release-compatible thin LTO and emits revision/protocol
-provenance. Commit the regenerated snapshot with the submodule update.
-
-4. Run the protocol/format tests and a complete live game. The October smoke
+4. Run the protocol/format tests and a complete live game. The earlier smoke
    used Modern burn versus `Blue Control` at VeryEasy and finished in 14 turns
-   and 150 controlled actions. This verifies integration, not playing strength.
+   and 150 controlled actions on v106, not the new pin. A successful new smoke
+   verifies integration, not playing strength.
 
 The engine exposes only five named AI starter decks: `Red Deck Wins`,
 `White Weenie`, `Blue Control`, `Green Stompy`, and `Azorius Flyers`.

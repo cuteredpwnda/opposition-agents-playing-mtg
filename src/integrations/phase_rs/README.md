@@ -7,11 +7,12 @@ engine remains a compatibility path, not the native rules authority.
 
 ## Current contract
 
-The repository pins revision `1191bba65048c83fbbd5a56dfd5f419ee0ead67a`,
-protocol **106**. The client validates the handshake and translates tagged
-wire envelopes, runner budgets/failures, viewer interactions and reconnect
-credentials. Complete format configurations come from the pinned registry.
-Contract and runner tests live in `tests/integrations/phase_rs/`.
+The repository pins revision `b42447bc3611273fb2413fa95d22a9e5ff623c01`,
+whose Full protocol is **374**. The client validates the handshake and
+translates tagged wire envelopes, runner budgets/failures, viewer interactions
+and reconnect credentials. The new server build, engine-authored format export
+and live gameplay remain under qualification; older protocol-106 binaries
+are rejected. Contract and runner tests live in `tests/integrations/phase_rs/`.
 
 Build the pinned release `phase-server` using the MSVC instructions in
 [the integration guide](../../../docs/PHASE_RS_INTEGRATION.md), then run from

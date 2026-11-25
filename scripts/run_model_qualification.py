@@ -213,7 +213,9 @@ def run_conditions(args, schedule, output: Path, deck: Path, uri: str) -> list[d
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--checkpoint", type=Path, required=True)
-    parser.add_argument("--models", nargs="+", default=["llama3.2:1b", "gemma4:e2b"])
+    parser.add_argument(
+        "--models", nargs="+", default=["llama3.2:1b", "qwen2.5-coder:1.5b"],
+    )
     parser.add_argument("--tev1-model", default="tev1:0.8b",
                         help="Installed decision-model tag, including explicit context aliases")
     parser.add_argument("--include-decision2", action="store_true",

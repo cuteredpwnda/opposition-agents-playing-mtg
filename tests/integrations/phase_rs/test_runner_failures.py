@@ -19,6 +19,7 @@ from src.integrations.phase_rs.client import (
 @pytest.mark.parametrize("drain", [False, True])
 @pytest.mark.parametrize("reason", [
     "action_failed", "request_rejected", "ai_driver_fault", "picker_invalid_response",
+    "state_withheld", "action_noop",
 ])
 async def test_runner_records_operational_failures(monkeypatch, drain, reason):
     failure = ActionFailed(message="Explicit failure", reason=reason)
@@ -95,6 +96,52 @@ async def test_control_plane_does_not_skip_failure(monkeypatch):
     monkeypatch.setattr(client, "recv", receive)
     with pytest.raises(PhaseServerError, match="request_rejected: Explicit failure"):
         await client.expect("GameCreated")
+
+
+async def test_handshake_rejects_stale_server_before_sending_client_hello(monkeypatch):
+    client = PhaseServerClient(PhaseServerConfig())
+    sent = []
+
+    async def expect(message_type):
+        return ServerHello("old", "old", 106, "Full")
+
+    async def send(*args):
+        sent.append(args)
+
+    monkeypatch.setattr(client, "expect", expect)
+    monkeypatch.setattr(client, "_send", send)
+    with pytest.raises(PhaseServerError, match="protocol mismatch: server=106 client=374"):
+        await client.handshake()
+    assert not sent
+
+
+@pytest.mark.parametrize(("actual", "matches"), [
+    ("b42447bc3", True),
+    ("1191bba65", False),
+    ("b", False),
+    ("dev", False),
+])
+async def test_handshake_can_require_the_frozen_checkout(monkeypatch, actual, matches):
+    client = PhaseServerClient(PhaseServerConfig(
+        expected_server_commit="b42447bc3611273fb2413fa95d22a9e5ff623c01",
+    ))
+    sent = []
+
+    async def expect(message_type):
+        return ServerHello("test", actual, PROTOCOL_VERSION, "Full")
+
+    async def send(*args):
+        sent.append(args)
+
+    monkeypatch.setattr(client, "expect", expect)
+    monkeypatch.setattr(client, "_send", send)
+    if matches:
+        await client.handshake()
+        assert len(sent) == 1
+    else:
+        with pytest.raises(PhaseServerError, match="server build mismatch"):
+            await client.handshake()
+        assert not sent
 
 
 @pytest.mark.parametrize("drain", [False, True])

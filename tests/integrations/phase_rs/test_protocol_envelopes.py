@@ -13,7 +13,6 @@ update`` — if a field is renamed, the test fails with a clear message.
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 
 import pytest
@@ -92,13 +91,15 @@ def test_parse_game_action_envelope() -> None:
 
 
 def test_protocol_version_matches_vendored_engine() -> None:
-    source = (
-        REPO_ROOT / "external" / "phase-rs" / "crates"
-        / "lobby-broker" / "src" / "protocol.rs"
-    ).read_text(encoding="utf-8")
-    version = re.search(r"pub const PROTOCOL_VERSION: u32 = (\d+);", source)
-    assert version is not None, "Upstream protocol version declaration changed"
-    assert PROTOCOL_VERSION == int(version.group(1))
+    registry = REPO_ROOT / "external" / "phase-rs" / "protocol"
+    baseline = json.loads((registry / "baseline.json").read_text(encoding="utf-8"))
+    records = [
+        json.loads(path.read_text(encoding="utf-8"))
+        for path in (registry / "changes").glob("*.json")
+    ]
+    assert PROTOCOL_VERSION == baseline["full"] + sum(
+        "full" in record["surfaces"] for record in records
+    )
 
 
 def test_structured_action_rejection() -> None:
@@ -139,3 +140,20 @@ def test_ai_driver_fault_is_not_incidental_traffic() -> None:
     assert isinstance(message, ActionFailed)
     assert message.reason == "ai_driver_fault"
     assert "ActionSafetyCapReached" in message.message
+
+
+@pytest.mark.parametrize(("payload", "reason", "message_part"), [
+    ({
+        "type": "StateWithheld",
+        "data": {
+            "state_revision": 5, "withheld": {"type": "StateUpdate"},
+            "reason": "frame too large",
+        },
+    }, "state_withheld", "revision 5"),
+    ({"type": "ActionNoOp"}, "action_noop", "accepted a no-op"),
+])
+def test_unusable_state_acknowledgements_are_explicit(payload, reason, message_part) -> None:
+    message = parse_server_message(payload)
+    assert isinstance(message, ActionFailed)
+    assert message.reason == reason
+    assert message_part in message.message

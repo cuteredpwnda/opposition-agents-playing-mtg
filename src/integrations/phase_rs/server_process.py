@@ -9,10 +9,10 @@ Resolution order for the server binary:
 
 1. Explicit ``binary`` argument to :class:`PhaseServerProcess`.
 2. ``PHASE_RS_SERVER_BINARY`` environment variable.
-3. ``external/phase-rs/target/release/phase-server[.exe]`` (vendored
-   submodule, release build).
-4. ``external/phase-rs/target/debug/phase-server[.exe]`` (debug build).
-5. ``cargo`` fallback — runs ``cargo run --release --bin phase-server``
+3. ``external/phase-rs/target/server-release/phase-server[.exe]``.
+4. ``external/phase-rs/target/release/phase-server[.exe]``.
+5. ``external/phase-rs/target/debug/phase-server[.exe]``.
+6. ``cargo`` fallback — runs ``cargo run --profile server-release --bin phase-server``
    from the submodule, building on demand. Requires a Rust toolchain.
 
 Use as a context manager::
@@ -39,7 +39,6 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import TracebackType
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -53,14 +52,14 @@ def _binary_name() -> str:
     return "phase-server.exe" if sys.platform.startswith("win") else "phase-server"
 
 
-def _resolve_binary(submodule_root: Path) -> Optional[Path]:
-    """Find an existing phase-server binary in ``target/{release,debug}``.
+def _resolve_binary(submodule_root: Path) -> Path | None:
+    """Find an existing phase-server binary in the supported build profiles.
 
-    Returns ``None`` if neither exists; the caller then falls back to
+    Returns ``None`` if none exists; the caller then falls back to
     ``cargo run``.
     """
     name = _binary_name()
-    for profile in ("release", "debug"):
+    for profile in ("server-release", "release", "debug"):
         candidate = submodule_root / "target" / profile / name
         if candidate.is_file():
             return candidate
@@ -108,13 +107,13 @@ class PhaseServerProcess:
 
     host: str = DEFAULT_HOST
     port: int = DEFAULT_PORT
-    binary: Optional[Path] = None
+    binary: Path | None = None
     submodule_root: Path = DEFAULT_SUBMODULE
     startup_timeout_s: float = 30.0
     extra_env: dict[str, str] = field(default_factory=dict)
     quiet: bool = True
 
-    _proc: Optional[subprocess.Popen] = field(default=None, init=False, repr=False)
+    _proc: subprocess.Popen | None = field(default=None, init=False, repr=False)
     _adopted: bool = field(default=False, init=False, repr=False)
 
     @property
@@ -126,8 +125,8 @@ class PhaseServerProcess:
         """Return ``(argv, cwd)`` for launching phase-server.
 
         Tries (a) explicit binary, (b) ``$PHASE_RS_SERVER_BINARY``,
-        (c) auto-located ``target/{release,debug}/phase-server``,
-        (d) ``cargo run --release --bin phase-server`` as a last resort.
+        (c) an auto-located phase-server build,
+        (d) ``cargo run --profile server-release --bin phase-server`` as a last resort.
         """
         # phase-server's CLI flags (see crates/phase-server/src/main.rs Cli):
         #   -p, --port <u16>      (default 9374)
@@ -150,11 +149,14 @@ class PhaseServerProcess:
 
         # cargo fallback. Builds on demand; slow first-run, ~instant after.
         return (
-            ["cargo", "run", "--release", "--bin", "phase-server", "--", *args_tail],
+            [
+                "cargo", "run", "--profile", "server-release", "--bin",
+                "phase-server", "--", *args_tail,
+            ],
             self.submodule_root,
         )
 
-    def start(self) -> "PhaseServerProcess":
+    def start(self) -> PhaseServerProcess:
         """Spawn the server and block until its port accepts connections.
 
         Idempotent: if the port is already open, we assume someone else
@@ -241,13 +243,13 @@ class PhaseServerProcess:
             self._proc.kill()
             self._proc.wait(timeout=terminate_timeout_s)
 
-    def __enter__(self) -> "PhaseServerProcess":
+    def __enter__(self) -> PhaseServerProcess:
         return self.start()
 
     def __exit__(
         self,
-        exc_type: Optional[type[BaseException]],
-        exc: Optional[BaseException],
-        tb: Optional[TracebackType],
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
     ) -> None:
         self.stop()

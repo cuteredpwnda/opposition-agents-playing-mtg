@@ -17,7 +17,7 @@ from src.integrations.phase_rs.adapter import (
 )
 from src.world_model.game_tokenizer import GameTokenizer
 
-FEATURE_VERSION = "native_observation_action_v3"
+FEATURE_VERSION = "native_observation_action_v4"
 ACTION_DIM = 136
 
 
@@ -59,6 +59,28 @@ def public_zone_count(player: dict, zone: str) -> int:
     if not isinstance(count, int) or isinstance(count, bool) or count < 0:
         raise ValueError(f"Invalid native public {zone} count: {count!r}")
     return count
+
+
+def controlled_visible_zones(state: dict, seat: int) -> dict[str, list[str]]:
+    zones: dict[str, set[str]] = {}
+    for obj in visible_objects(state, seat).values():
+        owner = obj.get("owner")
+        zone = str(obj.get("zone", "")).strip().lower()
+        player = obj.get("controller", owner) if zone == "battlefield" else owner
+        if player is None:
+            continue
+        if isinstance(player, bool):
+            raise ValueError("Native learning object has an invalid zone player")
+        try:
+            controlled_by_seat = int(player) == seat
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Native learning object has an invalid zone player") from exc
+        if not controlled_by_seat:
+            continue
+        if not zone:
+            raise ValueError("Visible native object has no zone")
+        zones.setdefault(zone, set()).add(obj["name"])
+    return {zone: sorted(names) for zone, names in sorted(zones.items())}
 
 
 def observation(state: dict, seat: int) -> tuple[dict[str, torch.Tensor], list[str]]:
@@ -148,6 +170,7 @@ class NativeRecordingPicker:
         features, names = observation(state, seat)
         self.records.append({
             "features": features, "visible_cards": names,
+            "controlled_visible_zones": controlled_visible_zones(state, seat),
             "actions": torch.stack([encode_action(action, state, seat) for action in actions]),
             "legal_actions": actions, "chosen_index": chosen,
             "turn": state.get("turn_number", 0), "done": False, "reward": 0.0,
@@ -166,6 +189,9 @@ class NativeRecordingPicker:
             )
             self.records.append({
                 "features": features, "visible_cards": names,
+                "controlled_visible_zones": controlled_visible_zones(
+                    result.final_state, result.our_seat,
+                ),
                 "actions": torch.zeros(1, ACTION_DIM), "legal_actions": [],
                 "chosen_index": 0, "done": True, "reward": reward,
                 "turn": result.turns_observed,

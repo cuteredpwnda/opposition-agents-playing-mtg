@@ -13,7 +13,8 @@ Examples:
 
   python scripts/phase_rs_rollout_sweep.py --games-per-cell 3 --autostart
   python scripts/phase_rs_rollout_sweep.py --pickers ollama --difficulties Hard VeryHard --autostart
-  python scripts/phase_rs_rollout_sweep.py --our-deck-file data/decks/modern/modern_mono_red_burn.txt --autostart
+  python scripts/phase_rs_rollout_sweep.py \
+      --our-deck-file data/decks/modern/modern_mono_red_burn.txt --autostart
 """
 
 from __future__ import annotations
@@ -26,12 +27,14 @@ from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 
+from scripts.run_phase_rs_ablation import _outcome
 from src.agents import make_agent
 from src.integrations.phase_rs import (
     STARTER_DECK_NAMES,
     AgentActionPicker,
     HeuristicActionPicker,
     OllamaActionPicker,
+    OpenAICompatibleActionPicker,
     PhaseServerConfig,
     PreferNonPassPicker,
     RandomActionPicker,
@@ -43,6 +46,11 @@ from src.integrations.phase_rs.decision2_picker import (
     add_decision2_arguments,
     make_decision2_picker,
 )
+from src.integrations.phase_rs.liquid_d1_picker import (
+    LiquidD1ActionPicker,
+    add_liquid_d1_arguments,
+    make_liquid_d1_picker,
+)
 from src.integrations.phase_rs.tev1_picker import add_tev1_arguments, make_tev1_picker
 
 
@@ -50,6 +58,7 @@ from src.integrations.phase_rs.tev1_picker import add_tev1_arguments, make_tev1_
 class RolloutRow:
     picker: str
     ai_difficulty: str
+    ai_deck: str
     game_index: int
     seed: int
     winner_seat: int | None
@@ -59,6 +68,7 @@ class RolloutRow:
     turns: int
     actions: int
     elapsed_sec: float
+    attempt_reasons: list[str]
 
 
 def _build_picker(name: str, seed: int, args: argparse.Namespace):
@@ -72,11 +82,20 @@ def _build_picker(name: str, seed: int, args: argparse.Namespace):
         return make_tev1_picker(args, seed)
     if name == "decision2":
         return make_decision2_picker(args, seed)
+    if name == "liquid_d1":
+        return make_liquid_d1_picker(args, seed)
     if name == "ollama":
         return OllamaActionPicker(
             seed=seed,
             model=args.ollama_model,
             base_url=args.ollama_url,
+            timeout_s=args.ollama_timeout,
+            failure_policy=args.chat_failure_policy,
+        )
+    if name == "vllm":
+        return OpenAICompatibleActionPicker(
+            seed=seed, model=args.vllm_model, base_url=args.vllm_url,
+            timeout_s=args.vllm_timeout, api_key=args.vllm_api_key,
         )
     if name.startswith("agent:"):
         agent_name = name.split(":", 1)[1].strip()
@@ -94,6 +113,10 @@ def _load_our_deck(args: argparse.Namespace) -> dict:
 
 
 def run(args: argparse.Namespace) -> int:
+    if args.games_per_cell < 1:
+        raise ValueError("--games-per-cell must be positive")
+    if args.max_retries < 1:
+        raise ValueError("--max-retries must allow at least one attempt")
     for deck_name in args.ai_decks:
         if deck_name not in STARTER_DECK_NAMES:
             raise SystemExit(
@@ -112,14 +135,16 @@ def run(args: argparse.Namespace) -> int:
 
     all_rows: list[RolloutRow] = []
     cell_summary: list[dict[str, object]] = []
-    max_retries = args.max_retries if hasattr(args, "max_retries") else 2
+    max_retries = args.max_retries
     total_games = (
         len(args.pickers)
         * len(args.difficulties)
         * len(args.ai_decks)
         * args.games_per_cell
     )
+    attempted_games = 0
     completed_games = 0
+    incomplete_attempts = 0
 
     for picker_name in args.pickers:
         for ai_difficulty in args.difficulties:
@@ -128,6 +153,8 @@ def run(args: argparse.Namespace) -> int:
                 losses = 0
                 draws = 0
                 timeouts = 0
+                cell_attempts = 0
+                cell_incomplete_attempts = 0
                 elapsed_total = 0.0
                 turns_total = 0
                 actions_total = 0
@@ -135,9 +162,11 @@ def run(args: argparse.Namespace) -> int:
                 for g in range(args.games_per_cell):
                     seed = args.seed + g
                     result = None
+                    attempt_results = []
+                    elapsed = 0.0
                     for attempt in range(1, max_retries + 1):
                         picker = _build_picker(picker_name, seed, args)
-                        if isinstance(picker, Decision2ActionPicker):
+                        if isinstance(picker, (Decision2ActionPicker, LiquidD1ActionPicker)):
                             picker.prepare()
                         cfg = PhaseServerConfig(uri=args.uri, stream_timeout_s=args.stream_timeout)
 
@@ -152,22 +181,28 @@ def run(args: argparse.Namespace) -> int:
                             autostart_server=args.autostart,
                             format_name=args.format,
                         )
-                        elapsed = time.perf_counter() - started
+                        elapsed += time.perf_counter() - started
+                        attempt_results.append(result)
+                        cell_attempts += 1
+                        if _outcome(result) == "incomplete":
+                            cell_incomplete_attempts += 1
                         # If succeeded or not a transient failure, stop retrying.
                         if result.reason != "stream_timeout" or attempt == max_retries:
                             break
-                        print(f"[retry {attempt}/{max_retries}] cell {picker_name}/{ai_difficulty}/{ai_deck} game {g+1}: {result.reason}")
+                        print(
+                            f"[retry {attempt}/{max_retries}] cell "
+                            f"{picker_name}/{ai_difficulty}/{ai_deck} game {g+1}: "
+                            f"{result.reason}"
+                        )
                     if result is None:
-                        continue  # Skip this game
+                        raise RuntimeError("Rollout produced no game attempt")
 
-                    if result.winner_seat is None:
-                        outcome = "draw"
+                    outcome = _outcome(result)
+                    if outcome == "draw":
                         draws += 1
-                    elif result.winner_seat == result.our_seat:
-                        outcome = "win"
+                    elif outcome == "win":
                         wins += 1
-                    else:
-                        outcome = "loss"
+                    elif outcome == "loss":
                         losses += 1
 
                     if result.reason == "stream_timeout":
@@ -176,6 +211,7 @@ def run(args: argparse.Namespace) -> int:
                     row = RolloutRow(
                         picker=picker_name,
                         ai_difficulty=ai_difficulty,
+                        ai_deck=ai_deck,
                         game_index=g + 1,
                         seed=seed,
                         winner_seat=result.winner_seat,
@@ -185,6 +221,9 @@ def run(args: argparse.Namespace) -> int:
                         turns=result.turns_observed,
                         actions=result.actions_sent,
                         elapsed_sec=elapsed,
+                        attempt_reasons=[
+                            attempt_result.reason for attempt_result in attempt_results
+                        ],
                     )
                     all_rows.append(row)
                     row_dict = asdict(row)
@@ -194,27 +233,39 @@ def run(args: argparse.Namespace) -> int:
                     with games_path.open("a", encoding="utf-8") as f:
                         f.write(json.dumps(row_dict) + "\n")
 
-                    if result.trace:
+                    if any(attempt_result.trace for attempt_result in attempt_results):
                         trace_dir = out_dir / "traces"
                         trace_dir.mkdir(parents=True, exist_ok=True)
-                        safe_picker = picker_name.replace(":", "-").replace("/", "-").replace(" ", "_")
-                        safe_deck = ai_deck.replace(":", "-").replace("/", "-").replace(" ", "_")
-                        (trace_dir / f"{safe_picker}_{ai_difficulty}_{safe_deck}_{g+1:04d}.jsonl").write_text(
-                            "\n".join(json.dumps(evt) for evt in result.trace) + "\n",
-                            encoding="utf-8",
+                        safe_picker = (
+                            picker_name.replace(":", "-").replace("/", "-").replace(" ", "_")
                         )
+                        safe_deck = ai_deck.replace(":", "-").replace("/", "-").replace(" ", "_")
+                        trace_name = f"{safe_picker}_{ai_difficulty}_{safe_deck}_{g+1:04d}"
+                        for attempt_index, attempt_result in enumerate(attempt_results, 1):
+                            if not attempt_result.trace:
+                                continue
+                            suffix = (
+                                f"_attempt_{attempt_index:02d}"
+                                if attempt_index < len(attempt_results) else ""
+                            )
+                            (trace_dir / f"{trace_name}{suffix}.jsonl").write_text(
+                                "\n".join(json.dumps(evt) for evt in attempt_result.trace) + "\n",
+                                encoding="utf-8",
+                            )
 
                     elapsed_total += elapsed
                     turns_total += result.turns_observed
                     actions_total += result.actions_sent
-                    completed_games += 1
+                    attempted_games += 1
+                    completed_games += outcome != "incomplete"
                     progress_path.write_text(
                         json.dumps(
                             {
                                 "completed_games": completed_games,
+                                "attempted_games": attempted_games,
                                 "total_games": total_games,
                                 "percent": round(
-                                    (completed_games / total_games) * 100.0, 2
+                                    (attempted_games / total_games) * 100.0, 2
                                 )
                                 if total_games
                                 else 0.0,
@@ -232,20 +283,27 @@ def run(args: argparse.Namespace) -> int:
                     )
 
                 n = args.games_per_cell
+                cell_completed = wins + losses + draws
+                incomplete_attempts += cell_incomplete_attempts
                 cell_summary.append(
                     {
                         "picker": picker_name,
                         "ai_difficulty": ai_difficulty,
                         "ai_deck": ai_deck,
                         "games": n,
+                        "completed_games": cell_completed,
+                        "incomplete_games": n - cell_completed,
+                        "attempts": cell_attempts,
+                        "incomplete_attempts": cell_incomplete_attempts,
                         "wins": wins,
                         "losses": losses,
                         "draws": draws,
                         "timeouts": timeouts,
-                        "win_rate": (wins / n) if n else 0.0,
-                        "avg_elapsed_sec": (elapsed_total / n) if n else 0.0,
-                        "avg_turns": (turns_total / n) if n else 0.0,
-                        "avg_actions": (actions_total / n) if n else 0.0,
+                        "completion_rate": cell_completed / n,
+                        "win_rate": wins / cell_completed if cell_completed else None,
+                        "avg_elapsed_sec": elapsed_total / n,
+                        "avg_turns": turns_total / n,
+                        "avg_actions": actions_total / n,
                     }
                 )
 
@@ -270,6 +328,7 @@ def run(args: argparse.Namespace) -> int:
         "seed": args.seed,
         "uri": args.uri,
         "stream_timeout": args.stream_timeout,
+        "incomplete_attempts": incomplete_attempts,
         "cells": cell_summary,
     }
     (out_dir / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
@@ -286,50 +345,54 @@ def run(args: argparse.Namespace) -> int:
     print(f"output: {out_dir}")
 
     # Optional post-sweep KG enrichment.
-    if getattr(args, "kg_enrich", False):
-        try:
-            import asyncio
+    enrichment_failed = False
+    if getattr(args, "kg_enrich", False) and incomplete_attempts:
+        print("[error] KG enrichment skipped: the sweep contains incomplete attempts")
+        enrichment_failed = True
+    elif getattr(args, "kg_enrich", False):
+        import asyncio
 
-            from src.integrations.phase_rs.kg_enrichment_adapter import (
-                enrich_from_phase_rs_traces,
-            )
+        from src.integrations.phase_rs.kg_enrichment_adapter import (
+            enrich_from_phase_rs_traces,
+        )
 
-            print("\n=== running KG enrichment (dry_run=%s) ===" % args.kg_dry_run)
-            kg_report = asyncio.run(
-                enrich_from_phase_rs_traces(
-                    trace_dir=out_dir,
-                    kg_connection_uri=args.kg_uri,
-                    kg_user=args.kg_user,
-                    kg_password=args.kg_password,
-                    dry_run=args.kg_dry_run,
-                    our_deck_file=args.our_deck_file,
-                )
+        print(f"\n=== running KG enrichment (dry_run={args.kg_dry_run}) ===")
+        kg_report = asyncio.run(
+            enrich_from_phase_rs_traces(
+                trace_dir=out_dir,
+                kg_connection_uri=args.kg_uri,
+                kg_user=args.kg_user,
+                kg_password=args.kg_password,
+                dry_run=args.kg_dry_run,
+                our_deck_file=args.our_deck_file,
             )
-            (out_dir / "kg_enrichment_report.json").write_text(
-                json.dumps(
-                    {
-                        "traces_processed": kg_report.traces_processed,
-                        "games_analyzed": kg_report.games_analyzed,
-                        "synergies_proposed": kg_report.synergies_proposed,
-                        "synergies_written": kg_report.synergies_written,
-                        "combos_proposed": kg_report.combos_proposed,
-                        "card_stats_updated": kg_report.card_stats_updated,
-                        "errors": kg_report.errors,
-                    },
-                    indent=2,
-                ),
-                encoding="utf-8",
-            )
-            print(
-                f"KG enrichment: {kg_report.synergies_proposed} synergies "
-                f"({kg_report.synergies_written} written), "
-                f"{kg_report.combos_proposed} combos, "
-                f"{kg_report.card_stats_updated} card stats"
-            )
-        except Exception as exc:  # pragma: no cover — best-effort hook
-            print(f"[warn] KG enrichment failed: {exc}")
+        )
+        (out_dir / "kg_enrichment_report.json").write_text(
+            json.dumps(
+                {
+                    "traces_processed": kg_report.traces_processed,
+                    "games_analyzed": kg_report.games_analyzed,
+                    "synergies_proposed": kg_report.synergies_proposed,
+                    "synergies_written": kg_report.synergies_written,
+                    "combos_proposed": kg_report.combos_proposed,
+                    "card_stats_updated": kg_report.card_stats_updated,
+                    "errors": kg_report.errors,
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        print(
+            f"KG enrichment: {kg_report.synergies_proposed} synergies "
+            f"({kg_report.synergies_written} written), "
+            f"{kg_report.combos_proposed} combos, "
+            f"{kg_report.card_stats_updated} card stats"
+        )
+        if kg_report.errors:
+            print(f"[error] KG enrichment reported errors: {kg_report.errors}")
+            enrichment_failed = True
 
-    return 0
+    return 1 if any(row.result == "incomplete" for row in all_rows) or enrichment_failed else 0
 
 
 def parse_args() -> argparse.Namespace:
@@ -352,7 +415,10 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--ai-decks", nargs="+", default=["Red Deck Wins"])
     p.add_argument("--games-per-cell", type=int, default=3)
     p.add_argument("--our-deck-file", default=None)
-    p.add_argument("--format", default=None, help="Game format (Standard, Pioneer, Modern, Commander, etc.). Defaults to Standard.")
+    p.add_argument(
+        "--format", default=None,
+        help="Game format (Standard, Pioneer, Modern, Commander, etc.). Defaults to Standard.",
+    )
     p.add_argument("--uri", default="ws://127.0.0.1:9374/ws")
     p.add_argument("--autostart", action="store_true")
     p.add_argument(
@@ -364,12 +430,22 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument("--max-actions", type=int, default=2000)
     p.add_argument("--seed", type=int, default=7)
-    p.add_argument("--max-retries", type=int, default=2, help="Retry transient failures per game cell.")
+    p.add_argument(
+        "--max-retries", type=int, default=2,
+        help="Maximum total attempts per game, including retries after stream timeouts.",
+    )
     p.add_argument("--output-dir", default="runs/phase_rs_rollout_sweep")
-    p.add_argument("--ollama-model", default="gemma4:e2b")
+    p.add_argument("--ollama-model", default="llama3.2:1b")
     p.add_argument("--ollama-url", default="http://localhost:11434")
+    p.add_argument("--ollama-timeout", type=float, default=120.0)
+    p.add_argument("--chat-failure-policy", choices=["error", "random"], default="error")
+    p.add_argument("--vllm-model", default="Qwen/Qwen3-0.6B")
+    p.add_argument("--vllm-url", default="http://localhost:8000/v1")
+    p.add_argument("--vllm-timeout", type=float, default=120.0)
+    p.add_argument("--vllm-api-key", default=None)
     add_tev1_arguments(p)
     add_decision2_arguments(p)
+    add_liquid_d1_arguments(p)
     # KG enrichment options (opt-in; no Neo4j required for --kg-dry-run).
     p.add_argument(
         "--kg-enrich",

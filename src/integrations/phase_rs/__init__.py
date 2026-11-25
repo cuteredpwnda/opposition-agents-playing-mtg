@@ -21,6 +21,7 @@ from src.integrations.phase_rs.agent_bridge import (
     AgentActionPicker,
     HeuristicActionPicker,
     OllamaActionPicker,
+    OpenAICompatibleActionPicker,
     PreferNonPassPicker,
     RandomActionPicker,
 )
@@ -48,6 +49,7 @@ from src.integrations.phase_rs.kl_control_picker import (
 from src.integrations.phase_rs.kl_control_picker import (
     KLControlActionPicker,
 )
+from src.integrations.phase_rs.liquid_d1_picker import LiquidD1ActionPicker
 from src.integrations.phase_rs.runner import GameRunResult, run_game, run_game_sync
 from src.integrations.phase_rs.server_process import PhaseServerProcess
 from src.integrations.phase_rs.state_view import PhaseRsPlayerView, PhaseRsStateView
@@ -65,7 +67,9 @@ __all__ = [
     "HeuristicActionPicker",
     "KL_CONTROL_OBJECTIVES",
     "KLControlActionPicker",
+    "LiquidD1ActionPicker",
     "OllamaActionPicker",
+    "OpenAICompatibleActionPicker",
     "PhaseRsPlayerView",
     "PhaseRsStateView",
     "PhaseServerClient",

@@ -13,15 +13,14 @@ toolchain skips cleanly. When the binary is available we verify:
 from __future__ import annotations
 
 import socket
-import sys
 import time
 from pathlib import Path
 
 import pytest
 
 from src.integrations.phase_rs.server_process import (
-    DEFAULT_PORT,
     PhaseServerProcess,
+    _binary_name,
     _port_open,
     _resolve_binary,
 )
@@ -35,7 +34,7 @@ def _binary_available() -> bool:
     return _resolve_binary(SUBMODULE) is not None
 
 
-pytestmark = pytest.mark.skipif(
+requires_binary = pytest.mark.skipif(
     not _binary_available(),
     reason=(
         "phase-server binary not built; "
@@ -51,6 +50,17 @@ def _free_port() -> int:
         return s.getsockname()[1]
 
 
+def test_server_release_is_preferred_over_older_build_profiles(tmp_path):
+        binaries = []
+        for profile in ("release", "server-release"):
+            binary = tmp_path / "target" / profile / _binary_name()
+            binary.parent.mkdir(parents=True)
+            binary.touch()
+            binaries.append(binary)
+        assert _resolve_binary(tmp_path) == binaries[1]
+
+
+@requires_binary
 def test_start_stop_opens_and_closes_port():
     port = _free_port()
     proc = PhaseServerProcess(port=port, startup_timeout_s=30.0)
@@ -66,6 +76,7 @@ def test_start_stop_opens_and_closes_port():
     assert not _port_open("127.0.0.1", port, timeout=0.2)
 
 
+@requires_binary
 def test_adopts_running_instance_without_double_launch():
     port = _free_port()
     # Start one server, then try to start a second on the same port.

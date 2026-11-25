@@ -23,6 +23,7 @@ from src.integrations.phase_rs import (
     AgentActionPicker,
     HeuristicActionPicker,
     OllamaActionPicker,
+    OpenAICompatibleActionPicker,
     PhaseServerConfig,
     PreferNonPassPicker,
     RandomActionPicker,
@@ -33,6 +34,11 @@ from src.integrations.phase_rs.decision2_picker import (
     Decision2ActionPicker,
     add_decision2_arguments,
     make_decision2_picker,
+)
+from src.integrations.phase_rs.liquid_d1_picker import (
+    LiquidD1ActionPicker,
+    add_liquid_d1_arguments,
+    make_liquid_d1_picker,
 )
 from src.integrations.phase_rs.tev1_picker import add_tev1_arguments, make_tev1_picker
 
@@ -63,8 +69,18 @@ def _build_picker(name: str, seed: int, args: argparse.Namespace):
         return make_tev1_picker(args, seed)
     if name == "decision2":
         return make_decision2_picker(args, seed)
+    if name == "liquid_d1":
+        return make_liquid_d1_picker(args, seed)
     if name == "ollama":
-        return OllamaActionPicker(seed=seed, model=args.ollama_model, base_url=args.ollama_url)
+        return OllamaActionPicker(
+            seed=seed, model=args.ollama_model, base_url=args.ollama_url,
+            timeout_s=args.ollama_timeout, failure_policy=args.chat_failure_policy,
+        )
+    if name == "vllm":
+        return OpenAICompatibleActionPicker(
+            seed=seed, model=args.vllm_model, base_url=args.vllm_url,
+            timeout_s=args.vllm_timeout, api_key=args.vllm_api_key,
+        )
     if name.startswith("agent:"):
         agent_name = name.split(":", 1)[1].strip()
         agent = make_agent(agent_name, player_id="seat0", seed=seed)
@@ -94,7 +110,7 @@ def run(args: argparse.Namespace) -> int:
         for i in range(args.games):
             seed = args.seed + i
             picker = _build_picker(args.picker, seed, args)
-            if isinstance(picker, Decision2ActionPicker):
+            if isinstance(picker, (Decision2ActionPicker, LiquidD1ActionPicker)):
                 picker.prepare()
             cfg = PhaseServerConfig(uri=args.uri, stream_timeout_s=args.stream_timeout)
             result = run_game_sync(
@@ -165,17 +181,27 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument("--ai-deck", default="Red Deck Wins")
     p.add_argument("--our-deck-file", default=None)
-    p.add_argument("--format", default=None, help="Game format (Standard, Pioneer, Modern, Commander, etc.). Defaults to Standard.")
+    p.add_argument(
+        "--format", default=None,
+        help="Game format (Standard, Pioneer, Modern, Commander, etc.). Defaults to Standard.",
+    )
     p.add_argument("--uri", default="ws://127.0.0.1:9374/ws")
     p.add_argument("--autostart", action="store_true")
     p.add_argument("--stream-timeout", type=float, default=60.0)
     p.add_argument("--max-actions", type=int, default=2000)
     p.add_argument("--seed", type=int, default=7)
     p.add_argument("--output-dir", default="runs/phase_rs_training_traces")
-    p.add_argument("--ollama-model", default="gemma4:e2b")
+    p.add_argument("--ollama-model", default="llama3.2:1b")
     p.add_argument("--ollama-url", default="http://localhost:11434")
+    p.add_argument("--ollama-timeout", type=float, default=120.0)
+    p.add_argument("--chat-failure-policy", choices=["error", "random"], default="error")
+    p.add_argument("--vllm-model", default="Qwen/Qwen3-0.6B")
+    p.add_argument("--vllm-url", default="http://localhost:8000/v1")
+    p.add_argument("--vllm-timeout", type=float, default=120.0)
+    p.add_argument("--vllm-api-key", default=None)
     add_tev1_arguments(p)
     add_decision2_arguments(p)
+    add_liquid_d1_arguments(p)
     return p.parse_args()
 
 

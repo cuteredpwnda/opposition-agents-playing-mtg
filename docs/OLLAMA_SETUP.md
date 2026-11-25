@@ -10,16 +10,18 @@ This project uses Ollama for LLM-powered agent decision-making in Magic: The Gat
 
 2. **Pull a model**
    ```bash
-   ollama pull gemma4:e2b
+   ollama pull llama3.2:1b
+   ollama pull qwen2.5-coder:1.5b
    ```
    
-   Other recommended models:
-   - `ollama pull gemma4:e4b` - Larger Gemma 4 edge variant (better reasoning, ~4 GB VRAM)
-   - `ollama pull gemma4:12b` - Mid-tier Gemma 4 (needs ~8 GB VRAM)
-   - `ollama pull gemma4:27b` - Full Gemma 4 (best quality, ~16 GB VRAM)
+   Other models:
    - `ollama pull mistral` - Alternative open-source model
    - `ollama pull lfm2.5:8b` - Liquid Foundation Model 2.5 (strong reasoning, ~6 GB VRAM)
    - `ollama pull phi` - Lightweight option
+
+Gemma is excluded from the current comparison: its Commander screen produced
+timeouts/HTTP 500 responses and no accepted model choices. That is a serving
+qualification failure, not evidence that Gemma is intrinsically weak.
 
 3. **Start Ollama server**
    ```bash
@@ -121,6 +123,38 @@ Playing 2 games...
 ### Not enough memory
 - Pull a quantized model: `ollama pull mistral:7b-instruct-q4_K_M`
 
+### Local vLLM Docker startup
+
+The phase-rs `--picker vllm` path uses a local OpenAI-compatible
+`/v1/chat/completions` endpoint with strict JSON output and no random fallback.
+Strict Ollama and vLLM requests enumerate eligible original action indices
+in a JSON schema and validate the response; unavailable services and invalid
+answers fail the game explicitly. The ablation manifest omits `--vllm-api-key`,
+but command-line arguments may still be visible to local processes.
+For a 12 GiB GPU, do not leave vLLM at a memory target above the free VRAM.
+For example:
+
+```powershell
+docker run --gpus all -p 8000:8000 vllm/vllm-openai:latest `
+  --model Qwen/Qwen3-0.6B `
+  --gpu-memory-utilization 0.85 `
+  --max-model-len 8192
+```
+
+The observed startup failure requested 11.04 GiB while only 10.98 GiB was
+free. It occurred before model execution. Lowering GPU utilization fixes that
+specific check; reducing the default 40,960-token context also avoids reserving
+an unnecessarily large KV cache for the MTG decision prompt.
+
+Liquid d1 is not served through this generative endpoint. Its released
+`system_one` classifier head runs through the optional `liquid_d1` dependency:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -e ".[liquid_d1]"
+.\.venv\Scripts\python.exe -m scripts.run_phase_rs_ablation `
+  --picker liquid_d1 --liquid-d1-model LiquidAI/d1-omni-600M
+```
+
 ## Configuration
 
 Edit parameters in `src/engine/llm_orchestration.py`:
@@ -154,4 +188,3 @@ The LLM evaluates:
 - Subsequent requests are faster
 - GPU support improves performance significantly
 - Consider running Ollama with CUDA or Metal for acceleration
-

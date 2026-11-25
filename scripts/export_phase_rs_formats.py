@@ -39,8 +39,6 @@ def main() -> None:
         subprocess.run(
             [
                 "rustc", "--edition=2021", str(source), "-o", str(binary),
-                "-C", "panic=abort",
-                "-C", "opt-level=z", "-C", "lto=thin", "-C", "codegen-units=1",
                 "--extern", f"engine={engine}", "--extern", f"serde_json={serde}",
                 "-L", f"dependency={engine.parent}",
             ],

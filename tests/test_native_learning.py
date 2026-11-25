@@ -7,19 +7,24 @@ import pytest
 import torch
 
 from scripts import run_native_learning
+from scripts.evaluate_native_learning import attempt_paths, load_campaign
 from src.integrations.phase_rs.agent_bridge import HeuristicActionPicker
 from src.integrations.phase_rs.native_learning_data import (
     NativeRecordingPicker,
+    controlled_visible_zones,
     encode_action,
     observation,
 )
 from src.world_model.native_learning import (
     NativeLearnedPicker,
+    combine_graph_sources,
+    curated_combo_graph,
     diagnostics,
     induce_graph,
     make_model,
     parameter_digest,
     save_bundle,
+    shuffled_graph_identity,
     train_components,
     train_graph,
 )
@@ -39,6 +44,7 @@ def state():
             "43": {"name": "Opponent Secret", "zone": "Hand", "owner": 1},
             "99": {"name": "Library Secret", "zone": "Library", "owner": 0},
             "44": {"name": "Mountain", "zone": "Battlefield", "owner": 0, "controller": 0},
+            "45": {"name": "Forest", "zone": "Battlefield", "owner": 0, "controller": 0},
         },
         "stack": [],
     }
@@ -68,7 +74,7 @@ def game(game_id="train1", cards=None, split="train", outcome=1):
 
 def test_features_exclude_hidden_names_and_have_real_arrays():
     features, names = observation(state(), 0)
-    assert names == ["Lightning Bolt", "Mountain"]
+    assert names == ["Forest", "Lightning Bolt", "Mountain"]
     assert features and all(torch.isfinite(value).all() for value in features.values())
     assert features["hand_cards"].abs().sum() > 0
     assert features["player_features"][7].item() == pytest.approx(0.1)
@@ -91,6 +97,19 @@ def test_public_counts_survive_redaction_and_invalid_counts_fail():
     original["players"][1]["hand_size"] = -1
     with pytest.raises(ValueError, match="Invalid native public hand count"):
         observation(original, 0)
+
+
+def test_controlled_zone_evidence_uses_battlefield_controller():
+    original = state()
+    original["objects"]["46"] = {
+        "name": "Borrowed Artifact", "zone": "Battlefield", "owner": 1, "controller": 0,
+    }
+    original["objects"]["47"] = {
+        "name": "Opponent Creature", "zone": "Battlefield", "owner": 1, "controller": 1,
+    }
+    zones = controlled_visible_zones(original, 0)
+    assert zones["battlefield"] == ["Borrowed Artifact", "Forest", "Mountain"]
+    assert "Opponent Creature" not in str(zones)
 
 
 def test_native_pending_choice_context_is_encoded_without_hidden_names():
@@ -172,9 +191,88 @@ def test_graph_exposure_keeps_wins_losses_and_training_provenance(tmp_path):
     assert graph["edges"][0]["exposed_games"] == 2
     assert graph["edges"][0]["wins"] == graph["edges"][0]["losses"] == 1
     assert all(evidence["split"] == "train" for evidence in graph["evidence"])
-    assert graph["relation"] == "CO_VISIBLE"
+    assert graph["relation"] == "BATTLEFIELD_CO_PRESENT"
+    assert all(edge["co_present_games"] >= 2 for edge in graph["edges"])
+    assert graph["negative_edges"]
     with pytest.raises(ValueError, match="training games only"):
         induce_graph([game(split="test")], tmp_path / "leak.json")
+
+
+def test_graph_identity_shuffle_preserves_nodes_edges_and_degree():
+    graph = {
+        "names": ["A", "B", "C", "D"],
+        "embeddings": torch.arange(16, dtype=torch.float32).reshape(4, 4),
+        "state_dict": {}, "edge_index": torch.tensor([
+            [0, 1, 1, 2, 2, 3],
+            [1, 0, 2, 1, 3, 2],
+        ]),
+        "feature_version": "hashed_name32", "training_game_ids": ["g1"],
+        "relation": "BATTLEFIELD_CO_PRESENT",
+    }
+    shuffled = shuffled_graph_identity(graph, 19)
+    assert set(shuffled["names"]) == set(graph["names"])
+    assert shuffled["names"] != graph["names"]
+    assert torch.equal(shuffled["edge_index"], graph["edge_index"])
+    assert torch.equal(shuffled["embeddings"], graph["embeddings"])
+    assert shuffled["intervention"]["degree_sequence_preserved"]
+    assert shuffled["intervention"]["edge_count_preserved"] == 3
+
+
+def test_combined_graph_preserves_source_provenance_and_negative_indices():
+    curated = {
+        "relation": "CURATED_COMBO_HYPEREDGE", "names": ["A", "B"],
+        "edges": [{"cards": ["A", "B"], "combo_ids": ["combo-1"]}],
+        "source_sha256": "curated-hash",
+    }
+    induced = {
+        "relation": "BATTLEFIELD_CO_PRESENT",
+        "names": ["A", "B", "C"],
+        "edges": [{
+            "cards": ["A", "B"], "exposed_games": 3, "co_present_games": 2,
+            "wins": 1, "losses": 1, "draws": 0,
+        }],
+        "negative_edges": [[0, 2]], "training_game_ids": ["game-1"],
+    }
+    combined = combine_graph_sources(curated, induced)
+    assert combined["relation"] == "CURATED_PLUS_INDUCED"
+    shared = next(edge for edge in combined["edges"] if edge["cards"] == ["A", "B"])
+    assert {source["type"] for source in shared["sources"]} == {
+        "curated_combo", "play_induced",
+    }
+    card_indices = {name: index for index, name in enumerate(combined["names"])}
+    assert combined["negative_edges"] == [[card_indices["A"], card_indices["C"]]]
+    shuffled = shuffled_graph_identity({
+        **combined, "embeddings": torch.arange(12, dtype=torch.float32).reshape(3, 4),
+        "state_dict": {}, "edge_index": torch.tensor([[0, 1], [1, 0]]),
+        "feature_version": "hashed_name32",
+    }, 4)
+    assert shuffled["intervention"]["kind"] == "card_identity_permutation"
+
+
+def test_curated_graph_keeps_format_legal_hyperedges(tmp_path):
+    path = tmp_path / "combos.json"
+    path.write_text(__import__("json").dumps([
+        {"id": "modern-combo", "status": "OK", "legalities": {"modern": True},
+         "uses": [{"card": {"name": "A"}}, {"card": {"name": "B"}}]},
+        {"id": "second-modern-combo", "status": "OK", "legalities": {"modern": True},
+         "uses": [{"card": {"name": "C"}}, {"card": {"name": "D"}}]},
+        {"id": "illegal-combo", "status": "OK", "legalities": {"modern": False},
+         "uses": [{"card": {"name": "B"}}, {"card": {"name": "C"}}]},
+        {"id": "unverified-combo", "status": "Needs Review",
+         "legalities": {"modern": True},
+         "uses": [{"card": {"name": "A"}}, {"card": {"name": "C"}}]},
+    ]), encoding="utf-8")
+    graph = curated_combo_graph(path, "Modern")
+    assert graph["relation"] == "CURATED_COMBO_HYPEREDGE"
+    assert graph["combos"] == [
+        {"combo_id": "modern-combo", "cards": ["A", "B"]},
+        {"combo_id": "second-modern-combo", "cards": ["C", "D"]},
+    ]
+    assert graph["names"] == ["A", "B", "C", "D"]
+    assert graph["edges"][0]["combo_ids"] == ["modern-combo"]
+    bundle, losses = train_graph(graph, 7, 1)
+    assert bundle["relation"] == "CURATED_COMBO_HYPEREDGE"
+    assert len(bundle["names"]) == 4 and len(losses) == 1
 
 
 def test_full_component_updates_strict_loading_and_graph_influence(tmp_path):
@@ -207,6 +305,10 @@ def test_full_component_updates_strict_loading_and_graph_influence(tmp_path):
     assert picker.last_reasoning["dynamics_invoked"]
     assert picker.last_reasoning["retrieved_cards"]
     assert picker.last_reasoning["graph_score_delta_max"] > 0
+    override = {**graph_bundle, "intervention": {"kind": "test_override"}}
+    replaced_graph = NativeLearnedPicker(path, seed=8, graph_override=override)
+    replaced_graph.pick(actions, state(), 0)
+    assert replaced_graph.last_reasoning["graph_intervention"] == "test_override"
     without = NativeLearnedPicker(path, False)
     without.pick(actions, state(), 0)
     assert without.last_reasoning["graph_score_delta_max"] == 0
@@ -233,7 +335,10 @@ def test_full_component_updates_strict_loading_and_graph_influence(tmp_path):
 def test_training_rejects_holdout_and_complete_graph(tmp_path):
     with pytest.raises(ValueError, match="training games only"):
         train_components(make_model(7), [game(split="test")], {}, 1)
-    graph = induce_graph([game()], tmp_path / "graph.json")
+    graph = {
+        "names": ["A", "B"], "edges": [{"cards": ["A", "B"]}],
+        "training_game_ids": [], "relation": "BATTLEFIELD_CO_PRESENT",
+    }
     with pytest.raises(ValueError, match="negative pairs"):
         train_graph(graph, 7, 1)
 
@@ -244,6 +349,39 @@ def test_invalid_pipeline_budgets_do_not_start_a_server(tmp_path):
             train_games=0, validation_games=1, test_games=1, epochs=1,
             graph_epochs=1, eval_games=1, threads=1, max_actions=100,
         ))
+
+
+def test_frozen_campaign_loader_and_resumable_attempt_order(tmp_path):
+    campaign = tmp_path / "campaign"
+    campaign.mkdir()
+    (campaign / "manifest.json").write_text(__import__("json").dumps({
+        "feature_version": "native_observation_action_v4", "file_sha256": {},
+    }), encoding="utf-8")
+    (campaign / "summary.json").write_text(__import__("json").dumps({
+        "status": "completed_development_pipeline", "changed_inputs": [],
+    }), encoding="utf-8")
+    manifest, summary = load_campaign(campaign)
+    assert manifest["feature_version"] == "native_observation_action_v4"
+    assert summary["changed_inputs"] == []
+
+    evaluation = tmp_path / "evaluation"
+    evaluation.mkdir()
+    for attempt in (2, 1):
+        (evaluation / f"cell_game001_attempt{attempt:03d}.json").write_text("{}", encoding="utf-8")
+    assert [path.name for path in attempt_paths(evaluation, "cell", 1)] == [
+        "cell_game001_attempt001.json", "cell_game001_attempt002.json",
+    ]
+
+
+def test_campaign_reuses_its_frozen_server_binary(tmp_path):
+    from scripts.evaluate_native_learning import campaign_server_binary
+    from src.integrations.phase_rs.server_process import _binary_name
+
+    binary = tmp_path / "target" / "release" / _binary_name()
+    manifest = {"file_sha256": {str(binary): "digest"}}
+    assert campaign_server_binary(manifest) == binary
+    with pytest.raises(ValueError, match="exactly one"):
+        campaign_server_binary({"file_sha256": {}})
 
 
 def test_retired_summary_training_and_missing_native_checkpoint_are_rejected():

@@ -1,4 +1,4 @@
-\begin{thebibliography}{48}
+\begin{thebibliography}{50}
 \providecommand{\natexlab}[1]{#1}
 \providecommand{\url}[1]{\texttt{#1}}
 \expandafter\ifx\csname urlstyle\endcsname\relax
@@ -36,6 +36,12 @@ Noam Brown and Tuomas Sandholm.
   professionals.
 \newblock \emph{Science}, 359\penalty0 (6374):\penalty0 418--424, 2018.
 \newblock \doi{10.1126/science.aao1733}.
+
+\bibitem[{Commander Spellbook}(n.d.)]{commander_spellbook}
+{Commander Spellbook}.
+\newblock {Commander Spellbook} combo database and api, n.d.
+\newblock URL \url{https://commanderspellbook.com/}.
+\newblock Accessed 5 October 2026.
 
 \bibitem[Cowling et~al.(2012)Cowling, Ward, and Powley]{cowling2012ensemble}
 Peter~I. Cowling, Colin~D. Ward, and Edward~J. Powley.
@@ -189,6 +195,13 @@ Anna~Sofia Lippolis, Mohammad~Javad Saeedizade, Stefan Schmid, Simon Blattner,
   volume~63 of \emph{Studies on the Semantic Web}, pages 107--122. IOS Press,
   2026.
 \newblock \doi{10.3233/SSW260011}.
+
+\bibitem[{Liquid AI}(2026)]{liquidai2026d1}
+{Liquid AI}.
+\newblock Open d1: Edge decision models for text, vision, and audio.
+\newblock Model release and technical documentation, 2026.
+\newblock URL \url{https://www.liquid.ai/blog/open-d1}.
+\newblock Accessed 8 October 2026.
 
 \bibitem[Maes et~al.(2026{\natexlab{a}})Maes, Le~Lidec, Haramati, Massaudi,
   Scieur, LeCun, and Balestriero]{maes_lelidec2026swm}

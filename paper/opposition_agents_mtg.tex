@@ -97,7 +97,7 @@
 
 \begin{abstract}
 \noindent
-\emph{Magic: The Gathering} (MTG) is, by several measures, the most combinatorially complex commercial card game ever published: more than 28{,}000 unique cards, a 260-page rule book, partial observability over 50--90 hidden cards, an unbounded action space, a turn-based stack with priority, and a state space conservatively estimated above $10^{800}$. We study agents that play it \emph{neuro-symbolically}: a verified rules engine decides what is legal, a formal ontology fixes what card semantics mean, a knowledge graph accumulates strategic structure, and learned components supply the statistics that no amount of symbolic knowledge can provide. Three claims organise the work. First, the symbolic layer should be a real ontology rather than a schema: we develop a provenance-aware OWL ontology of MTG aligned to DOLCE, with OWL~2~DL as its modelling target and its actual qualification boundaries described separately \citep{neuburger2026ontology}. Second, the knowledge graph should be \emph{built by playing}: agents mine their own trajectories into an append-only, provenance-bearing extension layer that later agents query as a strategic prior, while curated card semantics remain untouched --- a population-level learning loop in which the graph is shared long-term memory rather than static context. Third, action selection should be posed as \emph{stochastic optimal control under partial observability} rather than as expected-free-energy minimisation: following \citet{kaufmann2026aifcontrol}, the canonical discretisation of Active Inference is belief-space KL control, so we implement that objective directly and retain the two conventional expected-free-energy factorisations only as ablation arms with documented failure modes. We describe the architecture, state where the symbolic/sub-symbolic boundary lies and what crosses it in each direction, and specify the evaluation that would test the control claim inside MTG rather than on toy POMDPs. Code, ontology, and traces are released under the MIT licence.
+\emph{Magic: The Gathering} (MTG) combines hidden information, evolving card rules and a variable legal-action set. We present a research framework combining the native \texttt{phase-rs} engine with an ontology, graph-conditioned learning prototypes, decision models and belief-space KL control. The provenance-aware ontology has OWL~2~DL as a modelling target; its actual logical and data-validation boundaries are reported separately \citep{neuburger2026ontology}. An offline prototype derives graph evidence from recorded games and trains latent and action-selection components, while the proposed shared-memory and planner integrations remain to be qualified. Using the earlier protocol-v106 runtime, a bounded Modern feasibility campaign reached a rules-terminal outcome in 35 of 36 games; a separate eleven-arm Commander screen completed one game. These are execution measurements, not comparisons of playing strength. Native randomness is not controlled by the picker seed, and controlled learning, graph-benefit and multiplayer studies remain open.
 \end{abstract}
 
 \vspace{0.5em}
@@ -107,37 +107,34 @@
 \section{Introduction}
 \label{sec:intro}
 
-Reinforcement-learning (RL) research on games has historically progressed through a sequence of increasingly hard environments: backgammon \citep{tesauro1995temporal}, chess and Go \citep{silver2017mastering, silver2018alphazero}, StarCraft II \citep{vinyals2019grandmaster}, and no-limit Texas hold'em poker \citep{brown2018superhuman}. Each step pushed the community to invent new tools --- temporal-difference (TD) learning, deep value networks, self-play, counterfactual regret minimisation (CFR). \emph{Magic: The Gathering} (MTG) sits beyond the union of these challenges (\Cref{tab:complexity}): its action space is unbounded, its rules are open-textured natural language printed on cards (the comprehensive rule book itself defers to the per-card text in many places), its hidden information includes the entire opponent's deck composition, and its mechanics are extended every quarter by the publisher Wizards of the Coast. A single MTG card can override the rules of the game (e.g.\ \emph{Yixlid Jailer}, \emph{Blood Moon}, \emph{Cumulative Upkeep}), and a single decision in combat may resolve dozens of triggered abilities in a player-chosen order. The state space is open in the strict sense: every quarterly set adds previously-unseen card text whose semantics must be parsed at runtime, so any agent that hard-codes its action vocabulary cannot survive a set rotation.
+Reinforcement-learning (RL) research on games has progressed through backgammon \citep{tesauro1995temporal}, chess and Go \citep{silver2017mastering, silver2018alphazero}, StarCraft II \citep{vinyals2019grandmaster}, and no-limit Texas hold'em poker \citep{brown2018superhuman}. Each setting motivates different tools, from temporal-difference learning to self-play and counterfactual regret minimisation. \emph{Magic: The Gathering} (MTG) combines several difficult features (\Cref{tab:complexity}): hidden cards and library order, state-dependent actions, card-specific exceptions and an evolving card pool. New cards can require updates to the rules implementation; this work does not claim that unseen card text is automatically parsed into correct mechanics.
 
-For a concrete sense of why this matters for an algorithmic agent: in a single midgame turn the active player may need to (i) decide whether to play a land, (ii) sequence two or three spells with mana cost, colour requirements and stack ordering, (iii) optionally activate any number of permanent abilities that themselves go on the stack, (iv) declare attackers under summoning-sickness and tapping rules, (v) respond to triggered abilities resolving in the order chosen by their controllers, and (vi) decide which damage to assign in combat under multi-blocker rules. Each of these is itself a sub-decision tree. The total number of legal actions per priority pass routinely exceeds 60 and, in pathological combo states, several hundred. A model-free policy that emits a fixed-size logit vector cannot represent this branching, and a tabular search procedure that enumerates the subtree cannot fit it into memory.
+In a single turn a player may sequence spells and abilities, choose targets, declare attackers and respond to triggered effects. These decisions create nested choices whose available actions depend on the position. A policy therefore needs an action representation and masking scheme that can handle variable candidate sets; enumerating long continuations can also be costly.
 
 \begin{table}[t]
 \centering
-\caption{Approximate combinatorial complexity comparison.}
+\caption{Qualitative comparison of game properties, not measured complexity estimates.}
 \label{tab:complexity}
 \small
 \begin{tabularx}{\linewidth}{lXXXX}
 \toprule
  & \textbf{Chess} & \textbf{Go} & \textbf{No-limit Poker (HU)} & \textbf{MTG} \\
 \midrule
-State space            & $10^{47}$  & $10^{170}$ & $10^{160}$ & $\boldsymbol{>10^{800}}$ \\
-Branching factor       & $\sim$35   & $\sim$250  & $\sim$10   & $0$--$100^{+}$ (unbounded)\\
-Hidden information     & none       & none       & 2 cards    & 50--90+ cards \\
-Card / piece pool      & 6 types    & 1 type     & 52 cards   & $>$28{,}000 unique\\
-Rule text length       & $\sim$10p  & $\sim$5p   & $\sim$10p  & $\sim$260p + per-card\\
-Rules update frequency & decades    & decades    & decades    & quarterly \\
+Hidden information     & none       & none       & private cards & hands and library order \\
+Actions                & position-dependent moves & board placements & bets and folds & context-dependent choices \\
+Rules and components   & fixed pieces & fixed stones & fixed deck & evolving card-specific rules \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-A purely model-free deep-RL approach is therefore unattractive: the action space cannot be enumerated as a fixed-size logit vector, the observation space is symbolic and irregular, and every new set introduces previously-unseen card text whose semantics must be parsed at run time. Conversely, a purely symbolic LLM-prompting approach struggles with rules-correctness, hallucinated cards, and the long-horizon credit-assignment that competitive play requires --- an LLM that simply names a move it would like to make has no guarantee that move is legal, that it resolves the way the LLM expects, or that it furthers a coherent multi-turn plan.
+These properties challenge both fixed-vocabulary policies and unrestricted language-model prompting. An LLM that names a move has no guarantee that it is legal, resolves as expected or supports a useful long-term plan. We instead select among actions exposed by the engine, whose own rules coverage still requires independent qualification.
 
-Our position is that the structure of MTG demands a \emph{neuro-symbolic} stack: a verified rules engine to keep play legal, a knowledge graph to make card semantics queryable, a learned world model to enable imagination and planning over the resulting compressed state, and an LLM agent that orchestrates these components under an active-inference objective. \Cref{fig:stack} sketches the resulting architecture as a data-flow diagram, separating the \emph{symbolic} substrate (data sources, engine, knowledge graph) from the \emph{learned} substrate (world model, agent zoo) and showing where information actually crosses the boundary.
+We investigate a \emph{neuro-symbolic} stack: an external rules engine supplies executable actions, an ontology organises domain knowledge, and learned models and planners can use compressed observations. \Cref{fig:stack} sketches the proposed architecture; its arrows are design targets, not evidence that every integration is active in the reported experiments.
 
 \begin{figure*}[t]
 \centering
 \includegraphics[width=\textwidth]{fig_stack.pdf}
-\caption{Data-flow architecture. \textbf{Grey} boxes are external data sources; \textbf{blue} the symbolic substrate (engine, knowledge graph, replay buffer); \textbf{orange} the learned world model (V+M+C with a JEPA target head and a knowledge-graph context channel); \textbf{green} the agent zoo. Solid blue arrows are forward data flow; the red dashed arrow is the agent's chosen action returned to the engine; the engine $\leftrightarrow$ knowledge-graph link is bidirectional (card lookup at decision time, ontology-grounded card metadata at engine boot). Each agent additionally has read-only access to the knowledge graph and to the world-model controller through a thin lookup interface (omitted from the figure for clarity, described in the body text). The engine is the only component allowed to mutate game state; agents read but do not write.}
+\caption{Proposed data-flow architecture. \textbf{Grey} boxes are external data sources; \textbf{blue} denotes the symbolic substrate, \textbf{orange} learned models and \textbf{green} agents. Arrows identify intended interfaces, not universally active connections: current native pilots do not establish live knowledge-graph access or JEPA-driven planning. The engine, rather than a picker, mutates game state.}
 \label{fig:stack}
 \end{figure*}
 
@@ -145,17 +142,17 @@ Our position is that the structure of MTG demands a \emph{neuro-symbolic} stack:
 \begin{enumerate}[leftmargin=1.2em, itemsep=2pt]
   \item A scientific framing of MTG as an \emph{open-ended partially observable control problem} whose difficulty comes not only from combinatorics, but from the continual introduction of new symbolic rules through quarterly card releases.
   \item An architecture in which the symbolic/sub-symbolic boundary is stated rather than assumed (\Cref{sec:neurosymbolic}): what is symbolic, what is learned, what crosses in each direction, and what gates the crossing.
-  \item A \emph{play-to-graph} learning loop in which agents mine their own trajectories into an append-only extension layer of the knowledge graph, and later agents query that layer as a strategic prior --- with curated card semantics protected from statistical contamination by construction (\Cref{sec:playtograph}).
+  \item An offline \emph{play-to-graph} prototype that separates gameplay-derived associations from curated relations, and a proposed shared-memory evaluation for later agents (\Cref{sec:playtograph}).
   \item A \emph{control-theoretic} reading of MTG decision making: we adopt the result of \citet{kaufmann2026aifcontrol} that discrete Active Inference is belief-space KL control, implement that objective directly, and retain the two legacy expected-free-energy factorisations only as ablation arms (\Cref{sec:aif}).
 \end{enumerate}
 
 The ontology that grounds the symbolic layer is a contribution in its own right and is described in a companion paper \citep{neuburger2026ontology}; here we treat it as given and focus on what an agent does with it.
 
-\paragraph{Why these four together.} Each contribution targets a specific failure mode of the others. The engine prevents the LLM from playing illegal moves and the world model from imagining inconsistent dynamics. The knowledge graph compresses the 28{,}000-card pool into a structure with a few hundred archetype clusters so that an agent can reason about ``what card type does this state want next'' without enumerating all candidates. The world model amortises the cost of multi-turn lookahead so that decisions remain well within a few hundred milliseconds even when planning ten turns deep. The active-inference fusion agent finally ties the three together with a single tunable objective --- expected free energy --- whose pragmatic and epistemic terms have a direct mapping onto MTG concepts of \emph{value} and \emph{information}.
+\paragraph{Why these four together.} Engine-authored options constrain executable choices, while graph structure and learned dynamics are candidate sources of strategic context. Imagined continuations can still be inaccurate or illegal, and neither their latency nor their benefit is guaranteed. KL control and the fusion baseline are distinct selectors; activating and comparing their components is an empirical task.
 
-\paragraph{Collective intelligence hypothesis.} Beyond single-agent optimisation, the same stack naturally supports a population-level learning loop: many heterogeneous agents generate trajectories, those trajectories are mined for repeated card-pair and outcome regularities, and the resulting evidence is written into an append-only graph extension layer with provenance. New agents then query this enriched graph and inherit strategic priors discovered by previous runs. In this reading, the KG is not only static symbolic context but a shared long-term memory for the entire agent population.
+\paragraph{Collective intelligence hypothesis.} Heterogeneous agents could generate trajectories from which provenance-linked associations are derived and made available to later policies. Whether such shared memory improves another agent is a hypothesis; current offline graph interventions do not establish that population-level feedback loop.
 
-\paragraph{Scope and what we do \emph{not} do.} We do not solve MTG; we do not even target tournament-strength play. The contribution is a research substrate that is rules-correct on the implemented card pool, that maintains a queryable symbolic representation of card semantics, and that supports plug-in research on world models and inference-style agents on a problem qualitatively harder than the standard benchmarks. The empirical claims in \S\ref{sec:eval} are therefore framework-level (decks complete, agents converge faster than baselines, ablations show graded contributions) rather than absolute strength claims against human play.
+\paragraph{Scope and what we do \emph{not} do.} We do not claim tournament-strength play, verified rules coverage, faster learning or graded component benefits. The empirical results in \S\ref{sec:eval} qualify bounded execution and a small offline learning pipeline; controlled strength and component comparisons remain future work.
 
 The framework is released as open source\footnote{\url{https://github.com/cuteredpwnda/opposition-agents-playing-mtg}} and the codebase is the canonical artifact accompanying this report. Section~\ref{sec:related} positions the work against prior literature; \S\ref{sec:theory} formalises the POMDP and the four learning principles (world models, FEP, knowledge-graph priors, constrained-decoding LLMs); \S\ref{sec:arch} walks the architecture top-down; \S\ref{sec:eval} presents the controlled study design and current native evidence; \S\ref{sec:limits}--\ref{sec:future} discuss limitations and next steps.
 
@@ -171,7 +168,7 @@ The framework is released as open source\footnote{\url{https://github.com/cutere
 
 \paragraph{Foundational ontologies and the symbolic layer.} The intended symbolic substrate is a provenance-aware OWL ontology of MTG aligned to DOLCE-UltraLite \citep{gangemi2002dolce, borgo2022dolce}. Its conceptual schema and tooling were developed with LLM assistance; its normative vocabulary is mechanically derived from the Comprehensive Rules without runtime LLM inference. A companion paper \citep{neuburger2026ontology} separates construction responsibilities and reports logical and data-validation scopes. Constraints are expressed as testable axioms, but schema consistency is not full profile conformance of the imported documents or certification of a populated agent graph. The broader turn toward competency-question-driven, validator-gated ontology construction \citep{garijo2026maseo, cq4oe2026, lippolis2026ontoextend, tiwari2026ontoprompt} is methodological context, not evidence that those external pipelines were executed here.
 
-\paragraph{Neuro-symbolic systems and the curated/induced boundary.} The framing that organises \Cref{sec:neurosymbolic} is the distinction between \emph{curated} and \emph{induced} semantics. \citet{sabou2026neurosymbolic} argues that trustworthy neuro-symbolic AI requires explanations grounded in domain knowledge rather than saliency, and identifies provenance and continuous auditing as the missing infrastructure. \citet{thombre2026selfdemo} demonstrate that neuro-symbolic decomposition --- symbolic constraints narrowing the search space, the neural component reasoning inside each narrowed sub-task --- substantially outperforms monolithic prompting. \citet{vanschependom2026synthology} generate reasoning training data from an ontology by backward-chaining proof search, the natural route to a reasoning benchmark \emph{for} a schema such as ours. \citet{ehrenmuller2026sock} address the reconciliation of conflicting graph claims from heterogeneous sources with explicit methodological provenance, which is structurally the same problem as reconciling curated card semantics with statistics mined from imperfect self-play. Our contribution to this thread is a domain where the induced layer is generated by an agent acting in a \emph{verified} environment, so a learned assertion can in principle be traced back to the exact game states that support it.
+\paragraph{Neuro-symbolic systems and the curated/induced boundary.} The framing that organises \Cref{sec:neurosymbolic} is the distinction between \emph{curated} and \emph{induced} semantics. \citet{sabou2026neurosymbolic} argues that trustworthy neuro-symbolic AI requires explanations grounded in domain knowledge rather than saliency, and identifies provenance and continuous auditing as the missing infrastructure. \citet{thombre2026selfdemo} demonstrate that neuro-symbolic decomposition --- symbolic constraints narrowing the search space, the neural component reasoning inside each narrowed sub-task --- substantially outperforms monolithic prompting. \citet{vanschependom2026synthology} generate reasoning training data from an ontology by backward-chaining proof search, the natural route to a reasoning benchmark \emph{for} a schema such as ours. \citet{ehrenmuller2026sock} address the reconciliation of conflicting graph claims from heterogeneous sources with explicit methodological provenance. Our offline prototype records provenance for gameplay-derived associations; independent verification of the full engine and graph-writing pipeline remains open.
 
 \paragraph{MTG and other complex card games.} Earlier MTG-AI work has used hand-crafted heuristics \citep{cowling2012ensemble}, MCTS, and small policy nets on restricted card pools (e.g., \texttt{open-mtg}). On the rules side, \texttt{Forge}, \texttt{XMage} and \texttt{Mage} provide JVM-based reference implementations, and \texttt{phase-rs} provides a Rust one. To our knowledge, no prior public system combines a full Comprehensive-Rules engine with a learned world model and a foundational-ontology-grounded symbolic layer. \citet{moravvcik2017deepstack} (poker), \citet{vinyals2019grandmaster} (StarCraft) and \citet{schrittwieser2020mastering} (MuZero) are spiritual antecedents at the algorithmic level.
 
@@ -182,14 +179,14 @@ The framework is released as open source\footnote{\url{https://github.com/cutere
 \label{sec:theory}
 
 \subsection{MTG as a partially-observable Markov game}
-We model a game of Magic from the perspective of a single seat as a finite-horizon POMDP $(\mathcal{S}, \mathcal{A}, \mathcal{O}, T, \Omega, R, \gamma, b_0)$ embedded inside an $n$-player Markov game.  The full state $s_t \in \mathcal{S}$ encompasses every public and private zone of every player --- libraries, hands, the stack, mana pools, and a long tail of bookkeeping flags (summoning sickness, monarchy, the day/night state, designations, emblems, dungeon room, companion eligibility).  A controlled-perspective filter $\Omega: \mathcal{S} \to \mathcal{O}$ hides the opposing players' hands and the order of their libraries; the agent only ever observes $o_t = \Omega(s_t)$.  The action space $\mathcal{A}_t = \mathrm{LEGAL}(s_t)$ is computed afresh on every priority pass and is highly variable: typically $|\mathcal{A}_t| \in [1, 60]$, but can spike past several hundred in hard combo states.  The transition model $T(s' \mid s, a)$ is the rules engine itself, fully deterministic given a random seed and the active player's choices.  Reward $R$ is sparse and terminal --- $\pm 1$ on the win condition --- but agents may shape it during training using $\Delta\text{life}$, $\Delta\text{cards}$, $\Delta\text{tempo}$ as auxiliary signals.  The state space is combinatorially large: a conservative count over deck-times-zone configurations gives $|\mathcal{S}| > 10^{800}$, several orders of magnitude beyond Go.
+We model a bounded game from the perspective of a single seat as a finite-horizon POMDP $(\mathcal{S}, \mathcal{A}, \mathcal{O}, T, \Omega, R, \gamma, b_0)$ embedded inside an $n$-player Markov game. The full state includes public and private zones, the stack, resources and game flags. A controlled-perspective observation hides opponents' unrevealed cards and library order. The engine supplies a variable legal-action set at each decision; the transition kernel also depends on random events and other players' choices. The current bridge does not seed native shuffle or opponent-AI randomness, so the picker seed does not reproduce an entire game. A terminal win/loss reward can be supplemented by auxiliary training signals.
 
 The optimal value function over beliefs $b_t \in \Delta(\mathcal{S})$ satisfies the Bellman equation
 \begin{equation}
 V^*(b) = \max_{a \in \mathcal{A}} \left[ \sum_s b(s)\, R(s,a)
    + \gamma \sum_o \Pr(o \mid b, a) \, V^*\!\big(b'_o\big) \right],
 \end{equation}
-where $b'_o$ is the Bayes update of $b$ after taking $a$ and observing $o$.  Exact solution is intractable.  Each agent in our zoo is therefore an explicit approximation that trades different axes of accuracy: tabular reactive policies (Random, Heuristic, KG-Heuristic, LLM) collapse $b_t$ to a point estimate $s_t \approx o_t$; the world-model agent learns an amortised Bellman residual in latent space; the active-inference agents maintain an explicit belief and minimise expected free energy.
+where $b'_o$ is the Bayes update of $b$ after taking $a$ and observing $o$. Exact solution is intractable. The zoo instead contains reactive selectors, learned latent predictors and approximate belief-based planners; they do not all maintain an explicit Bayesian belief or optimise the same objective.
 
 \subsection{World models as latent imagination}
 \label{sec:jepa-foundation}
@@ -203,7 +200,7 @@ z_t=E_\phi(o_t,g_t),\qquad
 z^{\mathrm{target}}_{t+1}=\mathrm{sg}\!\left(E_\phi(o_{t+1},g_{t+1})\right).
 \label{eq:jepa-target}
 \end{equation}
-Here $\phi$ and $\theta$ denote learned parameters, $a_t$ is an encoded action, and $\mathrm{sg}$ means \emph{stop gradient}: the target is treated as fixed for this loss evaluation. The current and target branches use the same encoder parameters; a separately maintained target network is not assumed. Training asks whether the consequence of an action is predictable in the learned representation, rather than demanding an exact listing of every future card, flag and hidden zone.
+Here $\phi$ and $\theta$ denote learned parameters, $a_t$ is an encoded action, and $\mathrm{sg}$ means \emph{stop gradient}: the target is treated as fixed for this loss evaluation. This equation describes a shared-encoder target; the native v4 experiment instead maintains an exponential-moving-average target and adds variance regularisation. Training asks whether the consequence of an action is predictable in the learned representation, rather than demanding an exact listing of every future card, flag and hidden zone.
 
 This is the joint-embedding predictive principle \citep{lecun2022path, assran2023ijepa, maes_lelidec2026lewm}. It can allocate capacity to regularities useful for evaluating positions without decoding a full symbolic successor state. That is an inductive bias, not a guarantee: compression may discard a decisive interaction, and unpredictable hidden information does not become observable merely because a latent exists. The learned representation $z_t$ is also distinct from a Bayesian belief $b_t$ over possible hidden states.
 
@@ -313,29 +310,29 @@ This is again exponential reweighting. For equal priors, costs 0 and 1 and $\alp
 \paragraph{Where other signals belong.} Heuristic, graph and language-model scores can shape the reference action policy $q_0$: for example, a known combo completion may become a more probable default. The controller then evaluates whether predicted consequences justify following or departing from that default. Prior design still involves choices and calibration; replacing a weighted score sum with KL regularisation does not make these assumptions disappear. Below, the shorter symbol $q$ denotes this action prior, never $q_{\mathrm{bel}}$ or the encoder distribution $q_\phi$. Current native KL pilots use analytic state projections and forecasts, not a trained JEPA transition model, and do not qualify the complete learning architecture.
 
 \subsection{Knowledge graphs as a symbolic prior}
-Cards form an inductive graph $\mathcal{G} = (V, E, \tau)$ with typed edges $\tau \in \{\text{combo}, \text{synergy}, \text{counter}, \text{enables}\}$ ingested from the OWL ontology and an embedding pipeline trained with GraphSAGE \citep{hamilton2017inductive}.  GraphSAGE is inductive: a freshly printed card $v_{\text{new}}$ obtains an embedding $\mathbf{h}_{v_{\text{new}}} \in \mathbb{R}^{128}$ by sampling and aggregating its neighbours, without retraining.  We exploit this in two ways: (i) the encoder feeds a graph latent $g_t = \mathrm{Enc}_{KG}(\mathcal{G}, s_t)$ into the recurrent dynamics so that the world model's prior is graph-aware, and (ii) the passive prior $q$ of \eqref{eq:klcontrol} is tilted by graph distance to combo completions, mirroring GraphRAG's ``relational evidence'' pattern \citep{edge2024graphrag}.
+GraphSAGE \citep{hamilton2017inductive} can embed cards from their features and graph neighbourhoods, including suitable unseen nodes. The native prototype trains a graph encoder on separate curated and gameplay-induced relations and supplies graph context to its controller. Using graph retrieval to shape the KL prior $q$ is a proposed extension, not a feature established by the current KL pilots.
 
-In implementation, we separate immutable source facts (card oracle data, ontology-grounded edges) from learned extension evidence. Self-play enrichment appends provenance-linked learned nodes/edges instead of mutating base facts, allowing many agents and runs to contribute to one shared strategic memory while preserving reproducibility and auditability. \Cref{sec:ontology} makes this separation a property of the schema rather than a convention.
+The offline study keeps source-derived and induced evidence separate and records provenance for the induced co-presence graph. This supports auditing, but does not demonstrate a shared, append-only live graph queried by all agents or reproducible native game replay.
 
 \subsection{The neuro-symbolic boundary}
 \label{sec:neurosymbolic}
 
 ``Neuro-symbolic'' is used loosely enough that it is worth stating exactly what is symbolic here, what is learned, and what crosses between them. The system contains three symbolic artefacts and three learned ones, and the interfaces between them are narrow by construction.
 
-\paragraph{Symbolic side.} (i) The \texttt{phase-rs} rules engine is a verified, deterministic transition system: it decides legality, resolves the stack, applies state-based actions, and is the only component permitted to mutate game state. (ii) The OWL~2~DL ontology (\Cref{sec:ontology}) fixes the vocabulary in which card semantics, turn structure, roles, and strategic constructs are expressed, and is checked by a reasoner and by SHACL shapes. (iii) The knowledge graph is the ABox populated against that TBox from Scryfall and combo databases.
+\paragraph{Symbolic side.} The external \texttt{phase-rs} engine enumerates actions and executes rules; its full correctness has not been independently verified here. The ontology (\Cref{sec:ontology}) defines a vocabulary and has scoped reasoner and SHACL checks. Separate graph inputs are derived from card and combo data.
 
-\paragraph{Learned side.} (i) A GraphSAGE encoder turns the graph into dense node embeddings. (ii) The JEPA world model learns latent dynamics from self-play trajectories. (iii) Language models supply a prior over the legal-action set.
+\paragraph{Learned side.} The native prototype trains GraphSAGE embeddings, a JEPA predictor, recurrent dynamics and an imitation controller on recorded games against native AI. Language and decision models can directly select among supplied actions; their use as a planner prior remains unqualified.
 
 \paragraph{What crosses, and in which direction.} The crossings are the substance of the architecture:
 
 \begin{enumerate}[leftmargin=1.4em, itemsep=2pt]
-  \item \textbf{Symbolic $\rightarrow$ neural (structure as inductive bias).} Graph structure is compiled into the encoder's context channel $g_t$, and the legal-action set produced by the engine masks the controller's output. The neural components therefore never have to learn legality or card identity; they learn only what is genuinely statistical.
-  \item \textbf{Symbolic $\rightarrow$ neural (structure as reference measure).} The knowledge graph and the heuristic shape the passive prior $q$ of \eqref{eq:klcontrol}. Symbolic knowledge thus enters the control objective as a \emph{cost of deviation}, not as an additive score.
-  \item \textbf{Neural $\rightarrow$ symbolic (induction of new relations).} Self-play traces are mined into candidate relations --- card co-occurrence in winning positions, answer/threat pairs, archetype signatures --- and written back as \emph{induced} assertions. This is the direction most neuro-symbolic systems leave empty, and it is where the interesting failure modes live: a statistical regularity is not an ontological commitment.
-  \item \textbf{Validation as the gate between them.} Nothing induced is promoted to curated status automatically. Candidate relations are reified, weighted, attributed to the run that produced them, and validated by the shapes and reasoner before a human may accept them. This mirrors the finding of \citet{tiwari2026ontoprompt} that the validator, not the generator, is what turns diverse neural proposals into a high-precision graph.
+  \item \textbf{Symbolic $\rightarrow$ neural (structure as inductive bias).} The native graph intervention supplies graph embeddings to the learned controller, while the engine supplies the executable action list. Learned predictions can still be wrong.
+  \item \textbf{Symbolic $\rightarrow$ neural (reference measure).} Heuristic priors are used in the KL picker. Graph-conditioned priors are proposed, but not active in the reported KL experiments.
+  \item \textbf{Neural $\rightarrow$ symbolic (induction).} The offline pipeline extracts repeated controlled-seat card co-presence as an attributed association, not as a causal synergy or a normative rule.
+  \item \textbf{Validation as a proposed gate.} Promotion of induced evidence into curated relations requires a separately designed and evaluated human-review and validation process. The current schema checks do not certify every generated candidate.
 \end{enumerate}
 
-\paragraph{Curated versus induced semantics.} The design commitment underlying all four crossings is that deterministic facts and learned regularities must remain distinguishable forever. A card's oracle text is curated: it is definitional, immutable, and wrong is wrong. That two cards co-occur in 83\,\% of the games one of them wins is induced: it is defeasible, provenance-bearing, and may be an artefact of the deck pool sampled. Collapsing the two --- writing a learned edge into the same relation as a curated one --- destroys the ability to recover ground truth and makes the graph unauditable. \Cref{sec:ontology} enforces the distinction with an \texttt{mtg:epistemicStatus} annotation on every axiom and a schema-level requirement that no induced assertion may exist without a \texttt{prov:Activity} that generated it.
+\paragraph{Curated versus induced semantics.} Source-derived facts and learned regularities should remain distinguishable. A co-occurrence statistic is defeasible and can reflect the sampled deck pool. The ontology provides epistemic-status annotations and provenance patterns; their presence in the schema does not by itself prove that every external graph writer enforces them.
 
 \subsection{General LLMs as indexed-action selectors}
 The action interface supplies a filtered observation $o_t$ and an indexed engine-authored action list $\mathcal A_t$. A general chat LLM is asked to select an index:
@@ -343,7 +340,7 @@ The action interface supplies a filtered observation $o_t$ and an indexed engine
 \hat\imath=\mathrm{LM}\!\left(\rho(o_t,\mathcal A_t)\right),
 \qquad a_t=\mathcal A_t[\hat\imath].
 \end{equation}
-Only an index resolved to an original legal action can reach the engine. This restricts the action interface, not necessarily the model's token generation: the current chat path parses a text reply rather than exposing a token-masked, calibrated probability distribution. Malformed replies and service failures need explicit handling and accounting. A low sampling temperature reduces output variability; it neither proves calibration nor represents a uniform-fallback probability.
+Only an index resolved to an original engine-provided action can reach the engine. Strict Ollama and local vLLM selectors request a JSON schema over eligible indices and validate the returned object; when a non-concession action exists, concession is excluded. Unavailable services and malformed replies fail explicitly, while legacy random fallback is opt-in. Constrained formatting does not yield a calibrated choice distribution or guarantee tactical correctness.
 
 \subsection{Decision-tuned models as option selectors}
 \label{sec:decision-model-foundation}
@@ -360,8 +357,8 @@ The candidate generator is part of the policy: if a winning line is absent from 
 
 There are three possible uses, which should not be conflated: direct action selection, reranking candidates proposed by a planner, and supplying probabilities to the planner's passive prior $q_0$. Only the first is currently integrated for Tev1. None replaces the rules engine or provides the latent transition model needed for JEPA rollouts. Local interface and terminal-game checks pass with a same-weight larger-context deployment; neither establishes calibrated choice quality or a Tev1 playing-strength advantage.
 
-\subsection{Self-play promotion as fixed-point iteration}
-Training combines all three signals.  The replay buffer $\mathcal{D}$ is collected by self-play between agent variants; the world model is fit on $\mathcal{D}$; and the controller is improved iteratively by the champion-vs-challenger schema implemented in \texttt{scripts/train\_pipeline.py}.  At each iteration $i$, a challenger $\pi_{i+1}$ is trained against $\pi_i$ on the latest replay window and faces the champion in a best-of-$N$ match; promotion happens iff the empirical win rate exceeds $0.55$.  This is a stochastic-approximation fixed-point operator on the policy improvement step \citep{tesauro1995temporal, silver2017mastering, silver2018alphazero, schrittwieser2020mastering}: under standard Robbins--Monro conditions it converges, in expectation, to a fixed point of the Bellman optimality operator restricted to the dynamics class $\hat T$ that the world model has learned.  Convergence in practice depends on $\hat T$ being locally accurate, which we monitor by tracking JEPA validation loss across iterations.
+\subsection{Self-play promotion and the native prototype}
+The legacy Python training pipeline includes a champion--challenger loop with a configurable promotion threshold, defaulting to a win rate above $0.55$. The reported native learning prototype instead collects heuristic and random trajectories against a fixed native opponent; it does not execute this promotion loop. Neither the finite-match promotion rule nor JEPA validation loss establishes convergence to a Bellman-optimal policy. Self-play improvement remains a future empirical question \citep{tesauro1995temporal, silver2017mastering, silver2018alphazero, schrittwieser2020mastering}.
 
 % =============================================================================
 \section{System Architecture}
@@ -381,7 +378,9 @@ training scripts.
 \paragraph{Tracking a living upstream.} \texttt{phase-rs} is under active
 development and its wire protocol is versioned and enforced at handshake.
 Over the period covered by this report the upstream protocol advanced from
-v6 through v75 to the current v106 pin, which is a useful reminder that an external rules engine is a
+v6 through v75 and v106 to v374 in the newly pinned checkout. The reported
+gameplay evidence uses v106; the new revision requires separate runtime
+qualification. This illustrates that an external rules engine is a
 dependency with its own release cadence, not a fixed substrate. Two of
 those changes were structural rather than additive and required adapter
 work: rejections became a typed \texttt{ActionRejection} carrying a stable
@@ -410,13 +409,13 @@ Core integration modules:
   \item \texttt{agent\_bridge.py}: random/heuristic/LLM pickers plus
     adapter-backed native-agent picker support;
   \item \texttt{server\_process.py}: managed local \texttt{phase-server}
-    process startup/shutdown for reproducible training/evaluation runs.
+    process startup/shutdown for training and evaluation runs.
 \end{itemize}
 The old Python engine remains in-repository as legacy compatibility code,
 but new experiments and reported benchmarks use \texttt{phase-rs} as the
 authoritative runtime transition system.
 
-\Cref{tab:engine-pointers} maps each Comprehensive-Rules concept to the exact module that implements it; readers reproducing the system can use it as a reading order through the codebase.
+\Cref{tab:engine-pointers} lists legacy Python compatibility modules associated with selected rules concepts. They are not the \texttt{phase-rs} runtime implementation and do not establish complete coverage.
 
 \begin{table}[t]
 \centering
@@ -442,7 +441,7 @@ Loss from empty library on draw          & 104.3c, 704.5b   & \texttt{src/engine
 Legal-action enumeration                 & --- (engine-internal) & \texttt{src/engine/rules\_engine.py} \\
 \bottomrule
 \end{tabular}
-\caption{Mapping from Comprehensive-Rules concepts to the implementing engine module. Every cell is a real path; auditing a rule reduces to opening that file. The legal-action enumerator (\texttt{rules\_engine.py}) is the only point of contact between the engine and any agent.}
+\caption{Selected legacy Python compatibility modules associated with rules concepts; native execution uses the separate \texttt{phase-rs} engine.}
 \label{tab:engine-pointers}
 \end{table}
 
@@ -453,22 +452,22 @@ The symbolic layer is an OWL ontology of MTG derived from the Comprehensive Rule
 
 Three properties matter for the argument of this paper. First, the ontology is \emph{expressive enough to be wrong}: logical analysis exposed incompatible property characteristics that were repaired, and HermiT finds the import-resolved schema consistent with no unsatisfiable named classes. This is not complete OWL~2~DL profile conformance of the raw external documents, nor certification of a populated card graph. The CR~205.3 card-type/subtype correlation is also checked procedurally. Second, its factual vocabulary is \emph{derived, not curated by hand}: 3{,}165 source rules are parsed and 830 vocabulary subjects carry direct document provenance; rule text remains local rather than being redistributed. Third, and most importantly here, it distinguishes \emph{curated} from \emph{induced} assertions at the schema level. That distinction supplies a necessary audit boundary for the learning loop of \Cref{sec:playtograph}.
 
-For orientation: cards are imported from Scryfall as \texttt{CardDesign} nodes with oracle text and an SBERT embedding; mechanics, abilities, archetypes and combos are first-class nodes; APOC supplies PageRank, community detection and shortest-path queries; and multi-hop retrieval over this structure is the ``relational evidence'' pattern of GraphRAG \citep{edge2024graphrag}, which suits questions --- \emph{which two cards in my library combo, and does either die to a counterspell?} --- that similarity search answers badly.
+For orientation, the code includes a Scryfall card importer, ontology terms for mechanics, abilities, archetypes and combos, and graph-analysis and retrieval paths. These are candidate ingredients for relational evidence in the style of GraphRAG \citep{edge2024graphrag}; their presence does not establish a fully populated graph, live agent retrieval, or correct answers to a particular strategic question.
 
 \subsection{Playing to build the graph}
 \label{sec:playtograph}
 
 The knowledge graph is usually treated as a fixed input: someone curates it, the agent reads it. We are interested in the other direction as well, because an agent that plays thousands of games observes something a curator cannot --- which cards actually co-occur in positions that get won, against which opponents, at which points on the curve.
 
-The loop has four steps. Agents play on the rules engine and emit structured decision traces. Traces are post-processed into candidate relations: card pairs recurring in winning positions, answer/threat pairs, archetype signatures. Candidates are written into the graph as \emph{induced} assertions --- reified, weighted by support and refutation counts, and attributed under PROV-O to the run that produced them. Later agents query those assertions as an additional prior, and their play produces the next round of evidence.
+The proposed loop has four steps: agents emit structured traces; post-processing derives candidate relations; an extension layer stores attributable induced assertions; and later agents use them as priors. The implemented native prototype is narrower: it extracts repeated public battlefield co-presence from training trajectories and evaluates graph-conditioned models offline. It does not automatically write answer/threat claims into a live graph, expose them to subsequent agents as shared memory, or establish that a co-occurrence caused a win.
 
 Two design commitments keep this from degenerating.
 
-\paragraph{The extension layer is append-only and typed apart.} An induced synergy is not an edge in the curated \texttt{synergisesWith} relation; it is a reified evidence node that the schema requires to be attributable to an activity. A consumer needing deterministic ground truth recovers it by filtering on epistemic status. This matters because the two kinds of claim have different logic: a card's oracle text is definitional and wrong is wrong, whereas a co-occurrence statistic is defeasible and may be an artefact of the deck pool sampled. Systems that write learned edges into curated relations lose the ability to tell the difference, and with it the ability to audit.
+\paragraph{The extension layer is typed apart.} The intended representation separates reified induced evidence from curated \texttt{synergisesWith} relations and associates it with its generating activity. Filtering on epistemic status separates sources; it does not certify that a curated assertion is correct. Co-occurrence statistics are defeasible and may reflect the sampled deck pool, making source separation important for audit.
 
 \paragraph{Promotion is not automatic.} Nothing is reclassified from induced to curated without a human. We regard the promotion gate --- what support threshold, what handling of disagreement between runs \citep{ehrenmuller2026sock} --- as an open problem rather than a solved one, and say so in \Cref{sec:limits}.
 
-\paragraph{Agent reasoning is itself in the graph.} A decision is recorded as a \texttt{prov:Activity} carrying the objective decomposition it was selected by, the belief it was taken under, and the policy precision in force. ``Why did seat~0 attack on turn~6?'' is therefore a graph query rather than a log grep. This is a deliberate response to the observation \citep{sabou2026neurosymbolic} that trustworthy neuro-symbolic systems need explanations grounded in domain knowledge with provenance attached, rather than post-hoc attribution scores; it also means the explanation and the game state it refers to are expressed in one vocabulary.
+\paragraph{Agent reasoning vocabulary.} The ontology can represent a decision as a \texttt{prov:Activity} with objective, belief and policy information. Populating that vocabulary from all agents and answering questions such as ``why did seat~0 attack?'' against an operational graph remain future work. The native runner currently records picker-dependent traces, not a complete causal explanation \citep{sabou2026neurosymbolic}.
 
 \paragraph{Collective intelligence, stated carefully.} The attractive reading is that heterogeneous agents accumulate shared strategic memory across runs, so that later agents inherit what earlier ones discovered without retraining. The framework supports that reading structurally. We have not yet demonstrated it: showing that graph enrichment from run $n$ measurably improves agents in run $n{+}1$, and is not merely overfitting to a fixed deck pool, is the experiment that would substantiate the claim, and it is not among the results reported here.
 
@@ -703,8 +702,43 @@ generated text or truncation. Single-request forward times are 12.2 and
 136.1\,s, not a latency benchmark or publisher GPU timing.
 The synthetic fixture asks for the largest JSON-encoded amount, but neither
 output selects that maximum. Interface validity is therefore not decision
-quality. No Decision 2.0 MTG episode, larger variant or GPU result is claimed;
-direct Windows deployment still needs a portable runtime revision.
+quality. We subsequently load the same pinned Eos 0.8B package unchanged in a
+Linux CUDA container and connect it to the local phase-rs server. With a
+two-candidate shortlist, it makes 64 classifier choices and completes a
+rules-terminal 45-turn loss after 406 valid actions without picker errors.
+This establishes minimal interface and terminal-game feasibility, not
+playing strength, larger-candidate viability or direct Windows portability.
+
+\paragraph{Liquid d1: encoder-native decisions.}
+Liquid d1 provides another non-generative option-selector family
+\citep{liquidai2026d1}. The d1-omni-600M and d1-3B releases expose a custom
+\texttt{system\_one} head that returns typed choice probabilities in one
+forward pass with zero output tokens; their declared text budgets are 16,384
+and 32,768 tokens, respectively. We pin both weights and remote inference code
+and map named option keys back to original engine actions using the same
+perspective-safe context and shortlist contract. This is not ordinary
+chat-completion serving: a stock OpenAI-compatible vLLM generation endpoint
+does not expose the released classifier head. Generative Llama/Qwen controls
+may use such a local endpoint, but d1 runs through its native Transformers
+interface unless a classifier-aware server is independently validated.
+
+A pinned d1-omni-600M CPU interface smoke returned a complete normalized
+two-action distribution with 197 input and zero output tokens. Its first
+cached load plus decision took 51.1\,s and a second warm decision 0.52\,s on
+the local CPU environment. On the RTX 3060, the same 600M model with 128
+candidates completes a 29-turn game after 32 model invocations. The pinned
+3B model also returns valid CUDA decisions: a 128-candidate run times out
+after 701 model invocations, a 24-candidate run encounters CUDA
+out-of-memory after 23, and a two-candidate run completes a 25-turn game
+after 36 model invocations. These are execution and terminal-feasibility
+observations, not calibrated strength comparisons.
+
+A separate vLLM 0.31.0 deployment serves generative Qwen3-0.6B with an
+8,192-token context and 0.85 GPU-memory reservation. One Burn--Tron episode
+times out after 240 accepted model choices; a Burn mirror completes at turn
+14 after 10 model choices and 140 valid actions. This confirms minimal
+terminal feasibility but also exposes inference-throughput and matchup
+sensitivity absent from the native classifier paths.
 
 \paragraph{Active Inference / KL control ($\pi^{\mathrm{KL}}$).} Maintains a categorical belief $b_t$ over hidden-information hypotheses about the opponent's hand (\texttt{holds\_removal}, \texttt{holds\_counterspell}, \texttt{holds\_threat}, \texttt{holds\_nothing}). Control costs are charged against a passive prior, while analytic forecasts supply outcome costs. Two planners are available: a belief-tree reference planner and a sampled MPPI-style approximation. Current sampled continuations use averaged stage potentials and soft aggregation, not an exact calculation of the full trajectory objective. Defaults are $H=3$, $K=48$ and selection precision $\alpha=4$ (called \texttt{beta} in configuration). Belief entropy is reported for diagnostics and is not an additive reward; this excludes that particular bonus mechanism, not every possible model-induced failure.
 
@@ -742,7 +776,7 @@ with default weights $(\alpha_h, \alpha_g, \alpha_w, \alpha_\ell) = (0.15, 0.15,
 \end{algorithmic}
 \end{algorithm}
 
-\paragraph{Reasoning traces.} Every agent writes a \texttt{ReasoningTrace} dict to \texttt{self.last\_reasoning} before returning. The orchestrator flushes these to \texttt{runs/<out>/logs/game\_NNNN.jsonl}, one line per decision, schema \{turn, phase, player\_id, agent\_kind, rationale, legal\_action\_count, chosen\_index, top\_candidates, scores, beliefs\}. This is the canonical telemetry format consumed by the post-hoc analysis notebooks and by the Streamlit visualisation panel discussed in \Cref{sec:future}.
+\paragraph{Reasoning traces.} The native runner records decision events and available picker-specific reasoning, including chosen indices and explicit inference failures. Fields vary by picker; these records do not constitute a universal explanation schema or independently verify the semantics of each action.
 
 % =============================================================================
 \section{Implementation}
@@ -765,8 +799,9 @@ for a fully paired comparison.
 \label{sec:eval}
 
 We distinguish measured native execution from the controlled experiments
-needed to establish learning and graph-mediated improvement. All empirical
-results in this section refer to the current native runtime. The research
+needed to establish learning and graph-mediated improvement. The empirical
+results in this section use the earlier protocol-v106 native runtime, not
+the newly pinned v374 checkout. The research
 questions and ablations specify falsifiable comparisons; they are not
 presented as completed learning experiments.
 
@@ -1023,6 +1058,23 @@ development smoke is never counted as a completed pod or draw. Multiplayer
 beliefs and diplomacy are not established by running a single-opponent
 latent planner in a four-player room.
 
+In runtime-feasibility exercises with a Krenko host deck against native
+Atraxa, Meren and Urza decks, the heuristic host completed three pods, all
+losses; one required a transport-timeout retry. Two random-host attempts and
+one Tev1-host attempt ended in WebSocket keepalive-ping timeouts at turns 55,
+50 and 33, respectively. Tev1 made nine model-invoked decisions before its
+incomplete episode. A further one-attempt screen covered eleven policy
+configurations: three chat models, direct and dream world models, fusion,
+active inference, KL control, two expected-free-energy proxies, and a
+native-learned controller with an induced graph. Ten attempts were incomplete.
+The only terminal outcome was one host win by the native-learned controller;
+Llama and Qwen made 11 and 22 model-invoked decisions, whereas Gemma made no
+model-invoked decisions and had 61 traced fallback/error decisions. The shared
+keepalive symptom does not identify its cause. The single completed learned
+policy episode establishes feasibility only, not a learning or graph effect,
+completion reliability, or comparative policy strength. These observations do
+not substitute for the prespecified Commander study.
+
 \paragraph{Publication sequence and statistical scope.}
 The executable first stage is a bounded feasibility pilot of runtime-qualified
 random, heuristic and objective stacks. It checks completion and audits action
@@ -1120,98 +1172,103 @@ completion and interprets simple fixed-damage targets. These approximations
 do not establish card-/mode-exact dynamics or a causal objective comparison.
 
 \paragraph{Native offline learning qualification.}
-A separate development pipeline replaces an invalid deck-summary conversion
-whose empty state features and dummy actions could not train native dynamics.
-It records perspective-filtered numeric observations and complete original
-legal actions at controlled-seat decisions; hidden hand/library identities
-and face-down names are excluded. A frozen burn anchor is used throughout.
-Four training games from burn/green stompy, two independent validation games
-and two held-out blue-white control games all reach rules-terminal outcomes
-in the initial qualification. The subsequent full development campaign
-collects 64 training, 16 validation and eight held-out blue-white control
-games; all 88 games reach rules-terminal outcomes. Its training-only graph
-contains 290 co-visible card-pair edges from 5,977 per-game
-producer/deck/source evidence records. This is observational association,
-not causal synergy or a populated normative ontology.
+A v4 development qualification records perspective-filtered numeric
+observations, original legal actions, terminal rewards and controlled-seat
+visible-zone provenance. Battlefield relations use the controlled seat,
+including controller rather than owner for permanents; other recorded visible
+zones use card ownership. Hidden hand/library identities and face-down names
+are excluded. Four training games (burn and green stompy, produced by both the
+wire heuristic and wire-random policy), two validation games and two held-out
+blue-white control games all reach rules-terminal outcomes against a fixed
+VeryEasy native-AI anchor. This anchor has privileged internal engine access;
+the policy comparison is therefore an external-policy-versus-anchor execution
+check, not an information-matched tournament.
 
-GraphSAGE learns 32-dimensional card context. A small 32-dimensional latent
-model then trains an EMA-target JEPA encoder/predictor (target momentum 0.99,
-batch standard-deviation floor 0.05, variance weight 10, KL weight 0.001),
-recurrent latent/reward/terminal heads and a producer-imitation controller.
-Targets span successive controlled decisions, including opponent activity,
-not engine microsteps. All four model components change for each of five independent training
-seeds; complete bundles load strictly and final frozen source/native-input
-hashes remain unchanged.
-Hashed card/action features and fixed zone capacities remain compression
-limitations. No reward-maximizing or dream-policy training is claimed.
+The training-only induced relation is repeated controlled-seat battlefield
+co-presence, with an exposed-never-co-present sample and
+producer/game/deck/source provenance. It contains 13 supported pairs among 24
+card nodes from 220 game-pair evidence records. These observations are
+associations, not causal synergy, exhaustive non-relations or normative rules.
+The separate curated graph uses Modern-legal, status-verified combo
+hyperedges from Commander Spellbook \citep{commander_spellbook}: 3,841 source
+hyperedges, 5,868 pairwise projections and 1,695 nodes. Original hyperedge
+identifiers are retained. Absence from this curated corpus is not treated as
+proof that a pair is not a combo. The combined arm merges curated and induced
+evidence while preserving the source of each edge.
 
-Greedy deployment completes the two initial-model episodes but stalls in both
-trained-model episodes, including a repeated cast/cancel cycle. A separately
-recorded repair samples the learned categorical policy with its own seeded
-generator, without a heuristic fallback, using identical checkpoints.
-All four initial/trained by no/induced-graph episodes then complete as losses.
-This establishes execution, not learning improvement. Forced-decision and
-genuine-choice imitation diagnostics must be separated; latent MSE across
-changing encoders is not a common-coordinate strength comparison.
-An ensuing tensor audit found that identity redaction had also erased public
-library/opponent-hand counts. The initial full collection attempt was stopped
-before optimization, retaining its 27 terminal datasets. Feature version~3
-restores those public counts without hidden identities, rejects malformed
-counts and passes a live observation check; the fresh full run uses this version.
-The completed campaign uses 20 neural epochs and 100 graph epochs and evaluates
-20 episodes per first-seed intervention cell. Across training seeds, held-out
-JEPA MSE falls from 0.0130 (SD 0.0037) initially to 0.0062 (SD 0.0021) on
-validation; trained test MSE is 0.0040 (SD 0.0010). Non-forced imitation
-accuracy rises from 0.346 (SD 0.031) to 0.418 (SD 0.008) on validation and is
-0.472 (SD 0.010) on test, while validation non-forced NLL worsens from 1.106
-(SD 0.004) to 1.166 (SD 0.014). The trained test has no computed initial-model
-baseline. The divergence between accuracy and NLL makes the predictive result
-mixed; neither metric establishes better play.
+GraphSAGE learns 32-dimensional card context. A 32-dimensional latent model
+trains an EMA-target JEPA encoder/predictor (target momentum 0.99, batch
+standard-deviation floor 0.05, variance weight 10, KL weight 0.001), recurrent
+latent/reward/terminal heads and a producer-imitation controller. Targets span
+successive controlled decisions, including opponent activity, not engine
+microsteps. All four components update in the single training seed. Training
+uses two epochs and four games, so this is a pipeline qualification rather
+than a learning-curve experiment. On the two-game validation split, JEPA MSE
+worsens from 0.0107 initially to 0.0279 after training; non-forced imitation
+accuracy is 0.364 in both models and non-forced NLL changes from 1.195 to
+1.079. Trained-model test MSE is 0.0349, with no initial-model test baseline.
+These diagnostics are too small and mixed to support a learning claim.
+
+The frozen evaluation crosses initial and trained weights with five graph
+conditions---none, curated, induced, curated plus induced, and a
+card-identity-permuted combined graph---on two distinct Modern deck strata.
+The permutation preserves embedding rows, topology and degree sequence; it is
+not randomized edge rewiring. The Hardened Scales deck overlaps curated-combo
+cards, but some source hyperedges include additional cards absent from that
+deck. Traces confirm graph retrieval and nonzero controller-score changes in
+graph-enabled arms; activation alone does not establish that retrieved evidence
+is strategically relevant.
 
 \begin{table}[ht]
 \centering
 \small
-\begin{tabularx}{\linewidth}{lccc}
+\begin{tabularx}{\linewidth}{l*{6}{>{\centering\arraybackslash}X}}
 \toprule
-Frozen policy / graph & Rules-terminal & Wins / terminal & Incomplete \\
+& \multicolumn{3}{c}{Azorius Control} &
+  \multicolumn{3}{c}{Hardened Scales} \\
+Graph & Term. & W/T & Inc. & Term. & W/T & Inc. \\
 \midrule
-Initial weights / none & 17/20 (85\%) & 0/17 & 3 timeouts \\
-Initial weights / induced & 20/20 (100\%) & 1/20 & 0 \\
-Trained weights / none & 20/20 (100\%) & 0/20 & 0 \\
-Trained weights / induced & 18/20 (90\%) & 0/18 & 2 timeouts \\
+None & 1 & 0/1 & 1 timeout & 2 & 0/2 & 0 \\
+Curated & 2 & 0/2 & 0 & 2 & 0/2 & 0 \\
+Induced & 2 & 0/2 & 0 & 2 & 0/2 & 0 \\
+Curated + induced & 2 & 0/2 & 0 & 2 & 0/2 & 0 \\
+Identity-permuted & 2 & 0/2 & 0 & 2 & 0/2 & 0 \\
 \bottomrule
 \end{tabularx}
-\caption{First-seed held-out control-deck episodes versus a fixed VeryEasy
-burn anchor. Completed-game win-rate Wilson 95\% intervals, respectively,
-are 0--18.4\%, 0.9--23.6\%, 0--16.1\% and 0--17.6\%. The final five
-induced-graph attempts were resumed with the original checkpoints and seed
-schedule. Timeouts remain incomplete; two cells fall below 95\% completion.
-These 20-game cells, uncontrolled native RNG and a privileged-information
-anchor are feasibility evidence, not a powered causal comparison.}
+\caption{Twenty one-attempt episodes: each graph-by-deck cell contains one
+initial-weight and one trained-weight game. Columns give rules-terminal games
+out of two scheduled, wins out of terminal games, and incomplete episodes.
+Nineteen games reach rules-terminal outcomes, all losses; the remaining
+Azorius/no-graph initial-weight episode hits the 90-second limit. A separate
+episode with the same frozen checkpoint,
+deck and picker seed but a 300-second limit also reaches a terminal loss; native
+engine randomness is uncontrolled, so this is not a replay or replacement.
+These unreplicated cells do not estimate a graph or training effect.}
 \label{tab:native-learning-development}
 \end{table}
 
-The evaluation shows no reliable evidence that training or induced graph
-context improves playing strength. The run evaluates only one of five trained
-policy seeds in play; native shuffles and anchor-AI randomness are uncontrolled.
-Curated/shuffled graph controls, all-seed playing effects,
-native RNG/multi-seat control and powered RQ2--RQ5 comparisons remain open.
-Long Commander pods and live ontology-grounded decisions remain unqualified.
-A read-only ontology snapshot supports resource queries independently of
-gameplay; resource validation is not evidence that a playing policy used
-graph relations.
+No playing-strength benefit from training or graph context is demonstrated.
+The campaign has one training seed, two validation/test games and one game per
+weight-by-graph-by-deck cell; one cell is incomplete. Native shuffles and
+anchor-AI randomness are uncontrolled. Accordingly, these results are a
+bounded execution and activation qualification, not a powered RQ2--RQ5 study.
+All-seed evaluation, reliability qualification, native RNG/multi-seat control
+and cross-producer transfer remain open. Long Commander pods and live
+ontology-grounded decisions remain unqualified; resource validation alone does
+not show that a playing policy used symbolic relations.
 
-After pilot diagnostics, we predeclare comparisons and freeze a fresh holdout,
-including a fixed failure policy and sample size. Games are the analysis unit;
-the four correlated seats of a pod and its many actions are not independent
-replicates. We report stratum-specific effects and intervals, apply multiplicity
-control to confirmatory comparison families, and retain incomplete and unstarted
-cells separately. A 100-game binomial cell has approximately ten-percentage-point
-uncertainty near 50\,\%; it cannot resolve a five-point advantage. An independent
-two-arm comparison near 50\,\% needs roughly 1570 games per arm for 80\,\% power
-at two-sided 5\,\% significance to detect that effect, before additional
-dependence or multiplicity. Pilot durations therefore inform both a power
-analysis and an explicit compute budget, not an automatic multi-day run.
+Confirmatory comparisons require independent learner runs, a predeclared
+failure policy and sample size, and a fresh frozen holdout. Games are the
+analysis unit; decisions and correlated seats are not independent replicates.
+Report stratum-specific effects and uncertainty, adjust the prespecified
+comparison family for multiplicity, and retain incomplete and unstarted cells
+separately. A 100-game binomial cell has approximately ten-percentage-point
+uncertainty near 50\,\%; it cannot resolve a five-point advantage. An
+independent two-arm comparison near 50\,\% needs roughly 1,570 games per arm
+for 80\,\% power at two-sided 5\,\% significance to detect that effect, before
+additional dependence or multiplicity. Pilot durations inform a simulation-
+based power analysis and explicit compute budget, not an automatic multi-day
+run.
 
 \subsection{Controlled objective and ontology interventions}
 \paragraph{Objective ablation for the control formulation.}
@@ -1227,7 +1284,7 @@ Three measurements are planned against \texttt{phase-ai} at fixed difficulty:
 The existing legacy arms are proxy baselines, not full theoretical observation-channel implementations. A controlled result must qualify their correspondence to the equations before generalising to Active Inference. No separation would also be informative, but could reflect limited horizons, model errors or inadequate probes rather than establishing equivalence of the objectives.
 
 \paragraph{Ontology-conditioned evaluation.}
-The ontology is validated structurally and against its own competency questions \citep{neuburger2026ontology}, but the \emph{agent-facing} value of the symbolic layer is not yet measured. Two follow-ups are queued. First, a reasoning benchmark generated from the ontology itself by backward-chaining proof search in the manner of \citet{vanschependom2026synthology}, which gives controlled multi-hop depth and proof-based negatives for free. Second, submission of the generated artefact to a public competency-question-driven ontology benchmark \citep{cq4oe2026} as an additional baseline, since our construction combines author-directed, LLM-assisted conceptual modelling with deterministic normative vocabulary extraction rather than an autonomous generation pipeline.
+The ontology has structural checks, authored-question term coverage and schema-level SPARQL checks \citep{neuburger2026ontology}; these do not establish that the broader discovery questions are answerable against populated data. The \emph{agent-facing} value of the symbolic layer is not yet measured. Follow-ups include a proof-based reasoning benchmark and independent consumer-authored tasks, with external comparison where feasible.
 
 We deliberately do not claim ``state of the art'' numbers: we know of no comparable public baseline that plays full-Comprehensive-Rules MTG, and the contribution of this report is the system itself, plus the ontology and the released self-play infrastructure.
 
@@ -1277,7 +1334,7 @@ extensions:
 \label{sec:concl}
 We have presented a research framework for combining native rules execution, structured knowledge and learned planning in Magic: The Gathering. The system implements candidate components and a completion-aware native evaluation interface, but does not yet demonstrate the complete ontology/KG/JEPA learning architecture end-to-end. Current evidence consists of resource validation and bounded native execution measurements. The self-contained study design separates policy comparison, parametric learning, graph memory, their interaction and cross-agent transfer. Controlled strength comparisons, live graph grounding and multiplayer qualification remain prerequisites for empirical learning claims.
 
-\paragraph{Reproducibility statement.} Code, the OWL ontology, sample decklists, training scripts and this report are available at \url{https://github.com/cuteredpwnda/opposition-agents-playing-mtg}. Project-authored materials use the repository's MIT license; third-party decks and dependencies retain their accompanying licenses and attribution. Experimental manifests identify source revisions, deck and checkpoint hashes, configuration and retained failure records.
+\paragraph{Reproducibility statement.} Code, the OWL ontology, sample decklists, training scripts and this report are available at \url{https://github.com/cuteredpwnda/opposition-agents-playing-mtg}. Project-authored materials use the repository's MIT license; third-party materials retain their own terms. Retained local manifests record available source, deck and checkpoint hashes and failures, but raw runs are not all publicly archived and native randomness is not yet reproducible from picker seeds.
 
 % =============================================================================
 \section*{Acknowledgments}

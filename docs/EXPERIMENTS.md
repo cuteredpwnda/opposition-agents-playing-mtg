@@ -19,11 +19,13 @@ Several entry points moved to `scripts_legacy/`; do not use the weekend
 campaign as the current phase-rs benchmark. The authoritative execution
 plan is [IMPLEMENTATION_PLAN.md, section 6](../IMPLEMENTATION_PLAN.md).
 
-First build the pinned `external/phase-rs` server using the MSVC setup
-documented under K1 in the implementation plan. Python expects protocol
-v106; the contract test checks the upstream constant. See the integration
-guide's [engine update checklist](PHASE_RS_INTEGRATION.md#engine-update-checklist)
-for data-schema refresh and complete format-registry regeneration.
+The checkout now expects Full protocol v374; all gameplay results documented
+below were produced with the earlier v106 runtime. The new server build,
+format export and live gameplay are still being qualified. Build the pinned
+`external/phase-rs` server using the MSVC setup under K1 in the implementation
+plan, and follow the integration guide's
+[engine update checklist](PHASE_RS_INTEGRATION.md#engine-update-checklist)
+before running a new campaign. Protocol mismatch fails at handshake.
 
 ```powershell
 .\.venv\Scripts\python.exe -m scripts.run_phase_rs_ablation `
@@ -43,8 +45,8 @@ was validated with the Modern burn host deck.
 
 Outputs under `runs/phase_rs_ablation/<timestamp>/`:
 
-- `config.json`: full arguments, checkout revisions, protocol, deck hash,
-  seed scope and the objective/planning confound.
+- `config.json`: arguments except the vLLM API key, checkout revisions,
+  protocol, deck hash, seed scope and the objective/planning confound.
 - `games.jsonl`: written after each scheduled game; includes objective,
   picker seed, outcome, attempt count and total wall time including retries.
 - `traces/`: final game traces plus timed-out attempt traces. The initial
@@ -62,6 +64,78 @@ Transport/handshake errors propagate rather than being reported as games.
 Only Python picker RNG is seeded; these are not deterministic paired
 engine replays. KL horizon planning vs one-step legacy scoring is a
 policy-stack comparison, not a controlled objective-only result.
+
+The separate `scripts/phase_rs_rollout_sweep.py` also counts only traced
+rules-terminal games as wins, losses or draws. Each cell reports attempted
+and completed games, incomplete games and attempts, completion rate, and
+wins per completed game (`null` if none complete). A retry is a new native
+game, not a matched replay: rows retain every attempt reason, prior attempt
+traces are saved separately when available, and elapsed time includes retries.
+Incomplete scheduled games make the command fail. Requested KG enrichment
+is skipped and the command fails if any attempt was incomplete. A successful
+final retry must not be interpreted as first-attempt reliability.
+Older sweep summaries may have labelled interrupted games as draws and
+discarded retry details; reanalyse retained traces where possible or rerun
+before using those summaries.
+
+### Native-learning graph-control qualification
+
+The v4 native-learning path records controlled-seat visible-zone evidence and
+supports five graph conditions (`none`, curated, induced, curated-plus-induced,
+and card-identity-permuted combined graph) across two distinct Modern
+evaluation strata (Azorius Control and Hardened Scales). The permutation
+preserves the learned graph's embedding rows, topology and degree sequence;
+it is not an edge-rewired null graph. Curated relations come from the
+status-`OK`, Modern-legal Spellbook records; training negatives sampled from
+missing curated pairs are not proof that those pairs are non-combos.
+
+Run a bounded end-to-end qualification in a **new** output directory before
+any larger campaign:
+
+```powershell
+.\.venv\Scripts\python.exe -m scripts.run_native_learning `
+    --train-games 4 --validation-games 2 --test-games 2 `
+    --training-seeds 7 --epochs 2 --graph-epochs 10 `
+    --eval-games 1 --threads 2 --max-game-seconds 90 `
+    --max-actions 2000 --seed 7 `
+    --output-dir runs\native_learning_v4_qualification
+```
+
+This smoke schedules eight collection games plus 20 one-attempt evaluation
+games for the single training seed. It verifies schema, graph construction,
+strict checkpoint use, intervention telemetry and deck-stratum wiring only.
+It is not powered evidence, a paired engine replay, a reliability qualification,
+or a playing-strength estimate. Do not continue to a large run if collection,
+graph-support, timeout, or frozen-input gates fail.
+
+The v4 qualification at
+`runs/native_learning_v4_qualification/20261007_093832_702012` completed all
+eight collection games and updated all four model components. Its induced
+graph had 13 repeated battlefield pairs over 24 nodes and 220 provenance
+records; the curated Modern graph had 3,841 source hyperedges. All 20
+single-game weight × graph × deck-stratum cells ran: 19 terminal losses and
+one 90-second timeout in `seed7_initial_none_azorius`. The overall 19/20
+completion rate does not make every cell reliable. JEPA validation MSE
+worsened from 0.0107 to 0.0279, and no game-strength or graph-benefit claim is
+supported.
+
+Frozen-checkpoint follow-up uses the resumable evaluator; it verifies campaign
+input hashes and preserves every attempt rather than overwriting a timeout:
+
+```powershell
+.\.venv\Scripts\python.exe -m scripts.evaluate_native_learning `
+    --campaign runs\native_learning_v4_qualification\20261007_093832_702012 `
+    --training-seeds 7 --arms seed7_initial_none_azorius `
+    --max-game-seconds 300 --max-actions 2000 `
+    --output-dir runs\native_learning_reliability
+```
+
+That separate one-game budget-sensitivity run completed as a loss with frozen
+inputs unchanged. It is a new episode under an unseeded native engine, not a
+replay or a replacement of the original timeout. Use `--resume-dir <existing
+evaluation-directory>` to continue an interrupted schedule; schedule and
+input hashes must match. `--retry-incomplete` appends a separately counted
+attempt and never erases the prior failure.
 
 ### Deck variety and promotion from preliminary to full results
 
@@ -319,9 +393,9 @@ The official local Transformers `system_one` runtime scores a classifier head
 without generating chat text. Our `--picker decision2` calls that interface,
 reuses the Tev1 candidate/context/answer-validation helpers, and preserves
 original legal-action indices. It is wired into ablation, trace collection
-and rollout sweep commands. GPU inference remains optional; this machine's
-Python Torch build is CPU-only. Do not equate upstream GPU timing with local
-CPU timing.
+and rollout sweep commands. GPU inference is optional; the local environment
+used for the later gameplay qualification has CUDA-enabled Torch. The earlier
+Linux reference timings below used CPU Torch and are not GPU timings.
 
 Install the optional declared dependency group:
 
@@ -365,8 +439,9 @@ Both requests complete without truncation or generated output tokens. These
 are single-request interface checks, not MTG games or a latency benchmark.
 The fixture asks for the largest JSON-encoded amount; neither output selects
 the intended maximum (`action_29` / `action_254`). Valid shapes therefore do
-not certify decision quality. Native MTG episodes, larger family variants,
-GPU deployment and candidate-order/coverage ablations remain unmeasured.
+not certify decision quality. The later two-candidate Linux-CUDA MTG episode
+establishes only minimal terminal feasibility; larger family variants and
+candidate-order/coverage ablations remain unmeasured.
 The temporary container and model-only hard-link view are removed afterwards.
 
 The equivalent reference check on a Linux Python environment is:
@@ -444,19 +519,89 @@ card rows or candidate payloads are silently cropped. Traces record projection
 version and actual request bytes. Requests above 64 KiB fail before HTTP;
 native token-budget failures retain the server diagnostic as incomplete runs.
 
-API errors and invalid answers are distinct incomplete reasons; no random
-fallback occurs. Latency aggregates include attempted decisions in the retained
-game trace (including forced decisions and explicit inference errors).
-Separate forced decisions and cold starts when interpreting performance.
+API errors and invalid answers are distinct incomplete reasons. The phase-rs
+benchmark CLI defaults chat to strict failure, a 120-second request budget
+and Llama rather than Gemma; legacy random fallback is opt-in only through
+`--chat-failure-policy random`. Strict Ollama and vLLM requests use a JSON
+schema enumerating eligible original action indices, and validate the returned
+object locally. Concede is excluded when a non-concession action exists; a
+missing model or malformed reply cannot produce a random action. A sole legal
+action is forced without model inference. Traces distinguish request attempts,
+accepted model choices, server diagnostics and fallback decisions. Latency
+aggregates include attempted decisions in the retained game trace. Separate
+forced decisions and cold starts when interpreting performance.
 
 This deployment comparison is not a clean decision-tuning ablation:
-chat and Tev1 now share the card-aware projection, but chat sees all offered
-actions and permits explicitly traced fallback, while Tev1 applies a shortlist
-and surfaces inference errors.
+chat and Tev1 share the card-aware projection, but strict chat sees all offered
+non-concession actions while Tev1 applies a shortlist.
 Match context/candidates, account for chat fallback, add a size-matched
 general Qwen3.5 comparator and control engine RNG/seat assignment before
 making causal claims. The paper's decision-model benchmark subsection
 distinguishes these experiments.
+
+### Liquid d1 and local vLLM serving
+
+`--picker liquid_d1` supports pinned `LiquidAI/d1-omni-600M` and
+`LiquidAI/d1-3B` releases through their native Transformers `system_one`
+classification head. They declare 16,384- and 32,768-token contexts and
+return choice probabilities with zero generated output tokens. Stock vLLM's
+OpenAI-compatible generation endpoint does not expose that custom head, so
+d1 is not routed through chat completions. The optional `liquid_d1` dependency
+group declares the required Transformers/Torch/Torchvision runtime.
+
+The pinned d1-omni-600M revision
+`02b55d7076f15129e59ab3f94783f32c4b088674` passes a real local CPU smoke:
+197 input tokens, zero output tokens and a complete two-action distribution.
+After the weights were cached, first load plus decision took 51.1 seconds and
+the next warm decision 0.52 seconds. On the RTX 3060 with 128 candidates, the
+same pinned 600M model completed a 29-turn Modern game with 256 decisions.
+The pinned d1-3B revision
+`051bcc464b01b9f92942b364d9586b0ef5912432` also loaded on CUDA and returned
+valid decisions. Its 128-candidate attempt reached 767 decisions before the
+600-second cap; a 24-candidate attempt reached 196 decisions before CUDA
+out-of-memory. A two-candidate run completed a 25-turn game with 269
+decisions. Thus d1-3B has passed the valid-move and minimal terminal gates,
+but its larger candidate configurations are not yet viable on a 12 GiB GPU.
+These are execution/throughput results, not quality comparisons.
+
+The verified `tev1-mtg-8k:0.8b` alias completed a 26-turn game with 220
+decisions. The original `tev1:0.8b` alias failed at 2,146 prompt tokens
+against its 2,050-token limit, confirming that the two aliases must remain
+separate experimental conditions.
+
+The prior strict Ollama chat qualification was negative: Llama 3.2 1B
+returned an invalid action index after 71 decisions, and Qwen2.5-Coder 1.5B
+returned one after three decisions. Both runs were recorded as incomplete.
+Those runs predate JSON-schema-constrained requests and do not qualify the
+repaired protocol; rerun each model before including it in a comparison.
+
+`--picker vllm` is a separate strict local OpenAI-compatible path for
+generative Llama/Qwen controls. It requests JSON-schema output and never
+falls back to random. The observed vLLM 0.31.0 Docker failure occurred before
+inference: the process requested 92% of 12 GiB (11.04 GiB) while only
+10.98 GiB was free. Start with a lower `--gpu-memory-utilization` such as
+`0.85`; for MTG prompts, also lower the Qwen default 40,960-token allocation
+with `--max-model-len 8192` unless a larger frozen context is required.
+Those corrected settings successfully served Qwen3-0.6B on the RTX 3060.
+A Burn-versus-Tron attempt produced 240 accepted model choices and 368 valid
+actions before its 600-second cap. A Burn mirror then reached a rules-terminal
+loss at turn 14 with 10 model choices, 140 valid actions and no picker error.
+The first result exposes throughput/deck sensitivity; the second establishes
+minimal terminal feasibility. Neither is a strength estimate.
+
+Pinned Decision 2.0 Eos 0.8B was also run unchanged in a Linux CUDA container
+using the Windows phase-rs server over the local Docker host bridge. With a
+two-candidate shortlist it made 64 native `system_one` choices, recorded 406
+valid actions without picker errors and reached a rules-terminal loss at turn
+45. This closes the MTG interface/terminal gate for that configuration while
+leaving 24--255-candidate GPU throughput, other family sizes and direct
+Windows loading unresolved.
+
+The aggregate verification artifact
+`runs/model_variant_qualification/verification_20261008.json` scans retained
+decision events, checks that `chosen_index` is in range and that its indexed
+legal type equals `chosen_type`, and records each trace SHA-256. It does not
+replay engine rules, validate every action payload or establish tactical quality.
 
 ---
 
@@ -703,13 +848,89 @@ pass. Full studies need a fresh holdout and an approved compute budget.
 The pod wrapper currently supplies **one Python policy + three native AI
 policies**, not four Python zoo agents. All four decks have 99 main-deck cards
 plus a commander; the older `edh_krenko_goblins.txt` has only 75 main-deck cards.
-The first real pod reached turn 34/483 host actions and exercised elimination,
-but its transport closed; that run is incomplete, not a successful terminal pod.
-The 16 MiB follow-up reached turn 40/507 actions before `game_timeout` at
-420 seconds. A host-Atraxa/native-Krenko follow-up reached turn 39/418 actions,
-then `stream_timeout`, recording a WebSocket keepalive-ping timeout (1011,
-no close frame received). No terminal pod is verified; investigate native
-progression and reconnect as well as transport limits before pod studies.
+The earlier host-Krenko, host-Atraxa and 16-MiB runs reached turns 34, 40 and
+39, respectively, before transport or time limits; these are incomplete
+attempts, not terminal games.
+
+An un-capped Krenko-host/heuristic qualification against Atraxa, Meren and Urza
+then completed 3/3 pods at turns 53, 41 and 47 (all losses). The first pod
+required one retry after a stream timeout, so reliability is not yet
+established. A separate random-host attempt stopped at turn 55 after a
+120-second stream timeout; a repeat with a 600-second stream window also
+timed out at turn 50, after two reconnect attempts. A Tev1 host pilot with an
+eight-candidate cap and 120-second inference timeout made nine real model
+decisions (maximum observed call 71.4 seconds), then timed out at turn 33 in
+`DeclareBlockers`. All three traces report WebSocket keepalive-ping failure
+(1011, no close frame received). This is evidence of transport loss during
+multiplayer progression, not proof that the native AI is the root cause.
+Retain all incomplete episodes in the record. Do not advance to the 160-pod
+study until the progression failure is investigated and reliability and
+per-cell completion qualify.
+
+Modern 1v1 model qualification does not imply Commander qualification.
+Commander model pilots must be separate, one controlled Python policy at a
+time, against the same three native seats and deck schedule. Chat fallback,
+decision-model input limits, loaded checkpoints and component activation must
+be retained in their traces. Decision 2.0 now has a terminal Linux-CUDA
+Modern episode, but remains unqualified for Commander; a Commander arm must
+still complete under the same frozen multiplayer protocol. This interface
+does not run four Python zoo agents or control
+native engine randomness/seats.
+
+Current Commander host-policy qualification:
+
+| Host policy | Attempts | Terminal outcomes | Qualification status |
+|---|---:|---:|---|
+| Heuristic | 3 | 3 losses | Terminal play demonstrated; one attempt needed a transport-timeout retry; completion reliability not established |
+| Random | 2 | 0 | Two stream timeouts (turns 55 and 50); not qualified |
+| Tev1 | 1 | 0 | Nine model decisions; stream timeout at turn 33; not qualified |
+| Chat LLM, direct/dream world model, fusion, active inference, KL/EFE, native-learned | 11 configuration screens | 1 host win (native-learned); 10 incomplete | One attempt per configuration only; no comparative or reliability qualification; see the detailed grid below |
+| Decision 2.0 | 0 | 0 | Blocked before gameplay by local model loading |
+
+The successful heuristic pods are all losses and do not support comparative
+strength claims. The single native-learned host win is feasibility evidence
+only. The random, Tev1 and ten incomplete grid episodes remain failures, not
+draws or replacements. Further Commander model-family pilots are paused
+pending diagnosis of progression and transport reliability; Modern 1v1
+results cannot substitute for that gate.
+
+### One-attempt Commander model-family screen
+
+To identify which runnable families can finish a real pod, a sequential
+one-attempt screen ran on Oct 7, 2026. Every cell used the same Krenko host
+deck, Atraxa/Meren/Urza native opponents, VeryEasy native-AI difficulty,
+picker seed 7, one attempt, a 900-second cooperative game cap and a
+180-second WebSocket stream timeout. Chat models used Ollama; direct/dream
+world-model and fusion arms used the archived `checkpoints/jepa/jepa_final.pt`
+checkpoint, not the native-trained v4 checkpoint. The last cell used
+`runs/native_learning_v4_qualification/20261007_093832_702012/seed_7/trained.pt`
+with induced graph and seeded sampling. These are feasibility outcomes, not a
+matched strength comparison; Python picker seed does not seed native shuffle
+or native-AI randomness.
+
+| Host policy / configuration | Outcome | Turns / decisions | Activation and failure evidence |
+|---|---|---:|---|
+| Chat: Llama 3.2 1B | Incomplete: stream timeout | 33 / 339 | 11 model invocations; 6 trace decisions include fallback/error evidence |
+| Chat: Qwen 2.5 Coder 1.5B | Incomplete: game timeout | 29 / 317 | 22 model invocations; 14 trace decisions include fallback/error evidence |
+| Chat: Gemma4 E2B | Incomplete: stream timeout | 49 / 580 | 0 model invocations; 61 trace decisions include fallback/error evidence; not an LLM gameplay result |
+| World model, direct (legacy checkpoint) | Incomplete: stream timeout | 40 / 513 | No trained/native checkpoint qualification |
+| World model, dream search (legacy checkpoint) | Incomplete: stream timeout | 25 / 238 | No trained/native checkpoint qualification |
+| Fusion (legacy checkpoint + Gemma4) | Incomplete: game timeout | 33 / 1,196 | 0 model invocations; no fusion-component activation demonstrated |
+| Active inference | Incomplete: native AI driver fault | 37 / 374 | Native AI batch reached its 200-action safety cap |
+| KL control | Incomplete: game timeout | 37 / 4,055 | Picker completed decisions; no terminal outcome |
+| EFE information-gain proxy | Incomplete: game timeout | 38 / 1,127 | Picker completed decisions; no terminal outcome |
+| EFE ambiguity proxy | Incomplete: game timeout | 45 / 2,119 | Picker completed decisions; no terminal outcome |
+| Native-learned v4, trained + induced graph | **Terminal host win** | 39 / 587 | One completed pod; single-game feasibility evidence only |
+
+All ten incomplete cells remain recorded with their original reasons; there
+were no draws and no retry/replacement. The native-learned result establishes
+that this checkpoint/policy combination can complete one pod, not that
+learning, the graph, or the policy caused a strength improvement. It does not
+qualify completion reliability or remove the need for replicated controls.
+Gemma and fusion are not counted as invoked-model arms. The overall runtime
+pattern still blocks a multi-game family matrix and the prespecified 160-pod
+Commander study; first diagnose the native driver/transport stalls and run
+replicated completion calibration on cells that can finish.
 
 `play_edh_pod` treats an explicitly requested turn-capped smoke as successful
 execution while writing `turn_cap` in its trace. The benchmark always counts

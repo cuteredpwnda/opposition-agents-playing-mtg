@@ -321,6 +321,7 @@ async def run_game(
             client_version=cfg.client_version,
             build_commit=cfg.build_commit,
             max_message_bytes=cfg.max_message_bytes,
+            expected_server_commit=cfg.expected_server_commit,
         )
     elif autostart_server:
         # Acquire lock to prevent multiple processes from starting their own servers
@@ -339,6 +340,7 @@ async def run_game(
                 client_version=cfg.client_version,
                 build_commit=cfg.build_commit,
                 max_message_bytes=cfg.max_message_bytes,
+                expected_server_commit=cfg.expected_server_commit,
             )
         else:
             log.append("could not acquire server lock; attempting to connect to existing server")

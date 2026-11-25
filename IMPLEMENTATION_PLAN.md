@@ -1,7 +1,7 @@
 # Implementation Plan — Single Source of Truth
 
 > **opposition-agents-playing-mtg**
-> Last updated: 2026-10-05
+> Last updated: 2026-10-08
 
 This document is the **single source of truth** for what has been implemented,
 what is in progress, and what remains. It supersedes the phase descriptions in
@@ -30,7 +30,9 @@ recorded request-timeout fallback. Decision 2.0's pinned local Transformers
 adapter supports the published 255-option contract without vLLM. Unchanged Eos
 weights pass real 30/255-option checks on an owned local Linux CPU container,
 but direct Windows loading is blocked by upstream path-fingerprint portability.
-No integrity check is bypassed and no Decision 2.0 MTG result is claimed.
+No integrity check is bypassed. A later Linux-CUDA run of the same pinned Eos
+0.8B package drives a terminal phase-rs game through Docker's local host
+bridge; direct Windows loading remains blocked by the upstream path fingerprint.
 The paper now explains decision models and separates
 deployment comparisons from controlled ablations. See section 6.
 
@@ -67,13 +69,54 @@ increase/improve on average, but validation non-forced NLL worsens, and these
 predictive measures do not establish stronger play. The run is development
 evidence, not completion of confirmatory K12/RQ1--RQ5.
 
-**Publication feasibility gates (Oct 5):** the full Scryfall oracle/rulings
+**Native graph-control qualification (Oct 7):** feature v4 records owned
+visible zones and battlefield cards controlled by the picker seat. A fresh
+qualification, `runs/native_learning_v4_qualification/20261007_093832_702012`,
+completed 4/4 training, 2/2 validation and 2/2 test collection games with all
+four model components updated. Its sparse induced graph contains 13 repeated
+battlefield pairs among 24 nodes, supported by 220 game-pair evidence records;
+the separate Modern-legal curated graph contains 3,841 Spellbook hyperedges
+(5,868 pair projections, 1,695 nodes). All five graph conditions (none,
+curated, induced, curated-plus-induced, card-identity-permuted combined) ran
+across two separately reported Modern deck strata. Nineteen of 20 single-game
+cells completed and all 19 were losses; one `initial/none/Azorius` episode
+reached the 90-second cap. A separate frozen-checkpoint 300-second rerun of
+that condition completed as a loss, but is a new operational episode, not a
+replacement or matched replay. Frozen inputs were unchanged. These one-game
+cells, a timeout, and the short training budget do not qualify reliability,
+learning benefit, graph benefit, or a strength claim. The resumable
+`scripts/evaluate_native_learning.py` now supports integrity-checked frozen
+evaluation without retraining. Do not expand to all seeds until completion,
+study power, RNG and seat controls are addressed.
+
+**Publication feasibility gates (Oct 7 update):** the full Scryfall oracle/rulings
 cache is refreshed (38,706 oracle records, 79,706 rulings, 38,201 indexed names).
 The separate native compiled database contains 35,879 name-keyed entries;
 this is not a count of fully tested card implementations. Four-player
 Commander creation, custom AI decks, elimination and a six-turn development
-smoke work, but terminal pod qualification remains pending. The 10-game
-Modern mirror pilot completed 8 games (all losses); both KL games hit the
+smoke work. A Krenko-host/three-native-AI qualification completed 3/3
+terminal heuristic pods (all losses), but one needed a stream-timeout retry;
+a separate random-host episode timed out twice, including with a 600-second
+stream window, at turns 50-55. A Tev1 Commander pilot made nine real model
+decisions (maximum observed inference call 71.4 seconds) but timed out at turn
+33 in `DeclareBlockers`, again with a WebSocket keepalive-ping timeout. These
+failures are consistent with a late-game multiplayer progression or transport
+stall, but its cause is not established. Random and Tev1 remain unqualified;
+**Commander model-family screen (Oct 7):** eleven one-attempt arms ran against
+the same fixed Krenko/Atraxa/Meren/Urza setup. Only the v4 native-learned
+trained/induced arm reached a rules-terminal outcome (host win); the other ten
+ended incomplete, including three chat policies, both legacy world-model modes,
+fusion, active inference, KL control and two EFE proxies. Llama invoked its
+model 11 times, Qwen 22 times, while Gemma recorded no actual model invocation
+and 61 fallback/error decisions. Several cells independently exhausted the
+15-minute cooperative game budget; others lost transport or hit the native AI
+action-safety cap. The single native-learned win is feasibility evidence only,
+not a comparative result or evidence of learned-policy strength. Full traces,
+summaries and frozen-input manifests are retained under
+`runs/commander_model_qualification/full_grid_20261007_114816/`; continue to
+gate the 160-pod study on runtime reliability and replication.
+
+The 10-game Modern mirror pilot completed 8 games (all losses); both KL games hit the
 action cap with repeated cast/cancel decisions. It fails the advancement
 gate and supports no strength claim. Six enabled ontology validation stages
 passed; HermiT was skipped and imports were not resolved. The fresh full-card
@@ -313,6 +356,42 @@ items stay for traceability.
       This is reference interface qualification, not decision quality or an
       MTG episode. Owned temporary resources are cleaned; original weights
       remain cached.
+
+- [x] **Liquid d1 and strict local model serving (Oct 8, 2026)** —
+      `liquid_d1_picker.py` and all three native experiment CLIs support pinned
+      d1-omni-600M/d1-3B `system_one` heads without routing them through
+      generative vLLM. The pinned 600M CPU smoke returns a normalized choice
+      distribution with 197 input/zero output tokens; cached first load plus
+      decision is 51.1 seconds and warm inference 0.52 seconds. A separate
+      local OpenAI-compatible picker supports JSON-schema Llama/Qwen decisions
+      from vLLM with no random fallback. Benchmark Ollama chat now defaults to
+      Llama, a 120-second request budget and explicit failures; Gemma is
+      excluded from the current comparison. The supplied vLLM crash is a GPU
+      reservation mismatch, not model incompatibility. d1-3B gameplay/GPU
+      qualification and comparative decision quality remain queued under K6.
+
+- [x] **GPU decision-model qualification (Oct 8, 2026)** —
+      Upgraded the local environment to CUDA Torch 2.11.0+cu128 on the RTX
+      3060 and ran terminal phase-rs episodes. Tev1's verified 8192-context
+      alias completed a 26-turn game with 220 decisions. d1-omni-600M on CUDA
+      with 128 candidates completed a 29-turn game with 256 decisions.
+      d1-3B loaded from its pinned revision; its 128- and 24-candidate
+      attempts produced accepted decisions but hit the 600-second game cap and
+      a CUDA out-of-memory error, respectively. A two-candidate d1-3B run
+      completed a 25-turn game with 269 decisions and no picker error.
+      Strict Llama 3.2 1B and Qwen2.5-Coder 1.5B Ollama attempts returned
+      invalid structured actions and were recorded as incomplete; no random
+      fallback was used. A corrected local vLLM 0.31.0 deployment
+      (`gpu-memory-utilization=0.85`, 8192-token context) served Qwen3-0.6B:
+      the first Burn/Tron attempt made 240 model choices but timed out, while
+      a Burn mirror made 10 model choices and reached a rules-terminal loss
+      at turn 14 with 140 valid actions. Pinned Decision 2.0 Eos 0.8B loaded
+      unchanged in a Linux CUDA container and, with two candidates, made 64
+      classifier choices in a terminal 45-turn loss (406 valid actions,
+      no picker errors). Direct Windows Decision 2.0 loading remains blocked,
+      but Linux GPU gameplay is now qualified. Trace hashes and index/type
+      validation for every arm are retained in
+      `runs/model_variant_qualification/verification_20261008.json`.
 
 - [x] **Local inference-limit repair and generated-output exclusion** —
       `scripts/configure_tev1_context.py` creates/verifies an isolated
@@ -603,7 +682,34 @@ items stay for traceability.
       the first closure's exact cause is unconfirmed. A host-Atraxa/native-Krenko
       follow-up reached turn 39/418 actions, then `stream_timeout` with recorded
       WebSocket keepalive-ping timeout (1011, no close frame received).
-      No terminal pod is verified; full pods remain K7.
+      These initial transport-limited attempts did not verify a terminal pod;
+      full qualification remained K7.
+
+- [x] **Commander terminal and model-host qualification follow-up** —
+      Three Krenko/heuristic pods reached terminal losses (turns 41, 47, 53;
+      one required a transport-timeout retry). Random-host attempts ended in
+      stream timeouts at turns 55 and 50 despite a 600-second stream window.
+      A Tev1 attempt invoked the model nine times (maximum observed call
+      71.4 seconds) before timing out at turn 33 in `DeclareBlockers`.
+      The common WebSocket keepalive-ping failure does not identify its cause.
+      Random and Tev1 are unqualified, the other Commander policy families
+      remain untested, and the 160-pod study is gated on runtime diagnosis and
+      completion reliability. Results are recorded in `docs/EXPERIMENTS.md`.
+
+- [x] **Commander model-family feasibility grid (Oct 7, 2026)** —
+      `runs/commander_model_qualification/full_grid_20261007_114816/`
+      records eleven one-attempt policy cells on fixed Krenko/Atraxa/Meren/Urza
+      decks: three chat models, direct/dream legacy world models, fusion, active
+      inference, KL, two EFE proxies and native-learned v4 trained/induced.
+      Only the native-learned cell reached terminal (one host win); the other
+      ten ended by stream timeout, game timeout or native AI safety-cap fault.
+      Llama/Qwen invoked 11/22 real model choices; Gemma invoked none and had
+      61 traced fallback/error decisions. This is runtime feasibility only,
+      not a family ranking or evidence that learning/graph caused the single
+      win. The full manifest freezes decks, Python sources, checkpoints and
+      locally installed model digests; all ten incomplete cells are retained.
+      The 160-pod campaign remains gated on progression diagnosis and replicated
+      completion calibration.
 
 - [x] **Publication plan, pilot driver and pipeline diagrams (Oct 5, 2026)** —
       section 6, `scripts/run_paper_pilot.py`, `docs/EXPERIMENTS.md` and
@@ -1637,7 +1743,7 @@ list, so the agent cannot tell a targeting decision from a mode choice.
 Each has a different shape of belief dependence and should be planned
 differently.
 
-#### K6 — Local decision-model evaluation (Tev1 / Decision 2.0) 🟡 Partial
+#### K6 — Local decision-model evaluation (Tev1 / Decision 2.0 / Liquid d1) 🟡 Partial
 
 **Adapter and context-configuration repair implemented; controlled evaluation pending.**
 The user selected a
@@ -1649,28 +1755,54 @@ order, internal journals and compiled rule ASTs, and groups identical visible
 instances while retaining their IDs. It does not silently truncate observations.
 The ceiling is the original tag's `num_ctx`, not a hard API limit: an isolated
 same-weight 8192-context alias passes a terminal game with no cropping.
-Chat output is bounded and its forced/model/fallback decisions are traceable.
+Chat output is bounded and its attempted/model/error/fallback decisions are
+traceable. Benchmark chat now defaults to explicit failure with a 120-second
+request budget; random fallback is opt-in and Gemma is excluded from the
+current comparison.
 The 8K Tev1 alias completes 3/3 games in the replicated campaign. The separate
 Gemma semantic repair completes 3/3, with one explicitly traced request-timeout
 fallback; this does not meet the per-condition 20-game calibration gate.
 Decision 2.0 adds a pinned local 255-option adapter with a declared 16,384-token
-Eos context; larger-model/GPU execution is not measured. Real Eos preparation
+Eos context. Real Eos preparation
 fails on Windows because upstream checkpoint identity hashes platform-specific
 relative path strings. All actual fingerprint-file bytes match the manifest,
 and canonical slash-key hashing reproduces the published identity.
 An isolated local Linux reference run now verifies real 30/255-choice output
 shapes with unchanged weights and intact identity checks. Larger choices are
 expensive on CPU (136.1 seconds for the single 9,771-token/255-option fixture);
-neither synthetic response is a correct maximum-amount answer.
-**Next:** obtain a portable upstream Windows runtime revision and qualify
-native MTG episodes on the Linux deployment, without bypassing manifest/identity
-checks. Measure warm/cold cost and cap-dependent reliability before large
-campaigns. Qualify structured chat replies (the full-context Llama/Qwen checks
-still have invalid-response fallback), per-model input-token usage and
+neither synthetic response is a correct maximum-amount answer. The unchanged
+pinned Eos 0.8B package subsequently loaded on Linux CUDA and completed a
+45-turn phase-rs game with a two-candidate shortlist: 64 model invocations,
+406 legal actions, zero picker errors and one rules-terminal loss. This
+establishes interface and terminal-game feasibility, not playing strength or
+wider-candidate viability.
+Liquid d1 adds pinned d1-omni-600M and d1-3B `system_one` adapters with up to
+255 candidates. A real pinned d1-omni CPU smoke returns 197 input/zero output
+tokens and a complete distribution; cached first load plus decision takes
+51.1 seconds and a warm decision 0.52 seconds. GPU qualification then
+completed a 29-turn d1-omni-600M game with 128 candidates. d1-3B loaded and
+returned valid decisions on the RTX 3060; 128 and 24 candidates were not
+operationally viable under the current 12 GiB memory/throughput budget, but a
+two-candidate configuration completed a 25-turn game. These are execution
+and completion results, not comparative playing-strength evidence.
+Stock generative vLLM does not expose d1's custom classifier head. A separate
+strict local OpenAI-compatible picker supports Llama/Qwen served by vLLM.
+The supplied Docker failure is diagnosed as a startup reservation mismatch
+(11.04 GiB requested, 10.98 GiB free), not model incompatibility. With the
+reservation reduced to 0.85 and context capped at 8192, vLLM 0.31.0 serves
+Qwen3-0.6B successfully. A Burn/Tron run makes 240 accepted model choices but
+times out; a Burn mirror completes at turn 14 after 10 model choices and 140
+valid actions.
+Strict Llama/Qwen Ollama episodes currently fail on invalid structured replies
+rather than silently falling back.
+**Next:** obtain a portable upstream Windows runtime revision without bypassing
+manifest/identity checks. Measure warm/cold cost and cap-dependent reliability
+before large campaigns. Repair and requalify the direct Ollama Llama/Qwen
+structured replies (the current checks failed explicitly), measure per-model
+input-token usage and
 replicated larger-context full games; retain explicit
 budget failures, vary shortlist size/source and option order, match context and
-candidate sets with a size-matched general Qwen3.5 comparator, and instrument
-the existing chat picker's random fallback. Candidate coverage is not
+candidate sets with a size-matched general Qwen3.5 comparator. Candidate coverage is not
 optimal-move recall. Keep deployment-stack results distinct from isolated
 decision-tuning effects. Planner/WM-candidate critic integration and
 probability calibration are separate follow-ups. The research paper's
@@ -1679,14 +1811,34 @@ decision-model benchmark subsection now specifies these controls.
 #### K7 — Terminal Commander qualification and multiplayer evaluation
 
 Custom four-player pods and elimination are wired; bounded smoke is Done.
-No terminal pod has yet been verified. The final host-Atraxa follow-up ended
-at turn 39/418 decisions with a recorded WebSocket keepalive-ping timeout;
-diagnose native progression/transport and authenticated reconnect rather than
-assuming message size alone. Qualify at least three completed pods
-per intended configuration without transport/action failures, then rotate
-host/decks and establish runtime budgets from measured durations. Current
-ownership is one Python host and three native AI seats, not four Python
-agents. Multi-connection control, multiplayer belief/value semantics and
+Three Krenko-host/heuristic pods reached terminal outcomes (all losses, turns
+41, 47 and 53); the first needed one stream-timeout retry. A one-game
+Krenko-host/random probe timed out at turn 55 with a 120-second stream window;
+a separate attempt timed out at turn 50 despite a 600-second window and two
+reconnect attempts. A Tev1 host pilot made nine model-invoked decisions
+(maximum observed call 71.4 seconds) before timing out at turn 33 in
+`DeclareBlockers` with the same keepalive-ping failure. The traces show
+transport loss during active multiplayer games; they do not identify whether
+the underlying cause is native progression, server responsiveness or
+transport. Terminal gameplay is demonstrated only for the heuristic host/deck
+configuration, and the three successes do not establish the planned 95%
+completion threshold. Random and Tev1 have not passed terminal qualification.
+The subsequent one-attempt grid ran three chat models, direct and dream legacy
+world models, fusion, active inference, KL and two EFE proxies, and the native
+v4 trained/induced policy. Only native-learned reached a terminal outcome (one
+host win); the other ten were incomplete due to transport timeout, game
+timeout, or native AI driver fault. Gemma had no model-invoked decisions and
+61 traced fallback/error decisions; Llama and Qwen had 11 and 22 model
+invocations, respectively. This exposes fallback and native progression
+failures; it does not establish relative policy performance. Tev1's prior
+one-game attempt also timed out after nine actual model decisions. Random and
+Tev1 have not passed terminal qualification. Decision 2.0 now has a terminal
+Linux-CUDA Modern episode but no Commander qualification. Do not launch the
+full 160-pod campaign
+or treat Modern 1v1 games as Commander qualification until the progression
+failure is diagnosed and reliability passes. Current ownership is one Python
+host and three native AI seats, not four Python agents.
+Multi-connection control, multiplayer belief/value semantics and
 politics-aware policies remain separate pending work.
 
 Keyed reconnect is now implemented and live-verified; the remaining work is
@@ -1782,14 +1934,24 @@ independent training seeds and final-test boundaries before RQ5 cross-producer
 transfer or cumulative-evidence curves. These execution gates remain queued;
 the written protocol and terminal feasibility pilots do not satisfy them.
 
-**Implemented development subset (Oct 5):** real native observation recording,
-training-only exposure/provenance induction, GraphSAGE, complete JEPA/recurrent/
-imitation model updates, strict loading, graph activation telemetry and
-initial/trained × none/induced deployment are wired and under qualification.
-The full cycle has not yet completed. Curated/shuffled graph controls,
-cross-producer graph replication, powered all-seed playing comparisons,
-reward-optimizing self-play, multi-seat control and native RNG remain queued.
-Observed co-visibility does not establish strategic synergy or refutation.
+**Implemented development subset:** real native observation recording now
+retains controlled-seat zone provenance (battlefield controller, owner for
+other visible zones), and v4 graph induction records repeated controlled-seat
+battlefield co-presence plus exposed never-co-present pairs. The testable
+development harness now builds Modern-legal curated combo hyperedges from the
+status- and legality-qualified Spellbook snapshot, preserves combo identifiers,
+and evaluates `none`, curated, induced, curated-plus-induced, and a deterministic
+card-identity-permuted control over Azorius-control and Hardened-Scales test
+strata. The identity permutation preserves embeddings, topology and degree; it
+does not rewire edges. Focused tests pass. The v4 end-to-end qualification completed with 8/8
+terminal collection games, all four component updates and 20 evaluation cells
+(19 terminal losses, one 90-second timeout). The timeout condition completed
+in a separate 300-second frozen-checkpoint run; that is not a replay or a
+strength estimate. The single-seed/one-game cells remain exploratory; v3
+checkpoints/data cannot qualify v4 because the feature contract changed.
+Cross-producer replication, powered all-seed comparisons, reward-optimizing
+self-play, multi-seat control and native RNG remain queued. Observed co-presence
+is not strategic synergy, causal evidence or rules truth.
 
 #### H1 — Continuous-effects layer system (CR 613) ✅ Implemented
 

@@ -82,6 +82,12 @@ decision2 = [
     "transformers>=5.17,<6",
     "safetensors>=0.4",
 ]
+liquid_d1 = [
+    "torch>=2.2",
+    "torchvision>=0.17",
+    "transformers>=5.15,<6",
+    "safetensors>=0.4",
+]
 ml = [
     "torch>=2.2",
     "torchvision>=0.17",

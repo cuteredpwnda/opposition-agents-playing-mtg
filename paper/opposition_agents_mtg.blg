@@ -3,44 +3,44 @@ Capacity: max_strings=200000, hash_size=200000, hash_prime=170003
 The top-level auxiliary file: opposition_agents_mtg.aux
 The style file: plainnat.bst
 Database file #1: references.bib
-You've used 48 entries,
+You've used 50 entries,
             2773 wiz_defined-function locations,
-            894 strings with 15028 characters,
-and the built_in function-call counts, 23438 in all, are:
-= -- 2182
-> -- 1318
-< -- 46
-+ -- 454
-- -- 405
-* -- 1825
-:= -- 3569
-add.period$ -- 211
-call.type$ -- 48
-change.case$ -- 272
-chr.to.int$ -- 47
-cite$ -- 96
-duplicate$ -- 1038
-empty$ -- 1904
-format.name$ -- 466
-if$ -- 5010
+            904 strings with 15323 characters,
+and the built_in function-call counts, 24061 in all, are:
+= -- 2241
+> -- 1338
+< -- 48
++ -- 462
+- -- 411
+* -- 1855
+:= -- 3666
+add.period$ -- 220
+call.type$ -- 50
+change.case$ -- 280
+chr.to.int$ -- 49
+cite$ -- 100
+duplicate$ -- 1068
+empty$ -- 1968
+format.name$ -- 474
+if$ -- 5145
 int.to.chr$ -- 2
 int.to.str$ -- 1
 missing$ -- 30
-newline$ -- 306
-num.names$ -- 192
-pop$ -- 584
+newline$ -- 319
+num.names$ -- 200
+pop$ -- 607
 preamble$ -- 1
-purify$ -- 224
+purify$ -- 230
 quote$ -- 0
-skip$ -- 816
+skip$ -- 841
 stack$ -- 0
-substring$ -- 743
-swap$ -- 162
+substring$ -- 747
+swap$ -- 164
 text.length$ -- 19
 text.prefix$ -- 0
 top$ -- 0
-type$ -- 528
+type$ -- 550
 warning$ -- 0
-while$ -- 199
+while$ -- 205
 width$ -- 0
-write$ -- 740
+write$ -- 770

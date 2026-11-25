@@ -32,6 +32,7 @@ from src.integrations.phase_rs import (
     HeuristicActionPicker,
     KLControlActionPicker,
     OllamaActionPicker,
+    OpenAICompatibleActionPicker,
     PhaseServerConfig,
     PreferNonPassPicker,
     RandomActionPicker,
@@ -45,6 +46,11 @@ from src.integrations.phase_rs.decision2_picker import (
     make_decision2_picker,
 )
 from src.integrations.phase_rs.kl_control_picker import OBJECTIVES
+from src.integrations.phase_rs.liquid_d1_picker import (
+    LiquidD1ActionPicker,
+    add_liquid_d1_arguments,
+    make_liquid_d1_picker,
+)
 from src.integrations.phase_rs.runner import GameRunResult
 from src.integrations.phase_rs.server_process import DEFAULT_SUBMODULE, REPO_ROOT
 from src.integrations.phase_rs.tev1_picker import add_tev1_arguments, make_tev1_picker
@@ -145,6 +151,8 @@ def _make_picker(args: argparse.Namespace, seed: int):
         return make_tev1_picker(args, seed)
     if args.picker == "decision2":
         return make_decision2_picker(args, seed)
+    if args.picker == "liquid_d1":
+        return make_liquid_d1_picker(args, seed)
     if args.picker == "native_learned":
         from src.world_model.native_learning import NativeLearnedPicker
 
@@ -168,6 +176,16 @@ def _make_picker(args: argparse.Namespace, seed: int):
             seed=seed,
             model=args.ollama_model,
             base_url=args.ollama_url,
+            timeout_s=args.ollama_timeout,
+            failure_policy=args.chat_failure_policy,
+        )
+    if args.picker == "vllm":
+        return OpenAICompatibleActionPicker(
+            seed=seed,
+            model=args.vllm_model,
+            base_url=args.vllm_url,
+            timeout_s=args.vllm_timeout,
+            api_key=args.vllm_api_key,
         )
     if args.picker.startswith("agent:"):
         agent_name = args.picker.split(":", 1)[1].strip()
@@ -239,7 +257,7 @@ def run(args: argparse.Namespace) -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
     manifest = {
         "schema_version": 2,
-        "config": vars(args),
+        "config": {key: value for key, value in vars(args).items() if key != "vllm_api_key"},
         "objectives": objectives,
         "repository_commit": _revision(REPO_ROOT),
         "agent_checkpoint_sha256": (
@@ -255,6 +273,7 @@ def run(args: argparse.Namespace) -> int:
             if args.picker.startswith("agent:") else None
         ),
         "phase_rs_commit": _revision(DEFAULT_SUBMODULE),
+        "phase_rs_commit_scope": "checkout only; actual server build is recorded in game traces",
         "protocol_version": PROTOCOL_VERSION,
         "deck_sha256": hashlib.sha256(
             json.dumps(deck, sort_keys=True).encode("utf-8")
@@ -282,7 +301,7 @@ def run(args: argparse.Namespace) -> int:
         started = time.perf_counter()
         for attempt in range(1, args.max_retries + 1):
             picker = _make_picker(picker_args, seed=game_seed)
-            if isinstance(picker, Decision2ActionPicker):
+            if isinstance(picker, (Decision2ActionPicker, LiquidD1ActionPicker)):
                 picker.prepare()
             cfg = PhaseServerConfig(
                 uri=args.uri, stream_timeout_s=args.stream_timeout,
@@ -389,7 +408,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--picker",
         help=(
             "Policy for our seat: random | prefer-nonpass | heuristic | "
-            "kl_control | tev1 | decision2 | native_learned | ollama | agent:<name> "
+            "kl_control | tev1 | decision2 | liquid_d1 | native_learned | "
+            "ollama | vllm | agent:<name> "
             "(e.g. agent:heuristic, "
             "agent:world_model, agent:fusion)"
         ),
@@ -411,8 +431,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--planner", choices=["mppi", "tree"], default="mppi", help="KL-control planner engine."
     )
-    parser.add_argument("--ollama-model", default="gemma4:e2b")
+    parser.add_argument("--ollama-model", default="llama3.2:1b")
     parser.add_argument("--ollama-url", default="http://localhost:11434")
+    parser.add_argument("--ollama-timeout", type=float, default=120.0)
+    parser.add_argument(
+        "--chat-failure-policy", choices=["error", "random"], default="error",
+        help="Benchmarks default to explicit incomplete outcomes, not random fallback.",
+    )
+    parser.add_argument("--vllm-model", default="Qwen/Qwen3-0.6B")
+    parser.add_argument("--vllm-url", default="http://localhost:8000/v1")
+    parser.add_argument("--vllm-timeout", type=float, default=120.0)
+    parser.add_argument("--vllm-api-key", default=None)
     parser.add_argument("--agent-checkpoint", default=None,
                         help="Explicit checkpoint for agent:world_model or agent:fusion")
     parser.add_argument("--native-checkpoint", default=None,
@@ -426,6 +455,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--dream-depth", type=int, default=10)
     add_tev1_arguments(parser)
     add_decision2_arguments(parser)
+    add_liquid_d1_arguments(parser)
     parser.add_argument(
         "--ai-difficulty",
         choices=["VeryEasy", "Easy", "Medium", "Hard", "VeryHard"],

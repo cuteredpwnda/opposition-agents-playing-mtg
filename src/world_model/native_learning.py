@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import itertools
 import json
+import random
 from copy import deepcopy
 from pathlib import Path
 
@@ -30,7 +31,7 @@ from src.world_model.world_model import WorldModel, WorldModelConfig
 
 
 def induce_graph(games: list[dict], output: Path) -> dict:
-    """CO_VISIBLE exposure is observational evidence, never a causal combo."""
+    """Record controlled-seat co-presence evidence without asserting synergy."""
     evidence = []
     aggregates: dict[tuple[str, str], dict] = {}
     for game in games:
@@ -38,29 +39,64 @@ def induce_graph(games: list[dict], output: Path) -> dict:
             raise ValueError("Induced graph accepts training games only")
         if not game["completed"]:
             continue
-        pairs = set()
+        exposed_cards = set()
+        copresent_pairs = set()
         for record in game["records"][:-1]:
-            pairs.update(itertools.combinations(sorted(set(record["visible_cards"])), 2))
+            zones = record["controlled_visible_zones"]
+            exposed_cards.update(
+                name for names in zones.values() for name in names
+            )
+            copresent_pairs.update(itertools.combinations(
+                sorted(set(zones.get("battlefield", []))), 2,
+            ))
         reward = game["records"][-1]["reward"]
-        for pair in sorted(pairs):
+        for pair in itertools.combinations(sorted(exposed_cards), 2):
+            co_present = pair in copresent_pairs
             evidence.append({
-                "relation": "CO_VISIBLE", "cards": list(pair), "game_id": game["game_id"],
+                "relation": "BATTLEFIELD_CO_PRESENT", "cards": list(pair),
+                "game_id": game["game_id"],
                 "producer": game["producer"], "deck_sha256": game["deck_sha256"],
                 "source_sha256": game["source_sha256"], "split": "train",
                 "terminal_outcome": reward, "epistemic_status": "induced_observation",
+                "co_present": co_present,
             })
             entry = aggregates.setdefault(pair, {
-                "cards": list(pair), "exposed_games": 0, "wins": 0, "losses": 0, "draws": 0,
+                "cards": list(pair), "exposed_games": 0, "co_present_games": 0,
+                "wins": 0, "losses": 0, "draws": 0,
             })
             entry["exposed_games"] += 1
-            entry["wins" if reward > 0 else "losses" if reward < 0 else "draws"] += 1
-    if not aggregates:
-        raise ValueError("No observed training card-pair evidence; graph training cannot run")
+            if co_present:
+                entry["co_present_games"] += 1
+                entry["wins" if reward > 0 else "losses" if reward < 0 else "draws"] += 1
+    supported = [
+        entry for entry in aggregates.values()
+        if entry["exposed_games"] >= 2 and entry["co_present_games"] >= 2
+    ]
+    unobserved = [
+        entry for entry in aggregates.values()
+        if entry["exposed_games"] >= 2 and entry["co_present_games"] == 0
+    ]
+    names = sorted({name for entry in aggregates.values() for name in entry["cards"]})
+    indices = {name: i for i, name in enumerate(names)}
+    negatives = [
+        [indices[name] for name in entry["cards"]]
+        for entry in unobserved if all(name in indices for name in entry["cards"])
+    ]
+    if not supported or not negatives:
+        raise ValueError(
+            "Training games lack both repeated battlefield co-presence and "
+            "exposed never-co-present pairs; a relation graph cannot be qualified"
+        )
     graph = {
-        "schema_version": 1, "relation": "CO_VISIBLE",
-        "interpretation": "observed co-visibility, not causal synergy or rules truth",
+        "schema_version": 2, "relation": "BATTLEFIELD_CO_PRESENT",
+        "interpretation": (
+            "controlled-seat cards observed simultaneously on the battlefield; "
+            "conditional association, not causal synergy or rules truth"
+        ),
         "training_game_ids": [game["game_id"] for game in games if game["completed"]],
-        "edges": list(aggregates.values()), "evidence": evidence,
+        "names": names, "edges": supported, "negative_edges": negatives,
+        "evidence": evidence,
+        "thresholds": {"minimum_exposed_games": 2, "minimum_co_present_games": 2},
     }
     output.write_text(json.dumps(graph, indent=2), encoding="utf-8")
     return graph
@@ -68,13 +104,32 @@ def induce_graph(games: list[dict], output: Path) -> dict:
 
 def train_graph(graph: dict, seed: int, epochs: int) -> tuple[dict, list[float]]:
     torch.manual_seed(seed)
-    names = sorted({name for edge in graph["edges"] for name in edge["cards"]})
+    names = sorted(graph.get("names") or {
+        name for edge in graph["edges"] for name in edge["cards"]
+    })
     indices = {name: i for i, name in enumerate(names)}
     pairs = sorted({tuple(sorted(indices[name] for name in edge["cards"]))
                     for edge in graph["edges"]})
-    negatives = list(set(itertools.combinations(range(len(names)), 2)) - set(pairs))
+    rng = random.Random(seed)
+    if "negative_edges" in graph:
+        negatives = sorted({
+            tuple(sorted(pair)) for pair in graph["negative_edges"]
+        } - set(pairs))
+    else:
+        pair_count = len(names) * (len(names) - 1) // 2
+        available = pair_count - len(pairs)
+        sample_count = min(available, max(len(pairs), 5 * len(pairs)))
+        negatives_set = set()
+        while len(negatives_set) < sample_count:
+            left, right = rng.sample(range(len(names)), 2)
+            pair = tuple(sorted((left, right)))
+            if pair not in pairs:
+                negatives_set.add(pair)
+        negatives = sorted(negatives_set)
     if not negatives:
         raise ValueError("Complete co-visibility graph has no negative pairs for link training")
+    negative_count = min(len(negatives), max(len(pairs), 5 * len(pairs)))
+    negatives = sorted(rng.sample(negatives, negative_count))
     positive = torch.tensor(pairs, dtype=torch.long).T
     edges = torch.cat([positive, positive.flip(0)], dim=1)
     negative = torch.tensor(sorted(negatives), dtype=torch.long).T
@@ -104,7 +159,129 @@ def train_graph(graph: dict, seed: int, epochs: int) -> tuple[dict, list[float]]
         "names": names, "embeddings": embeddings, "state_dict": model.state_dict(),
         "edge_index": edges, "feature_version": "hashed_name32",
         "training_game_ids": graph["training_game_ids"],
+        "relation": graph["relation"],
     }, history
+
+
+def shuffled_graph_identity(graph: dict, seed: int) -> dict:
+    """Break card-to-relation identity while exactly preserving graph structure."""
+    if graph["relation"] not in {"BATTLEFIELD_CO_PRESENT", "CURATED_PLUS_INDUCED"}:
+        raise ValueError("Only induced or combined graphs can be identity-shuffled")
+    names = list(graph["names"])
+    if len(names) < 3:
+        raise ValueError("Need at least three graph nodes for a shuffled control")
+    permutation = list(range(len(names)))
+    random.Random(seed).shuffle(permutation)
+    if permutation == list(range(len(names))):
+        permutation = permutation[1:] + permutation[:1]
+    shuffled = dict(graph)
+    shuffled["names"] = [names[index] for index in permutation]
+    degrees = [0] * len(names)
+    for left, right in graph["edge_index"].T.tolist():
+        degrees[left] += 1
+        degrees[right] += 1
+    shuffled_degrees = [0] * len(names)
+    for left, right in graph["edge_index"].T.tolist():
+        shuffled_degrees[left] += 1
+        shuffled_degrees[right] += 1
+    if sorted(degrees) != sorted(shuffled_degrees):
+        raise ValueError("Shuffled graph failed to preserve its degree sequence")
+    shuffled["intervention"] = {
+        "kind": "card_identity_permutation",
+        "seed": seed,
+        "base_graph_sha256": parameter_digest_from_graph(graph),
+        "permutation": permutation,
+        "degree_sequence_preserved": True,
+        "edge_count_preserved": int(graph["edge_index"].shape[1] // 2),
+    }
+    return shuffled
+
+
+def curated_combo_graph(
+    path: Path, format_name: str, card_scope: set[str] | None = None,
+) -> dict:
+    """Read format-legal curated combo hyperedges without flattening provenance."""
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, list):
+        raise ValueError("Curated combo source must contain a JSON list")
+    combos = []
+    edge_ids: dict[tuple[str, str], list[str]] = {}
+    for combo in data:
+        if combo.get("status") != "OK" or not (combo.get("legalities") or {}).get(
+            format_name.lower(), False,
+        ):
+            continue
+        names = sorted({
+            item.get("card", {}).get("name", "").strip()
+            for item in combo.get("uses", [])
+            if item.get("card", {}).get("name", "").strip()
+        })
+        if len(names) < 2 or (card_scope is not None and not set(names) <= card_scope):
+            continue
+        combo_id = combo.get("id")
+        if not isinstance(combo_id, str) or not combo_id:
+            raise ValueError("Curated combo is missing its source identifier")
+        combos.append({"combo_id": combo_id, "cards": names})
+        for pair in itertools.combinations(names, 2):
+            edge_ids.setdefault(pair, []).append(combo_id)
+    if not combos:
+        raise ValueError(f"No curated combos are legal in {format_name}")
+    edges = [
+        {"cards": list(pair), "combo_count": len(ids), "combo_ids": sorted(ids)}
+        for pair, ids in sorted(edge_ids.items())
+    ]
+    nodes = sorted({name for combo in combos for name in combo["cards"]})
+    return {
+        "schema_version": 1, "relation": "CURATED_COMBO_HYPEREDGE",
+        "interpretation": "source-asserted, format-legal combo hyperedges",
+        "source": str(path), "source_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        "format": format_name, "combos": combos, "edges": edges,
+        "names": nodes, "training_game_ids": [],
+        "negative_edge_semantics": "sampled_non_edges_not_verified_noncombos",
+    }
+
+
+def combine_graph_sources(curated: dict, induced: dict) -> dict:
+    """Merge curated hyperedge projections and training-only induced relations."""
+    if curated.get("relation") != "CURATED_COMBO_HYPEREDGE":
+        raise ValueError("The curated input must contain curated combo hyperedges")
+    if induced.get("relation") != "BATTLEFIELD_CO_PRESENT":
+        raise ValueError("The induced input must contain battlefield evidence")
+    names = sorted(set(curated["names"]) | set(induced["names"]))
+    indices = {name: i for i, name in enumerate(names)}
+    edge_sources: dict[tuple[str, str], dict] = {}
+    for edge in curated["edges"]:
+        pair = tuple(edge["cards"])
+        record = edge_sources.setdefault(pair, {"cards": list(pair), "sources": []})
+        record["sources"].append({
+            "type": "curated_combo", "combo_ids": edge["combo_ids"],
+        })
+    for edge in induced["edges"]:
+        pair = tuple(edge["cards"])
+        record = edge_sources.setdefault(pair, {"cards": list(pair), "sources": []})
+        record["sources"].append({
+            "type": "play_induced",
+            "exposed_games": edge["exposed_games"],
+            "co_present_games": edge["co_present_games"],
+            "wins": edge["wins"], "losses": edge["losses"], "draws": edge["draws"],
+        })
+    negatives = [
+        [indices[induced["names"][left]], indices[induced["names"][right]]]
+        for left, right in induced.get("negative_edges", [])
+    ]
+    return {
+        "schema_version": 1, "relation": "CURATED_PLUS_INDUCED",
+        "interpretation": (
+            "curated combo hyperedges plus controlled-seat training-game "
+            "battlefield co-presence; sources remain distinguishable"
+        ),
+        "names": names, "edges": [edge_sources[key] for key in sorted(edge_sources)],
+        "negative_edges": negatives,
+        "training_game_ids": induced["training_game_ids"],
+        "curated_source_sha256": curated["source_sha256"],
+        "induced_relation": induced["relation"],
+        "negative_edge_semantics": "observed_never_co_present_in_training_games",
+    }
 
 
 def make_model(seed: int) -> WorldModel:
@@ -338,7 +515,7 @@ class NativeLearnedPicker:
 
     def __init__(
         self, checkpoint: Path, graph_enabled: bool = True, seed: int = 0,
-        selection: str = "sample",
+        selection: str = "sample", graph_override: dict | None = None,
     ):
         if selection not in {"sample", "argmax"}:
             raise ValueError("Native selection must be sample or argmax")
@@ -355,7 +532,13 @@ class NativeLearnedPicker:
             if parameter_digest(getattr(self.model, key)) != expected:
                 raise ValueError(f"Native component digest mismatch: {key}")
         self.model.eval()
-        self.graph, self.graph_enabled = bundle["graph"], graph_enabled
+        self.graph = graph_override if graph_override is not None else bundle["graph"]
+        self.graph_enabled = graph_enabled
+        self.graph_intervention = (
+            self.graph.get("intervention", {}).get("kind")
+            or self.graph.get("relation", "none")
+            if graph_enabled else "none"
+        )
         self.graph_digest = parameter_digest_from_graph(self.graph)
         self.name = "native_learned_graph" if graph_enabled else "native_learned_no_graph"
         self.hidden = None
@@ -388,6 +571,7 @@ class NativeLearnedPicker:
         self.last_reasoning = {
             "backend": "native_trained_controller", "feature_version": FEATURE_VERSION,
             "graph_enabled": self.graph_enabled, "graph_sha256": self.graph_digest,
+            "graph_intervention": self.graph_intervention,
             "retrieved_cards": found if self.graph_enabled else [],
             "graph_score_delta_max": delta, "chosen_index": eligible[selected],
             "controller_invoked": True, "dynamics_invoked": True,
