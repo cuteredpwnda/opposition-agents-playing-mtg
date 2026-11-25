@@ -109,11 +109,16 @@ class KLControlActionPicker:
             return 0
 
         latent = latent_from_phase_rs(state, seat)
+        if any(action_kind(action) == "cancel_cast" for action in legal_actions):
+            # CancelCast is only offered while this seat has a pending
+            # announcement, including cost-payment prompts whose wire data
+            # does not expose ``pending_cast`` directly.
+            latent = latent.replace(our_pending_cast=True)
         candidates, index_map = self._filter_candidates(legal_actions)
         projected_candidates = [forecast_action(action, state, seat) for action in candidates]
         prior = np.array(passive_prior(projected_candidates), dtype=float)
 
-        self._belief = self._observe(state)
+        self._belief = self._observe(state, seat)
 
         if self.objective == "kl":
             result = self._planner.plan(latent, projected_candidates, self._belief, prior)
@@ -143,7 +148,7 @@ class KLControlActionPicker:
         chosen = index_map[local]
         self.last_reasoning["chosen_index"] = chosen
         self.last_reasoning["chosen_type"] = str(legal_actions[chosen].get("type", ""))
-        self.last_reasoning["transition_model"] = "analytic_pending_cast_v2"
+        self.last_reasoning["transition_model"] = "analytic_pending_cast_v4"
         self.last_reasoning["pending_cast"] = latent.our_pending_cast
         self.last_reasoning["fixed_damage_forecasts"] = sum(
             isinstance(action, ActionForecast) for action in projected_candidates
@@ -166,34 +171,37 @@ class KLControlActionPicker:
             keep = list(range(len(legal_actions)))
         return [legal_actions[i] for i in keep], keep
 
-    def _observe(self, state: dict[str, Any]) -> BeliefState:
-        """Bayes-update the belief from what the snapshot reveals.
+    @staticmethod
+    def _observe(state: dict[str, Any], seat: int) -> BeliefState:
+        """Condition the default belief on the current public snapshot.
 
-        Only public signals are used: how much mana the opponent has left
-        untapped and how large their graveyard is. This is the sensory
-        channel; it never enters the objective.
+        The only signal used is how many lands opponents have untapped.
+        A snapshot is a current-state observation, not fresh independent
+        evidence at every priority pass, so it is applied once to the
+        prior rather than accumulated across decisions. This is the
+        sensory channel; it never enters the objective.
         """
-        untapped = self._opponent_untapped(state)
+        belief = default_belief()
+        untapped = KLControlActionPicker._opponent_untapped(state, seat)
         if untapped <= 0:
-            return self._belief.update(
+            return belief.update(
                 lambda h: 0.4 if h in ("holds_counterspell", "holds_removal") else 1.3
             )
         if untapped >= 2:
-            return self._belief.update(
+            return belief.update(
                 lambda h: 1.4 if h in ("holds_counterspell", "holds_removal") else 0.8
             )
-        return self._belief
+        return belief
 
     @staticmethod
-    def _opponent_untapped(state: dict[str, Any]) -> int:
+    def _opponent_untapped(state: dict[str, Any], seat: int) -> int:
         objects = state.get("objects") or {}
-        active = state.get("active_player")
         count = 0
         for oid in state.get("battlefield") or []:
             obj = objects.get(str(oid)) or objects.get(oid)
             if not isinstance(obj, dict):
                 continue
-            if obj.get("controller") == active:
+            if obj.get("controller") == seat:
                 continue
             type_line = str(obj.get("type_line") or "").lower()
             if "land" in type_line and not obj.get("tapped", False):

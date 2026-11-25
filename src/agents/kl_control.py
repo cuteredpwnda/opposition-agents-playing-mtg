@@ -438,44 +438,60 @@ class BeliefSpaceKLControl:
         belief: BeliefState,
         prior: np.ndarray,
     ) -> np.ndarray:
-        """Expected terminal potential under exponentially-tilted rollouts.
+        """Belief-expected, horizon-averaged potential of tilted rollouts.
 
-        For each candidate first action we sample ``K`` continuations from
-        the passive prior, roll the transition model forward ``H`` steps
-        under a hypothesis drawn from the belief, and take the
-        path-integral (soft) aggregate of terminal potentials. Sampling
-        the hypothesis *per rollout* is what makes the estimate an
-        expectation over the belief rather than over a point estimate.
+        For each candidate first action and each hidden hypothesis we
+        sample continuations from the passive prior and roll the
+        transition model forward ``H`` steps. The free-energy (softmin)
+        operator aggregates only over *our* sampled continuations; hidden
+        hypotheses are then averaged under the belief. Soft-minimising
+        across hypotheses would let the planner choose the opponent's
+        hidden cards, an optimism bias rather than an expectation.
         """
         cfg = self.config
         n = len(actions)
         risk = np.zeros(n)
-        hyp_idx = self._sample_hypotheses(belief, cfg.rollouts)
+        groups = self._allocate_rollouts(belief, cfg.rollouts)
 
         for i, first_action in enumerate(actions):
-            scores = np.empty(cfg.rollouts)
-            for k in range(cfg.rollouts):
-                h = hyp_idx[k]
-                s = self.transition.step(state, first_action, h)
-                acc = self.preference(s)
-                discount = cfg.discount
-                for _ in range(max(0, cfg.horizon - 1)):
-                    j = int(self._rng.choice(n, p=prior))
-                    s = self.transition.step(s, actions[j], h)
-                    acc += discount * self.preference(s)
-                    discount *= cfg.discount
-                scores[k] = acc / max(1, cfg.horizon)
-            # Path-integral aggregation: the free-energy operator, not a
-            # plain mean. beta -> inf gives the best achievable
-            # continuation, beta -> 0 the passive average.
-            risk[i] = softmin(scores, cfg.beta)
+            value = 0.0
+            for h, weight, count in groups:
+                scores = np.empty(count)
+                for k in range(count):
+                    s = self.transition.step(state, first_action, h)
+                    acc = self.preference(s)
+                    discount = cfg.discount
+                    for _ in range(max(0, cfg.horizon - 1)):
+                        j = int(self._rng.choice(n, p=prior))
+                        s = self.transition.step(s, actions[j], h)
+                        acc += discount * self.preference(s)
+                        discount *= cfg.discount
+                    scores[k] = acc / max(1, cfg.horizon)
+                value += weight * softmin(scores, cfg.beta)
+            risk[i] = value
         return risk
 
-    def _sample_hypotheses(self, belief: BeliefState, k: int) -> list[str]:
+    @staticmethod
+    def _allocate_rollouts(
+        belief: BeliefState, k: int
+    ) -> list[tuple[str, float, int]]:
+        """Stratify the rollout budget over hypotheses with positive weight."""
         if not belief.hypotheses:
-            return [""] * k
-        idx = self._rng.choice(len(belief.hypotheses), size=k, p=belief.weights)
-        return [belief.hypotheses[int(i)] for i in idx]
+            return [("", 1.0, max(1, k))]
+        weights = np.asarray(belief.weights, dtype=float)
+        live = [i for i, w in enumerate(weights) if w > 0.0]
+        if not live:
+            live = list(range(len(belief.hypotheses)))
+            weights = np.full(len(belief.hypotheses), 1.0)
+        total = float(sum(weights[i] for i in live))
+        return [
+            (
+                belief.hypotheses[i],
+                float(weights[i]) / total,
+                max(1, int(round(k * float(weights[i]) / total))),
+            )
+            for i in live
+        ]
 
     # -- risk: closed-loop belief tree -----------------------------------
 

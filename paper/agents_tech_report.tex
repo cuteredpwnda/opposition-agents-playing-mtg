@@ -343,9 +343,11 @@ G(\pi) \;=\; \underbrace{\mathrm{KL}\!\big(Q(\eta\mid\pi)\,\|\,P_0(\eta)\big)}_{
 %
 Note what is \emph{not} there: no additive information-gain bonus and no
 ambiguity (likelihood-entropy) penalty. Both are surrogate terms with
-known failure modes, and neither is needed --- exploration comes from
-evaluating $\pi$ closed-loop over belief states, which is Fel'dbaum's
-dual control effect.
+known failure modes, and neither is needed --- in the formulation,
+exploration comes from evaluating $\pi$ closed-loop over belief states,
+which is Fel'dbaum's dual control effect. The current implementation does
+not yet realise this: the tree planner's continuation set is degenerate and
+MPPI does not update the belief within rollouts.
 
 \medskip\noindent\textbf{Components.}
 \begin{itemize}[leftmargin=1.2em, itemsep=1pt]
@@ -373,11 +375,14 @@ dual control effect.
 \toprule
 Engine & Behaviour \\
 \midrule
-\texttt{tree} & Exact closed-loop dynamic programming over the belief tree
-  with observation branching. Reference semantics; exponential in horizon. \\
-\texttt{mppi} & Model Predictive Path Integral. Samples $K$ continuations
-  from the passive prior, rolls each forward $H$ steps, aggregates terminal
-  potentials with the softmin operator. Default; linear in $K \cdot H$. \\
+\texttt{tree} & Closed-loop dynamic programming over the belief tree.
+  Its default continuation set is a single no-op, so it currently reduces
+  to one-step lookahead. \\
+\texttt{mppi} & Model Predictive Path Integral. For each hidden hypothesis,
+  samples continuations from the passive prior, rolls each forward $H$
+  steps and soft-minimises horizon-averaged potentials over those
+  continuations; hypotheses are then averaged under the belief. Default;
+  linear in $K \cdot H$. \\
 \bottomrule
 \end{tabular}
 \end{center}

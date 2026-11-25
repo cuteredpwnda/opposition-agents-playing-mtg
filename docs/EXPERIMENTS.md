@@ -52,6 +52,77 @@ games are execution checks, not reliability estimates or strength comparisons;
 the other registry formats remain unqualified and native shuffle/AI randomness
 is not seeded.
 
+### Protocol-v374 Modern deck benchmark (Nov 25, 2026)
+
+Each controlled deck played Modern against the native AI on VeryEasy, using
+`data/decks/benchmark/modern_azorius_control.txt`. The picker seed was 1000,
+with five games per arm, a 300-second game limit, a 2,000-action cap and one
+retry. Win counts are wins out of five scheduled games unless stated. KL-family
+rows are the final `analytic_pending_cast_v4` reruns in
+`runs/v374_deck_benchmark_20261125_v4/`. All 60 games were rules-terminal,
+with no action caps.
+
+| Controlled deck | Random | Heuristic | KL | EFE-infogain | EFE-ambiguity |
+|---|---:|---:|---:|---:|---:|
+| Mono-Red Burn | 1/5 | 1/5 | 3/5 | 3/5 | 2/5 |
+| Death's Shadow | 0/5 | 1/5 | 0/5 | 2/5 | 3/5 |
+| Hardened Scales | 8/10 | 7/10 | 5/5 | 5/5 | 4/5 |
+| Mono-Green Tron | 5/5 | 5/5 | 3/5 | 2/5 | 1/5 |
+| **Total** | 14/25 | 14/25 | 11/20 | 12/20 | 10/20 |
+
+The Hardened Scales baselines combine the original run with an identical
+rerun. The first Death's Shadow attempt was rejected before play because its
+list contained Bayou and Underground Sea. The list is now Modern-legal; the
+table reports only the legal rerun.
+
+Retained failures are part of the evidence. The original KL-family cells used
+`v2` of the transition model. Hardened Scales had 5/15 games reach the action
+cap through a `PayCost` (`SelectCards`) → `CancelCast` loop. After that fix,
+`v3` still reached the cap in 2/15 Death's Shadow games and 2/15 Tron games
+through convoke and mana-payment → `CancelCast` loops. A concurrent `v3`
+Hardened Scales rerun had 1/15 capped. The `v2` Burn cells had won 5/5 for KL
+and EFE-infogain; with five games per arm and unseeded native RNG, the `v4`
+3/5 results are not distinguishable from those earlier results. These loops
+came from a model error, not missing loop suppression. While an announcement
+was pending, confirming payment, mana abilities, convoke taps and cost-card
+selection were scored as independent actions that also gave the opponent a
+clock tick. That made `CancelCast` look strictly cheaper. Retained original,
+v3-rerun and v4 directories:
+`runs/v374_deck_benchmark_20261125/`,
+`runs/v374_deck_benchmark_20261125_rerun/` and
+`runs/v374_deck_benchmark_20261125_v4/`.
+
+Interpretation: this is one weak opponent with five games per cell, so every
+95% interval overlaps. Native shuffle and AI RNG were not seeded, and KL
+horizon planning is compared with one-step EFE scoring. The benchmark verifies
+that every arm completes games across four archetypes. It does not rank
+objectives or show that active inference beats the baselines. Tron is the
+clearest warning sign: both baselines won 10/10, while the KL family won 6/15.
+
+### Protocol-v374 native shared-graph learning campaign
+
+`scripts/run_native_learning.py` used the signed v374 server and a private data
+directory. It collected 32 training, 8 validation and 8 test games, all 48
+rules-terminal, with Mono-Red Burn and Green Stompy training decks. It trained
+seeds 0, 1 and 2 for 20 epochs and 100 graph epochs. The induced graph had 58
+edges with 1,423 evidence records. The curated Modern Spellbook graph had
+5,868 edges from 3,841 combos, and the union had 5,926 edges. Every component
+updated for every seed, and the frozen inputs did not change.
+
+Seed 0 was evaluated across 20 cells with five games each: initial or trained
+weights × `none`, curated, induced, curated-plus-induced or identity-permuted
+graph × Azorius or Hardened Scales test deck, against Mono-Red Burn. All 100
+games were rules-terminal, but the learned policy won only 2/100. One win came
+from `initial_identity_shuffled_hardened_scales` and one from
+`trained_curated_hardened_scales`. Because of this floor effect, the graph
+conditions cannot be compared, so no graph or learning benefit is shown.
+Run: `runs/native_learning_v374/20261125_150818_767626/`. Seeds 1 and 2 remain
+frozen and unevaluated. A useful graph study first needs a policy above the
+floor, such as a stronger base policy, a weaker opponent or a graph consumer
+inside the KL prior.
+
+### Running an objective ablation
+
 ```powershell
 .\.venv\Scripts\python.exe -m scripts.run_phase_rs_ablation `
     --picker kl_control --objectives kl efe_infogain efe_ambiguity `

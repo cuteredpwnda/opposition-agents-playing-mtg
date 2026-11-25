@@ -184,6 +184,69 @@ def test_latent_projection_from_phase_rs_snapshot():
     assert latent.turn == 7
 
 
+class _HiddenCostTransition:
+    """One-step model whose outcome depends only on the hidden hypothesis."""
+
+    def step(self, state: LatentState, action, hypothesis: str) -> LatentState:
+        if action == "risky":
+            delta = 10 if hypothesis == "holds_removal" else -2
+            return state.replace(our_life=state.our_life - delta)
+        return state
+
+    def observation_likelihood(self, state, action, hypothesis) -> float:
+        return 1.0
+
+
+def test_mppi_averages_hidden_hypotheses_instead_of_choosing_them():
+    planner = BeliefSpaceKLControl(
+        transition=_HiddenCostTransition(),
+        preference=PreferencePotential(),
+        config=KLControlConfig(horizon=1, beta=4.0, rollouts=16, seed=3),
+    )
+    belief = BeliefState(["holds_removal", "holds_nothing"], np.array([0.5, 0.5]))
+    result = planner.plan(_state(), ["risky", "safe"], belief, None)
+    potential = PreferencePotential()
+    expected = 0.5 * potential(_state().replace(our_life=8)) + 0.5 * potential(
+        _state().replace(our_life=20)
+    )
+    assert result.risk[0] == pytest.approx(expected, abs=1e-6)
+    # Expected cost is worse than holding, so the planner must not gamble
+    # on the opponent's hand being empty.
+    assert result.index == 1
+
+
+def _untapped_snapshot(active_player: int) -> dict:
+    return {
+        "active_player": active_player,
+        "battlefield": [1, 2, 3],
+        "objects": {
+            "1": {"controller": 0, "type_line": "Basic Land", "tapped": False},
+            "2": {"controller": 0, "type_line": "Basic Land", "tapped": False},
+            "3": {"controller": 1, "type_line": "Basic Land", "tapped": True},
+        },
+    }
+
+
+def test_picker_observes_opponent_lands_regardless_of_active_player():
+    from src.integrations.phase_rs.kl_control_picker import KLControlActionPicker
+
+    for active in (0, 1):
+        assert KLControlActionPicker._opponent_untapped(_untapped_snapshot(active), 0) == 0
+
+
+def test_picker_belief_does_not_accumulate_repeated_snapshots():
+    from src.integrations.phase_rs.kl_control_picker import KLControlActionPicker
+
+    picker = KLControlActionPicker(seed=1)
+    actions = [{"type": "PassPriority"}, {"type": "PlayLand"}]
+    snapshot = _untapped_snapshot(0)
+    picker.pick(actions, snapshot, 0)
+    first = picker._belief.weights.copy()
+    for _ in range(20):
+        picker.pick(actions, snapshot, 0)
+    np.testing.assert_allclose(picker._belief.weights, first)
+
+
 def test_passive_prior_never_recommends_conceding():
     actions = ACTIONS + [{"type": "Concede"}]
     q = passive_prior(actions)

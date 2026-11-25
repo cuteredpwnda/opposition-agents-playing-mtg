@@ -22,10 +22,13 @@ Thirty format defaults were exported from the matching engine WASM registry.
 The optimized local build was stopped under shared-memory pressure; the
 verified server is not bundled. Historical v106 results are not automatically
 validated on this revision. Model-family and controlled experiments remain queued.
-The non-live suite passed 1,081 tests with 12 skips when the reproducible
-Windows shutdown-crash test was deselected; including it reports 1,082 passed
-but exits abnormally after the summary. Ten live-Ollama-dependent tests were
-not run.
+After the KL-control fixes, the full `tests/` suite passed 1,118 tests with 12
+skips. The reproducible Windows shutdown-crash test
+`test_dream_trainer_runs_without_failure` was deselected, and local Ollama was
+available. The earlier v374 run with that test included reported 1,082 passed
+but exited abnormally after the summary. A four-deck Modern benchmark and a
+native shared-graph learning campaign ran on v374; see K2, K12 and
+`docs/EXPERIMENTS.md`.
 
 **October 5 continuation:** phase-rs checkout updated to upstream
 `1191bba65048c83fbbd5a56dfd5f419ee0ead67a`; Python bridge aligned to
@@ -1673,6 +1676,30 @@ items stay for traceability.
       models over 7B base parameters from default sweeps. Registry documentation
       and tests now distinguish catalogue membership from sweep eligibility.
 
+- [x] **KL-control correctness audit and v374 deck benchmark (Nov 25, 2026)**
+      — fixed three planner defects:
+      - MPPI rollouts are now stratified by hidden hypothesis, so the softmin
+        no longer lets the planner choose the opponent's cards;
+      - opponent-land observation uses the picker seat, not `active_player`;
+      - the belief is rebuilt for each decision instead of reapplying evidence.
+      `MTGTransitionModel.step` now treats every non-cancel action during a
+      pending announcement as a continuation: confirming payment, mana
+      abilities, convoke and `PayCost` selection. Previously, cancelling looked
+      cheaper, causing cast/cancel action-cap loops on v374. `CancelCast`
+      legality marks a pending announcement when the wire data omits it; the
+      trace label is `analytic_pending_cast_v4`. The Death's Shadow list is now
+      Modern-legal. The four-deck Modern benchmark used five games per arm
+      against VeryEasy Azorius Control. The final KL-family cells completed
+      60/60 games with no caps; v2/v3 failures are retained. Native
+      shared-graph learning also ran end to end. All 48 collection games were
+      terminal, but seed-0 evaluation won 2/100, so no graph benefit is shown.
+      Results and caveats are in `docs/EXPERIMENTS.md`. Files touched:
+      `src/agents/kl_control.py`, `src/agents/mtg_transition.py`,
+      `src/integrations/phase_rs/kl_control_picker.py`,
+      `tests/test_kl_control.py`, `tests/test_pending_cast_model.py`,
+      `docs/ACTIVE_INFERENCE.md`, `paper/*.tex` and
+      `data/decks/modern/modern_deaths_shadow.txt`.
+
 ### Queue — High Priority
 
 **Publication gate (Oct 5):** PR #2 is public and awaits the protected-main
@@ -1771,6 +1798,16 @@ losses, 7/11 turns, no cancellation loops). Preserve the original and
 modal-only intermediate failures. General card/mode/cost semantics, targets
 for effects beyond fixed damage and the 20-game calibration gate remain
 pending; the completion check alone does not qualify a strength campaign.
+
+**v374 four-deck benchmark (Nov 25):** after the MPPI, observation and
+pending-payment fixes, KL, EFE-infogain and EFE-ambiguity completed 60/60
+Modern games, winning 11/20, 12/20 and 10/20. Random and heuristic each won
+14/25. Every interval overlaps. On Tron, the KL family won 6/15, while both
+baselines won 10/10, which needs diagnosis. Next steps are noisy-TV and
+scotophobia instrumentation, larger cells against a stronger opponent and
+engine RNG seeding. None of the running planners implements dual-control
+exploration: tree continuations are `[None]`, and MPPI does not branch the
+belief.
 
 #### K3 — Migrate the ABox importer onto the v2.0 patterns ✅ Implemented
 
@@ -2004,6 +2041,13 @@ checkpoints/data cannot qualify v4 because the feature contract changed.
 Cross-producer replication, powered all-seed comparisons, reward-optimizing
 self-play, multi-seat control and native RNG remain queued. Observed co-presence
 is not strategic synergy, causal evidence or rules truth.
+
+**v374 campaign (Nov 25):** the run collected 32/8/8 terminal games and
+trained seeds 0–2. It built 58 induced edges and a 5,926-edge combined graph.
+Seed 0 evaluated 100/100 terminal games across 20 cells, but the policy won
+only 2/100. This floor makes graph conditions uninformative. Before evaluating
+seeds 1 and 2 or making any RQ3/RQ4 claim, move the policy off the floor with
+a stronger base policy, weaker opponent or graph-informed KL prior.
 
 #### H1 — Continuous-effects layer system (CR 613) ✅ Implemented
 

@@ -68,6 +68,41 @@ def test_native_reproducer_does_not_tie_cancel_with_every_choice(objective, seed
     assert actions[0] == {"type": "CancelCast"}
 
 
+@pytest.mark.parametrize("objective", ["kl", "efe_infogain", "efe_ambiguity"])
+@pytest.mark.parametrize("seed", [7, 8])
+def test_pay_cost_selection_is_preferred_over_cancel_without_pending_wire_data(
+    objective, seed,
+):
+    # Native v374 reproducer: an activation's PayCost prompt carries no
+    # ``pending_cast`` field, so only CancelCast legality reveals the
+    # pending announcement.
+    state = snapshot()
+    state["waiting_for"] = {"type": "PayCost", "data": {"player": 0}}
+    actions = [{"type": "SelectCards", "data": {"cards": [i]}} for i in range(4)]
+    actions.append({"type": "CancelCast"})
+    picker = KLControlActionPicker(seed=seed, objective=objective, rollouts=16)
+    assert picker.pick(actions, state, 0) != 4
+    assert picker.last_reasoning["pending_cast"] is True
+
+
+@pytest.mark.parametrize("objective", ["kl", "efe_infogain", "efe_ambiguity"])
+@pytest.mark.parametrize("seed", [7, 8])
+@pytest.mark.parametrize("types", [
+    ["PassPriority", "CancelCast"],
+    ["PassPriority", "ActivateAbility", "CancelCast"],
+    ["PassPriority", "CancelCast", "TapForConvoke"],
+])
+def test_mana_payment_continuations_are_preferred_over_cancel(objective, seed, types):
+    # Native v374 reproducers: confirming payment (PassPriority), mana
+    # abilities and convoke taps were scored as idle actions that pay the
+    # opponent clock, so CastSpell -> CancelCast repeated until the action cap.
+    state = snapshot()
+    state["waiting_for"] = {"type": "ManaPayment", "data": {"player": 0}}
+    actions = [{"type": t} for t in types]
+    picker = KLControlActionPicker(seed=seed, objective=objective, rollouts=16)
+    assert types[picker.pick(actions, state, 0)] != "CancelCast"
+
+
 def test_cancel_remains_available_when_it_is_the_only_native_choice():
     picker = KLControlActionPicker(seed=7)
     assert picker.pick([{"type": "CancelCast"}], snapshot(), 0) == 0

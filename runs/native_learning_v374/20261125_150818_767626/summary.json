@@ -1,0 +1,511 @@
+{
+  "status": "completed_development_pipeline",
+  "changed_inputs": [],
+  "training_seeds": [
+    0,
+    1,
+    2
+  ],
+  "collection": {
+    "train": {
+      "scheduled": 32,
+      "completed": 32
+    },
+    "validation": {
+      "scheduled": 8,
+      "completed": 8
+    },
+    "test": {
+      "scheduled": 8,
+      "completed": 8
+    }
+  },
+  "graph_edges": 58,
+  "graph_evidence": 1423,
+  "curated_graph_edges": 5868,
+  "curated_graph_combos": 3841,
+  "curated_plus_induced_edges": 5926,
+  "evaluation": {
+    "seed0_initial_none_azorius": {
+      "games": 5,
+      "completed_games": 5,
+      "wins": 0,
+      "losses": 5,
+      "draws": 0,
+      "incomplete_games": 0,
+      "completion_rate": 1.0,
+      "win_rate": 0.0,
+      "win_rate_ci95": [
+        0.0,
+        0.43448246478317476
+      ],
+      "reason_counts": {
+        "game_rules": 5
+      },
+      "decision_count": 674,
+      "decision_latency_sec": {
+        "p50": 0.0060772499982704176,
+        "p95": 0.011886900000718015
+      },
+      "candidate_coverage_mean": null,
+      "shortlisted_decisions": 0
+    },
+    "seed0_initial_none_hardened_scales": {
+      "games": 5,
+      "completed_games": 5,
+      "wins": 0,
+      "losses": 5,
+      "draws": 0,
+      "incomplete_games": 0,
+      "completion_rate": 1.0,
+      "win_rate": 0.0,
+      "win_rate_ci95": [
+        0.0,
+        0.43448246478317476
+      ],
+      "reason_counts": {
+        "game_rules": 5
+      },
+      "decision_count": 783,
+      "decision_latency_sec": {
+        "p50": 0.006102999999711756,
+        "p95": 0.011832720000529661
+      },
+      "candidate_coverage_mean": null,
+      "shortlisted_decisions": 0
+    },
+    "seed0_initial_curated_azorius": {
+      "games": 5,
+      "completed_games": 5,
+      "wins": 0,
+      "losses": 5,
+      "draws": 0,
+      "incomplete_games": 0,
+      "completion_rate": 1.0,
+      "win_rate": 0.0,
+      "win_rate_ci95": [
+        0.0,
+        0.43448246478317476
+      ],
+      "reason_counts": {
+        "game_rules": 5
+      },
+      "decision_count": 545,
+      "decision_latency_sec": {
+        "p50": 0.007175499998993473,
+        "p95": 0.014305119998607547
+      },
+      "candidate_coverage_mean": null,
+      "shortlisted_decisions": 0
+    },
+    "seed0_initial_curated_hardened_scales": {
+      "games": 5,
+      "completed_games": 5,
+      "wins": 0,
+      "losses": 5,
+      "draws": 0,
+      "incomplete_games": 0,
+      "completion_rate": 1.0,
+      "win_rate": 0.0,
+      "win_rate_ci95": [
+        0.0,
+        0.43448246478317476
+      ],
+      "reason_counts": {
+        "game_rules": 5
+      },
+      "decision_count": 778,
+      "decision_latency_sec": {
+        "p50": 0.007105750000846456,
+        "p95": 0.01280661499986308
+      },
+      "candidate_coverage_mean": null,
+      "shortlisted_decisions": 0
+    },
+    "seed0_initial_induced_azorius": {
+      "games": 5,
+      "completed_games": 5,
+      "wins": 0,
+      "losses": 5,
+      "draws": 0,
+      "incomplete_games": 0,
+      "completion_rate": 1.0,
+      "win_rate": 0.0,
+      "win_rate_ci95": [
+        0.0,
+        0.43448246478317476
+      ],
+      "reason_counts": {
+        "game_rules": 5
+      },
+      "decision_count": 628,
+      "decision_latency_sec": {
+        "p50": 0.0060801499985245755,
+        "p95": 0.010759754998071
+      },
+      "candidate_coverage_mean": null,
+      "shortlisted_decisions": 0
+    },
+    "seed0_initial_induced_hardened_scales": {
+      "games": 5,
+      "completed_games": 5,
+      "wins": 0,
+      "losses": 5,
+      "draws": 0,
+      "incomplete_games": 0,
+      "completion_rate": 1.0,
+      "win_rate": 0.0,
+      "win_rate_ci95": [
+        0.0,
+        0.43448246478317476
+      ],
+      "reason_counts": {
+        "game_rules": 5
+      },
+      "decision_count": 790,
+      "decision_latency_sec": {
+        "p50": 0.006094049998864648,
+        "p95": 0.012265165000098931
+      },
+      "candidate_coverage_mean": null,
+      "shortlisted_decisions": 0
+    },
+    "seed0_initial_curated_plus_induced_azorius": {
+      "games": 5,
+      "completed_games": 5,
+      "wins": 0,
+      "losses": 5,
+      "draws": 0,
+      "incomplete_games": 0,
+      "completion_rate": 1.0,
+      "win_rate": 0.0,
+      "win_rate_ci95": [
+        0.0,
+        0.43448246478317476
+      ],
+      "reason_counts": {
+        "game_rules": 5
+      },
+      "decision_count": 810,
+      "decision_latency_sec": {
+        "p50": 0.007306699999389821,
+        "p95": 0.013725589998466597
+      },
+      "candidate_coverage_mean": null,
+      "shortlisted_decisions": 0
+    },
+    "seed0_initial_curated_plus_induced_hardened_scales": {
+      "games": 5,
+      "completed_games": 5,
+      "wins": 0,
+      "losses": 5,
+      "draws": 0,
+      "incomplete_games": 0,
+      "completion_rate": 1.0,
+      "win_rate": 0.0,
+      "win_rate_ci95": [
+        0.0,
+        0.43448246478317476
+      ],
+      "reason_counts": {
+        "game_rules": 5
+      },
+      "decision_count": 946,
+      "decision_latency_sec": {
+        "p50": 0.007756599999993341,
+        "p95": 0.015113325001948397
+      },
+      "candidate_coverage_mean": null,
+      "shortlisted_decisions": 0
+    },
+    "seed0_initial_identity_shuffled_azorius": {
+      "games": 5,
+      "completed_games": 5,
+      "wins": 0,
+      "losses": 5,
+      "draws": 0,
+      "incomplete_games": 0,
+      "completion_rate": 1.0,
+      "win_rate": 0.0,
+      "win_rate_ci95": [
+        0.0,
+        0.43448246478317476
+      ],
+      "reason_counts": {
+        "game_rules": 5
+      },
+      "decision_count": 727,
+      "decision_latency_sec": {
+        "p50": 0.007745200000499608,
+        "p95": 0.015473410001868606
+      },
+      "candidate_coverage_mean": null,
+      "shortlisted_decisions": 0
+    },
+    "seed0_initial_identity_shuffled_hardened_scales": {
+      "games": 5,
+      "completed_games": 5,
+      "wins": 1,
+      "losses": 4,
+      "draws": 0,
+      "incomplete_games": 0,
+      "completion_rate": 1.0,
+      "win_rate": 0.2,
+      "win_rate_ci95": [
+        0.03622410863243014,
+        0.6244653702374747
+      ],
+      "reason_counts": {
+        "game_rules": 5
+      },
+      "decision_count": 802,
+      "decision_latency_sec": {
+        "p50": 0.0077039999996486586,
+        "p95": 0.014783644998715316
+      },
+      "candidate_coverage_mean": null,
+      "shortlisted_decisions": 0
+    },
+    "seed0_trained_none_azorius": {
+      "games": 5,
+      "completed_games": 5,
+      "wins": 0,
+      "losses": 5,
+      "draws": 0,
+      "incomplete_games": 0,
+      "completion_rate": 1.0,
+      "win_rate": 0.0,
+      "win_rate_ci95": [
+        0.0,
+        0.43448246478317476
+      ],
+      "reason_counts": {
+        "game_rules": 5
+      },
+      "decision_count": 750,
+      "decision_latency_sec": {
+        "p50": 0.006555899999511894,
+        "p95": 0.014863915000933038
+      },
+      "candidate_coverage_mean": null,
+      "shortlisted_decisions": 0
+    },
+    "seed0_trained_none_hardened_scales": {
+      "games": 5,
+      "completed_games": 5,
+      "wins": 0,
+      "losses": 5,
+      "draws": 0,
+      "incomplete_games": 0,
+      "completion_rate": 1.0,
+      "win_rate": 0.0,
+      "win_rate_ci95": [
+        0.0,
+        0.43448246478317476
+      ],
+      "reason_counts": {
+        "game_rules": 5
+      },
+      "decision_count": 1020,
+      "decision_latency_sec": {
+        "p50": 0.006017750001774402,
+        "p95": 0.012850275000891994
+      },
+      "candidate_coverage_mean": null,
+      "shortlisted_decisions": 0
+    },
+    "seed0_trained_curated_azorius": {
+      "games": 5,
+      "completed_games": 5,
+      "wins": 0,
+      "losses": 5,
+      "draws": 0,
+      "incomplete_games": 0,
+      "completion_rate": 1.0,
+      "win_rate": 0.0,
+      "win_rate_ci95": [
+        0.0,
+        0.43448246478317476
+      ],
+      "reason_counts": {
+        "game_rules": 5
+      },
+      "decision_count": 983,
+      "decision_latency_sec": {
+        "p50": 0.007065999998303596,
+        "p95": 0.012126860000716987
+      },
+      "candidate_coverage_mean": null,
+      "shortlisted_decisions": 0
+    },
+    "seed0_trained_curated_hardened_scales": {
+      "games": 5,
+      "completed_games": 5,
+      "wins": 1,
+      "losses": 4,
+      "draws": 0,
+      "incomplete_games": 0,
+      "completion_rate": 1.0,
+      "win_rate": 0.2,
+      "win_rate_ci95": [
+        0.03622410863243014,
+        0.6244653702374747
+      ],
+      "reason_counts": {
+        "game_rules": 5
+      },
+      "decision_count": 843,
+      "decision_latency_sec": {
+        "p50": 0.007299099997908343,
+        "p95": 0.01612251000187825
+      },
+      "candidate_coverage_mean": null,
+      "shortlisted_decisions": 0
+    },
+    "seed0_trained_induced_azorius": {
+      "games": 5,
+      "completed_games": 5,
+      "wins": 0,
+      "losses": 5,
+      "draws": 0,
+      "incomplete_games": 0,
+      "completion_rate": 1.0,
+      "win_rate": 0.0,
+      "win_rate_ci95": [
+        0.0,
+        0.43448246478317476
+      ],
+      "reason_counts": {
+        "game_rules": 5
+      },
+      "decision_count": 1131,
+      "decision_latency_sec": {
+        "p50": 0.006297999996604631,
+        "p95": 0.012704050001048017
+      },
+      "candidate_coverage_mean": null,
+      "shortlisted_decisions": 0
+    },
+    "seed0_trained_induced_hardened_scales": {
+      "games": 5,
+      "completed_games": 5,
+      "wins": 0,
+      "losses": 5,
+      "draws": 0,
+      "incomplete_games": 0,
+      "completion_rate": 1.0,
+      "win_rate": 0.0,
+      "win_rate_ci95": [
+        0.0,
+        0.43448246478317476
+      ],
+      "reason_counts": {
+        "game_rules": 5
+      },
+      "decision_count": 790,
+      "decision_latency_sec": {
+        "p50": 0.006105150001531001,
+        "p95": 0.012397840001358417
+      },
+      "candidate_coverage_mean": null,
+      "shortlisted_decisions": 0
+    },
+    "seed0_trained_curated_plus_induced_azorius": {
+      "games": 5,
+      "completed_games": 5,
+      "wins": 0,
+      "losses": 5,
+      "draws": 0,
+      "incomplete_games": 0,
+      "completion_rate": 1.0,
+      "win_rate": 0.0,
+      "win_rate_ci95": [
+        0.0,
+        0.43448246478317476
+      ],
+      "reason_counts": {
+        "game_rules": 5
+      },
+      "decision_count": 1405,
+      "decision_latency_sec": {
+        "p50": 0.007512799998949049,
+        "p95": 0.013691760001529473
+      },
+      "candidate_coverage_mean": null,
+      "shortlisted_decisions": 0
+    },
+    "seed0_trained_curated_plus_induced_hardened_scales": {
+      "games": 5,
+      "completed_games": 5,
+      "wins": 0,
+      "losses": 5,
+      "draws": 0,
+      "incomplete_games": 0,
+      "completion_rate": 1.0,
+      "win_rate": 0.0,
+      "win_rate_ci95": [
+        0.0,
+        0.43448246478317476
+      ],
+      "reason_counts": {
+        "game_rules": 5
+      },
+      "decision_count": 682,
+      "decision_latency_sec": {
+        "p50": 0.007117700002709171,
+        "p95": 0.01444621999926312
+      },
+      "candidate_coverage_mean": null,
+      "shortlisted_decisions": 0
+    },
+    "seed0_trained_identity_shuffled_azorius": {
+      "games": 5,
+      "completed_games": 5,
+      "wins": 0,
+      "losses": 5,
+      "draws": 0,
+      "incomplete_games": 0,
+      "completion_rate": 1.0,
+      "win_rate": 0.0,
+      "win_rate_ci95": [
+        0.0,
+        0.43448246478317476
+      ],
+      "reason_counts": {
+        "game_rules": 5
+      },
+      "decision_count": 865,
+      "decision_latency_sec": {
+        "p50": 0.006813600000896258,
+        "p95": 0.013127619999431768
+      },
+      "candidate_coverage_mean": null,
+      "shortlisted_decisions": 0
+    },
+    "seed0_trained_identity_shuffled_hardened_scales": {
+      "games": 5,
+      "completed_games": 5,
+      "wins": 0,
+      "losses": 5,
+      "draws": 0,
+      "incomplete_games": 0,
+      "completion_rate": 1.0,
+      "win_rate": 0.0,
+      "win_rate_ci95": [
+        0.0,
+        0.43448246478317476
+      ],
+      "reason_counts": {
+        "game_rules": 5
+      },
+      "decision_count": 748,
+      "decision_latency_sec": {
+        "p50": 0.006081949999497738,
+        "p95": 0.009295870000460126
+      },
+      "candidate_coverage_mean": null,
+      "shortlisted_decisions": 0
+    }
+  },
+  "eligible_for_strength_claims": false
+}

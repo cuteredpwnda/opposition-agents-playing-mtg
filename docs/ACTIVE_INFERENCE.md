@@ -121,14 +121,19 @@ pointless" without encoding any preference.
 
 - **`tree`** — exact closed-loop dynamic programming over the belief tree with
   observation branching. Reference semantics. Exponential in horizon.
-- **`mppi`** — Model Predictive Path Integral. For each candidate first action,
-  sample $K$ continuations from the passive prior, roll each forward $H$ steps
-  under a hypothesis drawn from the belief, aggregate terminal potentials with
-  the softmin operator. Linear in $K \cdot H$. **Default.** This is the same
-  algorithm that runs thousands of parallel rollouts on GPUs in robotics.
+- **`mppi`** — Model Predictive Path Integral. For each candidate first action
+  and each hidden hypothesis, sample continuations from the passive prior, roll
+  each forward $H$ steps, and aggregate horizon-averaged potentials with the
+  softmin operator. Hypotheses are then averaged under the belief. Linear in
+  $K \cdot H$. **Default.** This is the same algorithm that runs thousands of
+  parallel rollouts on GPUs in robotics.
 
-Sampling the hypothesis *per rollout* is what makes the estimate an expectation
-over the belief rather than over a point estimate.
+The softmin ranges only over *our* sampled continuations. The rollout budget is
+stratified across hypotheses and their values are belief-weighted. Applying the
+softmin across hypotheses as well (the pre-Nov 25 implementation) let the
+planner effectively choose the opponent's hidden cards, an optimism bias rather
+than an expectation. MPPI does not update the belief inside a rollout, so it
+plans open-loop with respect to hidden information.
 
 **Bounded rationality.** Deliberation is not free. The hard `min` is replaced by
 the softmin (free-energy) operator and policy selection follows
@@ -178,9 +183,11 @@ than as an additive bonus with a tuned coefficient.
 ### 3.3 `src/integrations/phase_rs/kl_control_picker.py` — the driver
 
 Implements the phase-rs `ActionPicker` protocol. Filters `Concede` unless it is
-the only legal option. Bayes-updates the belief from **public signals only**
-(opponent untapped mana), which is the sensory channel and never enters the
-objective.
+the only legal option. Conditions the default belief on **public signals only**
+(untapped lands controlled by opponents of the picker's seat), which is the
+sensory channel and never enters the objective. The snapshot is applied once per
+decision rather than accumulated, because repeated priority passes re-observe the
+same state rather than supplying independent evidence.
 
 Selects one of three objectives:
 
@@ -290,18 +297,29 @@ layer needs a live server to import or be tested.
 
 **Not done / caveats:**
 
-1. **No live evaluation.** Every claim about relative performance is a
-   prediction, not a result. The ablation in §6 is designed but unrun.
+1. **Only a small, weak-opponent evaluation exists.** The v374 four-deck
+   Modern benchmark is described in `docs/EXPERIMENTS.md`: five games per
+   arm against VeryEasy Azorius Control, with every confidence interval
+   overlapping. It shows that all three objectives complete games. It does not
+   rank them, and the §6 pathology instrumentation has not been run.
 2. **The transition model is analytic, not learned.** A path-integral controller
    is only useful because rollouts are cheap, so calling back into the rules
    engine $|A| \times K \times H$ times per decision is not viable. The intended
    replacement is a JEPA decoder behind the same `TransitionModel` protocol.
    Until then, plan quality is bounded by a ~60-line hand-written forward model.
+   While a cast or activation is pending, every non-cancel action is modelled
+   as continuing it. This includes confirming payment with `PassPriority`, mana
+   abilities, convoke and `PayCost` selection. Scoring those actions as
+   independent passes or activations made `CancelCast` look cheaper and caused
+   cast/cancel loops on v374.
 3. **The `tree` planner's continuation set is degenerate.** `_candidate_continuations()`
    returns `[None]`, so exact closed-loop DP currently degrades to a one-step
    lookahead. It does not fabricate illegal lines, but it also does not exercise
    the deep belief branching that produces the most interesting dual-control
-   behaviour. MPPI is the only path that really explores.
+   behaviour. MPPI does not branch on observations either, so **no planner that
+   currently runs in games exhibits the dual-control exploration effect**; the
+   claim that exploration falls out of closed-loop planning is a property of the
+   formulation, not yet of this implementation.
 4. **Preference weights are unfitted.**
 5. **The belief is coarse** (4 hypotheses, no decklist conditioning). The
    existing `OpponentModel` particle filter is not yet wired in.

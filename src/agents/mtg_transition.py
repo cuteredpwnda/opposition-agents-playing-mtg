@@ -258,6 +258,13 @@ class MTGTransitionModel:
     def step(self, state: LatentState, action: Any, hypothesis: str) -> LatentState:
         c = self.config
         kind = action_kind(action)
+        if state.our_pending_cast and kind not in {"cancel_cast", "concede"}:
+            # While an announcement is pending, every other legal action
+            # (mana abilities, convoke taps, cost-card selection, confirming
+            # payment via PassPriority) continues it. Scoring those as
+            # independent activations/passes that pay the opponent clock made
+            # cancellation look strictly cheaper and caused cast/cancel loops.
+            kind = "cast_choice"
         if kind == "cancel_cast":
             return state.replace(our_pending_cast=False)
         if kind == "cast_choice" and not state.our_pending_cast:
