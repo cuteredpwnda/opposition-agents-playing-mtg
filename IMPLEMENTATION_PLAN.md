@@ -1,14 +1,31 @@
 # Implementation Plan — Single Source of Truth
 
 > **opposition-agents-playing-mtg**
-> Last updated: 2026-10-08
+> Last updated: 2026-11-25
 
 This document is the **single source of truth** for what has been implemented,
 what is in progress, and what remains. It supersedes the phase descriptions in
 `PLAN.md`, `ARCHITECTURE.md`, and the presentation slides for tracking purposes
 — those documents retain their value as design rationale and research context.
 
-## Status Snapshot — October 2026
+## Status Snapshot — November 2026
+
+**November 25 phase-rs update:** the checkout is pinned to
+`b42447bc3611273fb2413fa95d22a9e5ff623c01` and the bridge targets Full
+protocol v374. An official signed Windows server for this revision passed
+the handshake and completed one game each in Standard, Pioneer, Modern,
+Legacy and four-player Commander. A separate Commander smoke reached its
+six-turn cap and is not terminal. The
+`runs/phase_rs_v374_smoke_20261125/manifest.json` records trace and input
+hashes; the other formats and replicated reliability remain unqualified.
+Thirty format defaults were exported from the matching engine WASM registry.
+The optimized local build was stopped under shared-memory pressure; the
+verified server is not bundled. Historical v106 results are not automatically
+validated on this revision. Model-family and controlled experiments remain queued.
+The non-live suite passed 1,081 tests with 12 skips when the reproducible
+Windows shutdown-crash test was deselected; including it reports 1,082 passed
+but exits abnormally after the summary. Ten live-Ollama-dependent tests were
+not run.
 
 **October 5 continuation:** phase-rs checkout updated to upstream
 `1191bba65048c83fbbd5a56dfd5f419ee0ead67a`; Python bridge aligned to
@@ -1635,6 +1652,27 @@ items stay for traceability.
     - `scripts/phase_rs_rollout_sweep.py`
     - `scripts/train_pipeline.py`
 
+- [x] **Protocol v374 migration and format snapshot (Nov 25, 2026)** —
+      `client.py`, `server_process.py` and `run_native_learning.py` check the
+      new protocol/build identity and handle new message variants. The
+      engine-authored `format_defaults.json` was regenerated with the WASM
+      option in `scripts/export_phase_rs_formats.py`. Native learning and
+      evaluation now freeze the actual v374 data directory, including absent
+      optional inputs, and disable server data downloads during campaigns.
+      Focused protocol/format/server tests passed. A signed matching Windows
+      server completed single Standard, Pioneer, Modern, Legacy and Commander
+      games; a separate Commander smoke reached its cap. The source build was
+      not completed; single games are not a strength or reliability study.
+
+- [x] **Current Standard smoke deck (Nov 25, 2026)** — replaced banned and
+      rotated cards in `data/decks/standard/standard_mono_red_aggro.txt`; the
+      revised list was accepted by v374 and completed a Standard mirror.
+
+- [x] **LLM sweep budget contract (Nov 25, 2026)** — the catalogue retains
+      explicit access to `lfm2.5-8b`, while `list_llms` continues to exclude
+      models over 7B base parameters from default sweeps. Registry documentation
+      and tests now distinguish catalogue membership from sweep eligibility.
+
 ### Queue — High Priority
 
 **Publication gate (Oct 5):** PR #2 is public and awaits the protected-main
@@ -1645,6 +1683,20 @@ completes 18/18 games. Continue selected sourced-deck qualification mirrors.
 Record unstarted/incomplete
 cells and stop advancement when completion or semantics gates fail. These
 are feasibility experiments, not the full powered study.
+
+**v374 follow-up:** qualify a locally reproducible server build on a machine
+with sufficient memory, then repeat representative model-family and
+full-game Commander reliability checks on the new pin before advancing to
+larger comparisons. Keep prior v106 evidence separate from v374 results.
+
+**Windows test teardown follow-up:** the non-live suite reported 1,082 passed
+and 12 skipped but exited with `0xC0000409` after its summary. The existing
+`tests/test_world_model_pytest.py::test_dream_trainer_runs_without_failure`
+reproduces the abnormal exit in isolation, even with native threads limited
+to one. The remaining non-live suite exited successfully with 1,081 passed,
+12 skipped and this one test deselected. Diagnose the shutdown fault before
+claiming a clean full-suite run; the ten live-Ollama-dependent tests were
+excluded from both runs.
 
 The K-series tracks current research/runtime blockers and evaluation work.
 The completed H-series below records the legacy Python engine's structural
@@ -1664,7 +1716,7 @@ $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.e
 $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
 $dev = Join-Path $vs 'VC\Auxiliary\Build\vcvars64.bat'
 $phase = Join-Path (Get-Location) 'external\phase-rs'
-& $env:ComSpec /c "call `"$dev`" >nul && cd /d `"$phase`" && cargo build --locked --release --bin phase-server"
+& $env:ComSpec /c "call `"$dev`" >nul && cd /d `"$phase`" && cargo build --locked --profile server-release --bin phase-server"
 ```
 
 Completion requires a successful build and live protocol/game smoke, not
@@ -1678,10 +1730,10 @@ outcomes versus Blue Control/VeryEasy (three losses, no incomplete games).
 This sample cannot establish differences between objectives. Run all three arms
 with `--picker kl_control --objectives kl efe_infogain efe_ambiguity`.
 See section 6 and `docs/EXPERIMENTS.md` for the executable command.
-Benchmark validation also needs an explicit model-size policy: the existing
-registry contains `lfm2.5-8b` while its tests assert every entry fits a 7B
-budget. Resolve that pre-existing contradiction before publishing a
-budget-matched LLM/decision-model comparison.
+The LLM catalogue includes the explicitly addressable `lfm2.5-8b`, but
+default registry sweeps exclude models above 7B base parameters. A published
+budget-matched LLM/decision-model comparison still needs an explicitly
+specified and audited model-size policy.
 
 All three objectives are already implemented behind one flag
 (`src/integrations/phase_rs/kl_control_picker.py --objective

@@ -384,6 +384,49 @@ def test_campaign_reuses_its_frozen_server_binary(tmp_path):
         campaign_server_binary({"file_sha256": {}})
 
 
+def test_native_data_snapshot_tracks_actual_directory_and_optional_files(tmp_path, monkeypatch):
+    data = tmp_path / "native-data"
+    data.mkdir()
+    with pytest.raises(ValueError, match="lacks card-data.json"):
+        run_native_learning.snapshot_server_data(data)
+    (data / "card-data.json").write_text("cards", encoding="utf-8")
+    (data / "draft-pools.json").write_text("drafts", encoding="utf-8")
+    monkeypatch.setenv("PHASE_DATA_DIR", str(data))
+
+    assert run_native_learning.server_data_dir() == data.resolve()
+    snapshot = run_native_learning.snapshot_server_data(data)
+    assert snapshot["combo-table.json"] is None
+    assert run_native_learning.changed_server_data(data, snapshot) == []
+
+    (data / "card-data.json").write_text("changed", encoding="utf-8")
+    (data / "combo-table.json").write_text("new table", encoding="utf-8")
+    assert set(run_native_learning.changed_server_data(data, snapshot)) == {
+        str(data / "card-data.json"), str(data / "combo-table.json"),
+    }
+    with pytest.raises(ValueError, match="record all native data inputs"):
+        run_native_learning.changed_server_data(data, {"card-data.json": "digest"})
+
+
+def test_campaign_loader_rejects_changed_server_data(tmp_path):
+    campaign = tmp_path / "campaign"
+    campaign.mkdir()
+    data = tmp_path / "data"
+    data.mkdir()
+    (data / "card-data.json").write_text("cards", encoding="utf-8")
+    snapshot = run_native_learning.snapshot_server_data(data)
+    (campaign / "manifest.json").write_text(__import__("json").dumps({
+        "feature_version": "native_observation_action_v4", "file_sha256": {},
+        "server_data": {"directory": str(data), "files": snapshot},
+    }), encoding="utf-8")
+    (campaign / "summary.json").write_text(__import__("json").dumps({
+        "status": "completed_development_pipeline", "changed_inputs": [],
+    }), encoding="utf-8")
+    load_campaign(campaign)
+    (data / "ai-commander-decks.json").write_text("override", encoding="utf-8")
+    with pytest.raises(ValueError, match="frozen inputs have changed"):
+        load_campaign(campaign)
+
+
 def test_retired_summary_training_and_missing_native_checkpoint_are_rejected():
     from scripts.run_phase_rs_ablation import _make_picker
     from scripts.train_pipeline import stage_4_1_phase_rs_traces

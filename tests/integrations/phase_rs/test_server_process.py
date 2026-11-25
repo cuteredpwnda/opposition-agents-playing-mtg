@@ -51,13 +51,25 @@ def _free_port() -> int:
 
 
 def test_server_release_is_preferred_over_older_build_profiles(tmp_path):
-        binaries = []
-        for profile in ("release", "server-release"):
-            binary = tmp_path / "target" / profile / _binary_name()
-            binary.parent.mkdir(parents=True)
-            binary.touch()
-            binaries.append(binary)
-        assert _resolve_binary(tmp_path) == binaries[1]
+    binaries = []
+    for profile in ("release", "server-release"):
+        binary = tmp_path / "target" / profile / _binary_name()
+        binary.parent.mkdir(parents=True)
+        binary.touch()
+        binaries.append(binary)
+    assert _resolve_binary(tmp_path) == binaries[1]
+
+
+def test_server_can_disable_data_download(tmp_path):
+    binary = tmp_path / _binary_name()
+    command, _ = PhaseServerProcess(
+        binary=binary, no_data_download=True, bind_address="127.0.0.1",
+    )._build_command()
+    assert "--no-data-download" in command
+    assert command[command.index("--bind") + 1] == "127.0.0.1"
+    default_command, _ = PhaseServerProcess(binary=binary)._build_command()
+    assert "--no-data-download" not in default_command
+    assert "--bind" not in default_command
 
 
 @requires_binary

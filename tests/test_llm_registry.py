@@ -12,14 +12,19 @@ def test_registry_non_empty():
 
 
 @pytest.mark.parametrize("name", list(LLM_REGISTRY))
-def test_every_entry_within_seven_billion_budget(name):
+def test_every_entry_has_usable_metadata(name):
     spec = get_llm_spec(name)
-    assert spec.fits_seven_billion_budget, (
-        f"{name} declared {spec.params_billion}B params, exceeds 7B budget"
-    )
     assert spec.ollama_tag
     assert spec.family
     assert spec.vram_gb_estimate > 0
+
+
+def test_default_sweep_excludes_larger_explicitly_addressable_models():
+    specs = list_llms()
+    assert all(spec.fits_seven_billion_budget for spec in specs)
+    larger = get_llm_spec("lfm2.5-8b")
+    assert not larger.fits_seven_billion_budget
+    assert larger not in specs
 
 
 def test_list_llms_filters_by_vram():

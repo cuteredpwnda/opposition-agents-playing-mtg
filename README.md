@@ -11,12 +11,13 @@ ontology, Python action selectors, latent world-model research and the
 **phase-rs Rust rules runtime**.
 
 > **November 2026 status:** the phase-rs checkout has advanced to protocol
-> **374**; its rebuilt server, format export and live-game qualification are
-> in progress. Existing gameplay evidence used the older protocol **106**
-> runtime. Python selectors drive one native seat through the WebSocket
-> bridge; the earlier 18-game baseline is feasibility evidence, not a powered
-> comparison. [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) tracks the
-> remaining runtime and research gates.
+> **374**. A matching signed Windows server completed one game each in
+> Standard, Pioneer, Modern, Legacy and four-player Commander; other formats
+> and replicated reliability remain unqualified.
+> Earlier gameplay studies used protocol **106**. Python selectors drive one
+> native seat through the WebSocket bridge; the earlier 18-game baseline is
+> feasibility evidence, not a powered comparison.
+> [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) tracks the remaining gates.
 
 > Review the [research drafts and build instructions](paper/README.md).
 > These manuscripts are not yet submission-ready performance claims.

@@ -17,6 +17,7 @@ import torch
 from scripts.run_native_learning import (
     CURATED_TEST_DECK,
     TEST_DECK,
+    changed_server_data,
 )
 from scripts.run_phase_rs_ablation import GameRow, _outcome, _summarize
 from src.integrations.phase_rs import (
@@ -57,6 +58,9 @@ def load_campaign(campaign: Path) -> tuple[dict, dict]:
         path for path, expected in manifest["file_sha256"].items()
         if not Path(path).is_file() or file_sha256(Path(path)) != expected
     ]
+    if "server_data" in manifest:
+        data = manifest["server_data"]
+        changed.extend(changed_server_data(Path(data["directory"]), data["files"]))
     if changed:
         raise ValueError(f"Campaign frozen inputs have changed: {changed}")
     return manifest, summary
@@ -119,6 +123,9 @@ def summarize_attempts(output: Path, arms: set[str]) -> dict:
 def evaluate(args: argparse.Namespace) -> Path:
     campaign = args.campaign.resolve()
     manifest, _ = load_campaign(campaign)
+    if "server_data" not in manifest:
+        raise ValueError("Campaign lacks frozen server data identity and cannot be resumed safely")
+    data_dir = Path(manifest["server_data"]["directory"])
     configured_seeds = manifest["arguments"]["training_seeds"]
     seeds = args.training_seeds or configured_seeds
     if not set(seeds) <= set(configured_seeds):
@@ -186,7 +193,9 @@ def evaluate(args: argparse.Namespace) -> Path:
     with tempfile.TemporaryDirectory(prefix="native-learning-eval-db-") as temporary:
         with PhaseServerProcess(
             port=port, binary=campaign_server_binary(manifest),
+            no_data_download=True, bind_address="127.0.0.1",
             extra_env={
+                "PHASE_DATA_DIR": str(data_dir),
                 "PHASE_GAMES_DB": str(Path(temporary) / "games.db"),
                 "RUST_LOG": "warn",
             },
@@ -280,6 +289,7 @@ def evaluate(args: argparse.Namespace) -> Path:
     ]
     if changed:
         raise ValueError(f"Evaluation inputs changed during execution: {changed}")
+    load_campaign(campaign)
     write_json(progress_path, {
         "status": "completed",
         "completed_attempts": len(list(output.glob("*_attempt*.json"))),

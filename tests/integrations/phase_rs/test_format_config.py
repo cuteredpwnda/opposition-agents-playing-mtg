@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
+from scripts import export_phase_rs_formats
 from src.integrations.phase_rs.client import (
     PROTOCOL_VERSION,
     GameCreated,
@@ -46,10 +49,57 @@ def test_constructed_and_commander_defaults_are_distinct():
     assert modern["starting_life"] == 20
     assert modern["deck_size"] == {"type": "Minimum", "data": 60}
     assert modern["uses_commander"] is False
+    assert modern["poison_counter_threshold"] == 10
     assert commander["starting_life"] == 40
     assert commander["deck_size"] == {"type": "Exactly", "data": 100}
     assert commander["commander_damage_threshold"] == 21
+    assert commander["poison_counter_threshold"] == 10
     assert commander["uses_commander"] is True
+
+
+@pytest.mark.parametrize("arguments", [
+    ["--wasm-bindings", "engine.mjs"],
+    ["--wasm-bindings", "engine.mjs", "--engine-wasm", "engine.wasm",
+     "--serde-json-rlib", "serde.rlib"],
+    ["--engine-rlib", "engine.rlib"],
+    ["--engine-rlib", "engine.rlib", "--serde-json-rlib", "serde.rlib",
+     "--engine-wasm", "engine.wasm"],
+])
+def test_exporter_rejects_incomplete_or_mixed_sources(monkeypatch, arguments):
+    monkeypatch.setattr(sys, "argv", ["export_phase_rs_formats", *arguments])
+    with pytest.raises(SystemExit) as exc:
+        export_phase_rs_formats.main()
+    assert exc.value.code == 2
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="WASM export requires Node.js")
+def test_exporter_reads_wasm_registry(tmp_path, monkeypatch):
+    bindings = tmp_path / "engine.mjs"
+    bindings.write_text(
+        'export default async ({module_or_path}) => {'
+        ' if (!(module_or_path instanceof WebAssembly.Module)) throw Error("not compiled");'
+        '};'
+        'export function getFormatRegistry() {'
+        ' return [{format: "Modern", default_config: {format: "Modern", starting_life: 20}}];'
+        '}',
+        encoding="utf-8",
+    )
+    wasm = tmp_path / "engine.wasm"
+    wasm.write_bytes(b"\x00asm\x01\x00\x00\x00")
+    destination = tmp_path / "src" / "integrations" / "phase_rs"
+    destination.mkdir(parents=True)
+    monkeypatch.setattr(export_phase_rs_formats, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(
+        sys, "argv",
+        ["export_phase_rs_formats", "--wasm-bindings", str(bindings), "--engine-wasm", str(wasm)],
+    )
+
+    export_phase_rs_formats.main()
+
+    snapshot = json.loads((destination / "format_defaults.json").read_text("utf-8"))
+    assert snapshot["configs"] == {"Modern": {"format": "Modern", "starting_life": 20}}
+    assert snapshot["registry_source"]["kind"] == "wasm"
+    assert snapshot["protocol_version"] == PROTOCOL_VERSION
 
 
 def test_configs_are_independent_copies():

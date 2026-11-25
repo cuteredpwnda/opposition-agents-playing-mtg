@@ -82,11 +82,9 @@ class PhaseServerProcess:
     Parameters
     ----------
     host, port
-        Where phase-server will bind. ``port=0`` is **not** supported by
-        phase-server itself — pick a real free port (default 9374).
-        ``host`` is the address Python uses to probe the server and to
-        construct :attr:`uri`; phase-server itself listens on all
-        interfaces, so ``host`` here is for the client side only.
+        Address used to probe the server and construct :attr:`uri`, and
+        server port. ``port=0`` is **not** supported: pick a real free port.
+        Use ``bind_address`` to change the server's listening address.
     binary
         Override the server-binary path. ``None`` means auto-resolve from
         the vendored submodule, then fall back to ``cargo run``.
@@ -103,6 +101,10 @@ class PhaseServerProcess:
         When ``True`` (default) the server's stdout/stderr is redirected
         to ``DEVNULL``. Set ``False`` to inherit the parent's streams —
         useful for debugging crashes.
+    no_data_download
+        Prevent the server from replacing or downloading startup data.
+    bind_address
+        Override the server's default all-interface bind address.
     """
 
     host: str = DEFAULT_HOST
@@ -112,6 +114,8 @@ class PhaseServerProcess:
     startup_timeout_s: float = 30.0
     extra_env: dict[str, str] = field(default_factory=dict)
     quiet: bool = True
+    no_data_download: bool = False
+    bind_address: str | None = None
 
     _proc: subprocess.Popen | None = field(default=None, init=False, repr=False)
     _adopted: bool = field(default=False, init=False, repr=False)
@@ -133,8 +137,12 @@ class PhaseServerProcess:
         #   -d, --data-dir <path> (default "data" -- relative to cwd, which
         #                          is the submodule root, so the bundled
         #                          mtgjson test fixture is picked up)
-        # There is no --host arg; the server binds 0.0.0.0 unconditionally.
+        # Without --bind, the server listens on all interfaces.
         args_tail = ["--port", str(self.port)]
+        if self.no_data_download:
+            args_tail.append("--no-data-download")
+        if self.bind_address is not None:
+            args_tail.extend(["--bind", self.bind_address])
 
         if self.binary is not None:
             return ([str(self.binary), *args_tail], self.submodule_root)

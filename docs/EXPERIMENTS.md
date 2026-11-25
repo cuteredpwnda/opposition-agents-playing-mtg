@@ -19,13 +19,38 @@ Several entry points moved to `scripts_legacy/`; do not use the weekend
 campaign as the current phase-rs benchmark. The authoritative execution
 plan is [IMPLEMENTATION_PLAN.md, section 6](../IMPLEMENTATION_PLAN.md).
 
-The checkout now expects Full protocol v374; all gameplay results documented
-below were produced with the earlier v106 runtime. The new server build,
-format export and live gameplay are still being qualified. Build the pinned
-`external/phase-rs` server using the MSVC setup under K1 in the implementation
-plan, and follow the integration guide's
+The checkout now expects Full protocol v374; the campaigns documented below
+used the earlier v106 runtime. An official signed Windows build of the new
+pin completed one game each in Standard, Pioneer, Modern, Legacy and
+four-player Commander. These checks do not qualify the earlier results on the
+new runtime. Build or verify the pinned `external/phase-rs` server and follow
+the integration guide's
 [engine update checklist](PHASE_RS_INTEGRATION.md#engine-update-checklist)
 before running a new campaign. Protocol mismatch fails at handshake.
+
+### Protocol-v374 format smokes
+
+Each terminal check used one heuristic-controlled seat, VeryEasy native AI
+and picker seed 7. Standard and Pioneer used the refreshed mono-red Standard
+deck in a mirror, Modern used burn versus the built-in Blue Control starter,
+Legacy used a burn mirror, and Commander used Krenko versus Atraxa, Meren and
+Urza. One additional Commander attempt was deliberately capped at six turns.
+
+| Format | Outcome | Final trace turn | Controlled actions |
+|---|---|---:|---:|
+| Standard | Seat 0 win | 22 | 322 |
+| Pioneer | Seat 1 win | 13 | 143 |
+| Modern | Seat 1 win | 15 | 153 |
+| Legacy | Seat 1 win | 7 | 81 |
+| Commander | Seat 3 win | 40 | 483 |
+
+The [manifest and JSONL traces](../runs/phase_rs_v374_smoke_20261125/manifest.json)
+retain outcomes, input hashes and engine identity. The manifest also records
+the runner's observed turn-transition counter, which can differ from the final
+trace turn. The capped Commander episode is incomplete, not a draw. Single
+games are execution checks, not reliability estimates or strength comparisons;
+the other registry formats remain unqualified and native shuffle/AI randomness
+is not seeded.
 
 ```powershell
 .\.venv\Scripts\python.exe -m scripts.run_phase_rs_ablation `
@@ -88,6 +113,15 @@ preserves the learned graph's embedding rows, topology and degree sequence;
 it is not an edge-rewired null graph. Curated relations come from the
 status-`OK`, Modern-legal Spellbook records; training negatives sampled from
 missing curated pairs are not proof that those pairs are non-combos.
+
+Provision the pinned server's data first and set `PHASE_DATA_DIR` to that
+directory (relative paths are resolved from the phase-rs checkout). Native
+learning records the required card-data hash and the presence and hashes of
+the optional draft, combo and Commander-deck files, then starts the server
+bound to localhost with data downloading disabled. Evaluation reuses and
+checks the recorded directory; older campaigns without this identity cannot
+be resumed safely.
+Use a private data directory when qualifying a new server version.
 
 Run a bounded end-to-end qualification in a **new** output directory before
 any larger campaign:

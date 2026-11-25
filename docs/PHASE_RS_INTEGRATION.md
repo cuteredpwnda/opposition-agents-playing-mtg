@@ -7,11 +7,15 @@ and a per-difficulty AI opponent. We vendor it as a git submodule under
 `src/integrations/phase_rs/`.
 
 > **Status — November 2026:** Pinned to `b42447bc3`, Full protocol v374.
-> Rebuild, engine-authored format export and live-game qualification are in
-> progress. Earlier release builds, Modern games, Commander checks, Tev1
-> qualification and reconnect verification used `1191bba65` / v106; they
-> do not establish that the new pin works. Controlled strength measurements
-> and native viewer-interaction coverage remain pending. See
+> An official signed Windows server for this revision completed one game each
+> in Standard, Pioneer, Modern, Legacy and four-player Commander. The 30
+> format defaults come from the matching engine WASM registry; the remaining
+> formats have not all been played. A local optimized build was stopped
+> because of shared-memory pressure. Earlier gameplay,
+> Tev1 qualification and reconnect verification used `1191bba65` / v106;
+> they do not establish equivalent behavior on the new pin. Full Commander
+> reliability, controlled strength measurements and native viewer-interaction
+> coverage remain pending. See
 > [IMPLEMENTATION_PLAN.md](../IMPLEMENTATION_PLAN.md).
 
 ### Session restore and casting-model limits
@@ -180,9 +184,10 @@ server can run headless and our agents only need the WebSocket.
 
 1. Build the pinned server with the upstream `server-release` profile using
    the MSVC discovery command under K1 in
-   [IMPLEMENTATION_PLAN.md](../IMPLEMENTATION_PLAN.md). The launcher prefers
-   that profile over older release/debug binaries; the client rejects an
-   incompatible protocol before creating a game.
+   [IMPLEMENTATION_PLAN.md](../IMPLEMENTATION_PLAN.md), or independently
+   verify an official signed binary for the exact revision. The launcher
+   prefers that profile over older release/debug binaries; the client rejects
+   an incompatible protocol before creating a game.
 2. Verify the pinned revision's signed data-bootstrap requirements. Use an
    isolated `PHASE_DATA_DIR` when checking a new engine so an incompatible
    cache cannot be quarantined or replaced in a shared existing data directory.
@@ -192,19 +197,34 @@ server can run headless and our agents only need the WebSocket.
    only `{"format": "Modern"}` is rejected. The snapshot is exported from
    `GameFormat::registry()`, not guessed Python defaults.
 
-The exporter needs the engine `.rlib` and **the exact serde_json dependency
-linked into that engine**, not whichever serde_json file is newest. Inspect
-the engine with `rustc -Z ls=root <engine-rlib>` in the pinned nightly toolchain.
-After a `server-release` build, discover the new engine and matching serde
-libraries in `external\phase-rs\target\server-release\deps`, then pass them
-to `python -m scripts.export_phase_rs_formats --engine-rlib ... --serde-json-rlib ...`
-in the initialized MSVC environment. Library hashes change with builds;
-do not reuse old paths. The exporter records checkout/protocol provenance.
+The exporter accepts either:
 
-4. Run the protocol/format tests and a complete live game. The earlier smoke
-   used Modern burn versus `Blue Control` at VeryEasy and finished in 14 turns
-   and 150 controlled actions on v106, not the new pin. A successful new smoke
-   verifies integration, not playing strength.
+- The engine `.rlib` and **the exact serde_json dependency linked into that
+  engine**, not whichever serde_json file is newest. Inspect the engine with
+  `rustc -Z ls=root <engine-rlib>` in the pinned nightly toolchain; pass the
+  matching files from `external\phase-rs\target\server-release\deps` to
+  `python -m scripts.export_phase_rs_formats --engine-rlib ... --serde-json-rlib ...`
+  in the initialized MSVC environment. Library hashes change with builds.
+- A matching Rust WASM binary and its JavaScript bindings, via
+  `python -m scripts.export_phase_rs_formats --wasm-bindings ... --engine-wasm ...`.
+  This invokes the engine's `getFormatRegistry` export using Node.js. The
+  bindings must be loadable as an ES module (for example, use a `.mjs` file).
+
+The exporter records the checkout revision and protocol; in WASM mode it also
+records both input SHA-256 hashes. **It cannot attest that the supplied
+artifacts were built from that checkout.** Verify their build identity before
+exporting; never relabel an unrelated registry as the current pin.
+For the current snapshot, the official preview deployment advertised the
+same `434c88f5c7a0297a` fingerprint as the signed server manifest and
+referenced the content-addressed WASM recorded in the snapshot. The WASM
+and JavaScript bindings were not independently signature-verified.
+
+4. Run the protocol/format tests and live games. The v374 checks include one
+   terminal game each in Standard, Pioneer, Modern, Legacy and Commander,
+   plus a separately turn-capped Commander smoke. Their
+   [manifest and traces](../runs/phase_rs_v374_smoke_20261125/manifest.json)
+   record decks, binary/data hashes and outcomes. These are integration checks,
+   not playing-strength or multiplayer-reliability evidence.
 
 The engine exposes only five named AI starter decks: `Red Deck Wins`,
 `White Weenie`, `Blue Control`, `Green Stompy`, and `Azorius Flyers`.

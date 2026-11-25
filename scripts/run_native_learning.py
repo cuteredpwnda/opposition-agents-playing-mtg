@@ -61,6 +61,35 @@ TEST_DECK = BENCHMARK / "modern_azorius_control.txt"
 CURATED_TEST_DECK = REPO_ROOT / "data" / "decks" / "modern" / "modern_hardened_scales.txt"
 COMBO_SOURCE = REPO_ROOT / "data" / "combos.json"
 COMPONENTS = ("encoder", "jepa_predictor", "dynamics", "controller")
+SERVER_DATA_FILES = (
+    "card-data.json", "draft-pools.json", "combo-table.json", "ai-commander-decks.json",
+)
+
+
+def server_data_dir() -> Path:
+    configured = os.environ.get("PHASE_DATA_DIR")
+    path = Path(configured).expanduser() if configured else Path("data")
+    return (path if path.is_absolute() else DEFAULT_SUBMODULE / path).resolve()
+
+
+def snapshot_server_data(data_dir: Path) -> dict[str, str | None]:
+    if not (data_dir / "card-data.json").is_file():
+        raise ValueError(f"Native data directory lacks card-data.json: {data_dir}")
+    return {
+        name: file_sha256(data_dir / name) if (data_dir / name).is_file() else None
+        for name in SERVER_DATA_FILES
+    }
+
+
+def changed_server_data(data_dir: Path, expected: dict[str, str | None]) -> list[str]:
+    if set(expected) != set(SERVER_DATA_FILES) or not expected["card-data.json"]:
+        raise ValueError("Campaign must record all native data inputs and the card-data hash")
+    changed = []
+    for name, digest in expected.items():
+        path = data_dir / name
+        if (file_sha256(path) if path.is_file() else None) != digest:
+            changed.append(str(path))
+    return changed
 
 
 def write_json(path: Path, value: dict) -> None:
@@ -203,6 +232,8 @@ def run(args: argparse.Namespace) -> Path:
         raise ValueError("Build phase-server before native learning so its binary can be frozen")
     binary = binary.resolve()
     server_commit = _revision(DEFAULT_SUBMODULE)
+    data_dir = server_data_dir()
+    data_snapshot = snapshot_server_data(data_dir)
     torch.set_num_threads(args.threads)
     output = args.output_dir / datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     for folder in ("dataset", "evaluation"):
@@ -212,15 +243,14 @@ def run(args: argparse.Namespace) -> Path:
             *TRAIN_DECKS, TEST_DECK, CURATED_TEST_DECK, COMBO_SOURCE, args.opponent_deck,
             binary,
             DEFAULT_SUBMODULE / "data-files.json",
-            *(DEFAULT_SUBMODULE / "data" / name for name in (
-                "card-data.json", "card-names.json", "draft-pools.json",
-                "learned-weights.json", "bracket_lists.json",
-            )),
             *(REPO_ROOT / "src").rglob("*.py"),
             REPO_ROOT / "scripts" / "run_native_learning.py",
             REPO_ROOT / "scripts" / "run_phase_rs_ablation.py",
         )
     }
+    frozen.update({
+        data_dir / name: digest for name, digest in data_snapshot.items() if digest is not None
+    })
     write_json(output / "manifest.json", {
         "purpose": "end-to-end native offline development training; not confirmatory strength",
         "arguments": vars(args), "feature_version": FEATURE_VERSION,
@@ -229,6 +259,7 @@ def run(args: argparse.Namespace) -> Path:
         "protocol_version": PROTOCOL_VERSION, "torch": torch.__version__,
         "platform": platform.platform(), "device": "cpu",
         "file_sha256": {str(path): digest for path, digest in frozen.items()},
+        "server_data": {"directory": str(data_dir), "files": data_snapshot},
         "seed_scope": "Python producer and training only; native engine RNG is not seeded",
         "opponent_deck": str(args.opponent_deck),
         "training_objective": {
@@ -258,8 +289,12 @@ def run(args: argparse.Namespace) -> Path:
         port = sock.getsockname()[1]
     with tempfile.TemporaryDirectory(prefix="native-learning-db-") as temporary:
         with PhaseServerProcess(
-            port=port, binary=binary,
-            extra_env={"PHASE_GAMES_DB": str(Path(temporary) / "games.db"), "RUST_LOG": "warn"},
+            port=port, binary=binary, no_data_download=True, bind_address="127.0.0.1",
+            extra_env={
+                "PHASE_DATA_DIR": str(data_dir),
+                "PHASE_GAMES_DB": str(Path(temporary) / "games.db"),
+                "RUST_LOG": "warn",
+            },
         ) as server:
             if server._adopted:  # noqa: SLF001
                 raise ValueError("Native learning requires an owned private server")
@@ -367,8 +402,11 @@ def run(args: argparse.Namespace) -> Path:
                 args.training_seeds if args.evaluate_all_seeds else args.training_seeds[:1],
                 args, server_commit,
             )
-    changed = [str(path) for path, digest in frozen.items()
-               if not path.is_file() or file_sha256(path) != digest]
+    changed = sorted({
+        *(str(path) for path, digest in frozen.items()
+          if not path.is_file() or file_sha256(path) != digest),
+        *changed_server_data(data_dir, data_snapshot),
+    })
     if changed:
         raise ValueError(f"Native learning inputs changed during execution: {changed}")
     write_json(output / "summary.json", {

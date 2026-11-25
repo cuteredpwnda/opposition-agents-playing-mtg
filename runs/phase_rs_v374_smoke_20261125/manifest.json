@@ -1,0 +1,116 @@
+{
+  "purpose": "Bounded integration checks, not playing-strength measurements",
+  "phase_rs_commit": "b42447bc3611273fb2413fa95d22a9e5ff623c01",
+  "protocol_version": 374,
+  "server_version": "0.132.0",
+  "server_build_commit_from_handshake": "b42447b",
+  "server_fingerprint": "434c88f5c7a0297a",
+  "server_binary_sha256": "a93bf4ae14840f1170467355763aed87f0c56cc9d2de99efce4207568cd4b59c",
+  "server_data_sha256": {
+    "card-data.json": "84eca8e6f355c66a4db80504ee0621da6ad3b85265a1c728d410d8969c2107d5",
+    "draft-pools.json": "a9cc88640b5bb21f547998a44b64807083eceb4215fe46934bb2858f68eaa4b1",
+    "combo-table.json": null,
+    "ai-commander-decks.json": null
+  },
+  "deck_file_sha256": {
+    "data/decks/standard/standard_mono_red_aggro.txt": "9bdd8304fb05392e3104ba89c65bd177a3b17ccb83a9782ed254a84e37ccac89",
+    "data/decks/modern/modern_mono_red_burn.txt": "a92982c69e9ceb8d9099dffc533d59b64281ab8a6f80d347294cc31f53652c63",
+    "data/decks/edh/krenko-mob-boss_core.txt": "f7a4547dc9510bd6e8b55e7e116a18e6a211b6e0428a5f5e91f4c4876fba08aa",
+    "data/decks/edh/atraxa-praetors-voice_core.txt": "474635a87fb8175b321e4ba16c3f624cae3e6d8385797a3a9c0f11be7ba9e88d",
+    "data/decks/edh/meren-of-clan-nel-toth_core.txt": "2e30f010d5980f5e1c234554f017ba271156ca4fcda1077f894cf0da1c27e43e",
+    "data/decks/edh/urza-lord-high-artificer_core.txt": "077dac5778c80e198c8f06d5a5eb71824095cb52ee867facba413ecbe55c59dd"
+  },
+  "picker": "heuristic",
+  "picker_seed": 7,
+  "seed_scope": "Python picker only; native shuffle and AI randomness are not seeded",
+  "opponent_difficulty": "VeryEasy",
+  "games": [
+    {
+      "format": "Standard",
+      "host_deck": "data/decks/standard/standard_mono_red_aggro.txt",
+      "opponents": ["same deck"],
+      "reason": "game_rules",
+      "winner_seat": 0,
+      "turns_observed": 22,
+      "last_trace_turn": 22,
+      "controlled_actions": 322,
+      "max_game_seconds": 120,
+      "trace": "standard.jsonl",
+      "trace_sha256": "cab31042329ae23ea77aa4b36a7a9048cdf974b59e3f9376ca2f9daaf1038147"
+    },
+    {
+      "format": "Pioneer",
+      "host_deck": "data/decks/standard/standard_mono_red_aggro.txt",
+      "opponents": ["same deck"],
+      "reason": "game_rules",
+      "winner_seat": 1,
+      "turns_observed": 13,
+      "last_trace_turn": 13,
+      "controlled_actions": 143,
+      "max_game_seconds": 120,
+      "trace": "pioneer.jsonl",
+      "trace_sha256": "74fd40999e8dfaa71ae31426d2be0562362b853fa867fd1f0c142f5bea009d85"
+    },
+    {
+      "format": "Modern",
+      "host_deck": "data/decks/modern/modern_mono_red_burn.txt",
+      "opponents": ["built-in Blue Control"],
+      "reason": "game_rules",
+      "winner_seat": 1,
+      "turns_observed": 16,
+      "last_trace_turn": 15,
+      "controlled_actions": 153,
+      "max_game_seconds": 180,
+      "trace": "modern.jsonl",
+      "trace_sha256": "73b18c20bfbfa35765e94d6a1d9070b7d83d5bbfc0f03ece53dd54c08dc3123e"
+    },
+    {
+      "format": "Legacy",
+      "host_deck": "data/decks/modern/modern_mono_red_burn.txt",
+      "opponents": ["same deck"],
+      "reason": "game_rules",
+      "winner_seat": 1,
+      "turns_observed": 7,
+      "last_trace_turn": 7,
+      "controlled_actions": 81,
+      "max_game_seconds": 120,
+      "trace": "legacy.jsonl",
+      "trace_sha256": "359cd991388cdb8b15184622667ac0165dd2f6b8fbf8190adf3fe48948e1a351"
+    },
+    {
+      "format": "Commander",
+      "host_deck": "data/decks/edh/krenko-mob-boss_core.txt",
+      "opponents": [
+        "data/decks/edh/atraxa-praetors-voice_core.txt",
+        "data/decks/edh/meren-of-clan-nel-toth_core.txt",
+        "data/decks/edh/urza-lord-high-artificer_core.txt"
+      ],
+      "reason": "game_rules",
+      "winner_seat": 3,
+      "turns_observed": 40,
+      "last_trace_turn": 40,
+      "controlled_actions": 483,
+      "max_game_seconds": 180,
+      "trace": "commander.jsonl",
+      "trace_sha256": "aa11cd1f2df60a3b89b88211102c4cf8accb8deccf1ff1e0f3e0fe8fda900e9c"
+    },
+    {
+      "format": "Commander",
+      "host_deck": "data/decks/edh/krenko-mob-boss_core.txt",
+      "opponents": [
+        "data/decks/edh/atraxa-praetors-voice_core.txt",
+        "data/decks/edh/meren-of-clan-nel-toth_core.txt",
+        "data/decks/edh/urza-lord-high-artificer_core.txt"
+      ],
+      "reason": "turn_cap",
+      "winner_seat": null,
+      "turn_cap": 6,
+      "turns_observed": 8,
+      "last_trace_turn": 7,
+      "controlled_actions": 51,
+      "max_game_seconds": 180,
+      "trace": "commander_turn_cap.jsonl",
+      "trace_sha256": "7a0520e1d0a8eb23c7d76d3099c5e81e850f0186893c5c0e1f7c93c320c4a0ad"
+    }
+  ]
+}
