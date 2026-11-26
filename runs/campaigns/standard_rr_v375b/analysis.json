@@ -1,0 +1,213 @@
+{
+  "schema": "phase_rs_campaign_analysis_v1",
+  "campaign": "standard_rr_v375b",
+  "games_scored": 1524,
+  "excluded": {
+    "heuristic:action_cap": 2,
+    "heuristic:action_rejected": 11,
+    "heuristic_legacy:action_rejected": 9,
+    "heuristic_legacy:action_cap": 14,
+    "kl:action_cap": 1,
+    "kl:action_rejected": 12,
+    "kl_graph_learn:action_rejected": 11,
+    "kl_legacy:action_cap": 20,
+    "kl_legacy:action_rejected": 11,
+    "random:action_rejected": 5
+  },
+  "model": "fractional logistic, treatment coding, ridge on non-intercept terms",
+  "factors": [
+    "arm",
+    "our_deck",
+    "opp_deck"
+  ],
+  "ridge": 1.0,
+  "bootstrap": {
+    "replicates": 400,
+    "unit": "matchup cluster"
+  },
+  "reference_arm": "random",
+  "arms": {
+    "random": {
+      "games": 265,
+      "wins": 46,
+      "draws": 0,
+      "raw_score": 0.17358490566037735,
+      "raw_wilson95": [
+        0.13273410845884864,
+        0.22376429059844005
+      ],
+      "adjusted": 0.17934654026945346,
+      "adjusted_ci95": [
+        0.13680443568586081,
+        0.22138760981765518
+      ],
+      "diff_vs_random": 0.0,
+      "diff_vs_random_ci95": [
+        0.0,
+        0.0
+      ],
+      "mean_turns": 19.852830188679246
+    },
+    "heuristic": {
+      "games": 257,
+      "wins": 76,
+      "draws": 0,
+      "raw_score": 0.29571984435797666,
+      "raw_wilson95": [
+        0.2432632406259336,
+        0.35419360674810485
+      ],
+      "adjusted": 0.28446018886420843,
+      "adjusted_ci95": [
+        0.22632706738445563,
+        0.3499436943968498
+      ],
+      "diff_vs_random": 0.10511364859475497,
+      "diff_vs_random_ci95": [
+        0.04371573514007129,
+        0.1736210263744632
+      ],
+      "mean_turns": 20.237354085603112
+    },
+    "heuristic_legacy": {
+      "games": 247,
+      "wins": 52,
+      "draws": 0,
+      "raw_score": 0.21052631578947367,
+      "raw_wilson95": [
+        0.1643131672896085,
+        0.26560595298390277
+      ],
+      "adjusted": 0.21777032680439956,
+      "adjusted_ci95": [
+        0.16196078997024732,
+        0.27458515198432026
+      ],
+      "diff_vs_random": 0.0384237865349461,
+      "diff_vs_random_ci95": [
+        -0.02003243778687961,
+        0.09327977598737427
+      ],
+      "mean_turns": 19.380566801619434
+    },
+    "kl": {
+      "games": 257,
+      "wins": 97,
+      "draws": 0,
+      "raw_score": 0.377431906614786,
+      "raw_wilson95": [
+        0.3203818667214564,
+        0.43809224170296657
+      ],
+      "adjusted": 0.36202981955475677,
+      "adjusted_ci95": [
+        0.3061009148504485,
+        0.42106835404801407
+      ],
+      "diff_vs_random": 0.1826832792853033,
+      "diff_vs_random_ci95": [
+        0.11944675421078985,
+        0.25055437702377914
+      ],
+      "mean_turns": 17.424124513618676
+    },
+    "kl_graph_learn": {
+      "games": 259,
+      "wins": 85,
+      "draws": 0,
+      "raw_score": 0.3281853281853282,
+      "raw_wilson95": [
+        0.2738743342766994,
+        0.3875186872237024
+      ],
+      "adjusted": 0.3182269830844151,
+      "adjusted_ci95": [
+        0.2593935559576021,
+        0.38108479287099245
+      ],
+      "diff_vs_random": 0.13888044281496165,
+      "diff_vs_random_ci95": [
+        0.07570532663631792,
+        0.19808184305161358
+      ],
+      "mean_turns": 17.953667953667953
+    },
+    "kl_legacy": {
+      "games": 239,
+      "wins": 15,
+      "draws": 0,
+      "raw_score": 0.06276150627615062,
+      "raw_wilson95": [
+        0.038399319610236446,
+        0.10095736392339204
+      ],
+      "adjusted": 0.07244082690665993,
+      "adjusted_ci95": [
+        0.04504371317307045,
+        0.10483652863226603
+      ],
+      "diff_vs_random": -0.10690571336279353,
+      "diff_vs_random_ci95": [
+        -0.15126054403818306,
+        -0.06137798938876387
+      ],
+      "mean_turns": 20.271966527196653
+    }
+  },
+  "our_deck_logit": {
+    "standard_01_mono_green_landfall": 0.0,
+    "standard_02_jund_sacrifice": -1.1327149289279064,
+    "standard_03_dimir_midrange": -0.6108841101247857,
+    "standard_04_dimir_reanimator": -1.3912508936499255,
+    "standard_05_lifegain": 0.31192356242639363,
+    "standard_06_azorius_control": -1.2623899933922107,
+    "standard_07_izzet_spellementals": -0.19513492924699527,
+    "standard_08_4c_control": -1.6926255569756714,
+    "standard_09_azorius_momo": -0.3785916912047577,
+    "standard_10_boros_dwarves": 0.35710086918222217
+  },
+  "opp_deck_logit": {
+    "standard_01_mono_green_landfall": 0.0,
+    "standard_02_jund_sacrifice": 0.9677503961733992,
+    "standard_03_dimir_midrange": -0.21748177416043002,
+    "standard_04_dimir_reanimator": 1.2041175541262135,
+    "standard_05_lifegain": 0.11692403212884507,
+    "standard_06_azorius_control": 2.0982448005580947,
+    "standard_07_izzet_spellementals": -0.21769801944069925,
+    "standard_08_4c_control": 0.9909059328310112,
+    "standard_09_azorius_momo": -0.793098603135095,
+    "standard_10_boros_dwarves": -0.39991891275955493
+  },
+  "learning": {
+    "kl_graph_learn": {
+      "games": 259,
+      "first_half": 0.3333333333333333,
+      "second_half": 0.3230769230769231,
+      "difference": -0.01025641025641022,
+      "permutation_p_two_sided": 0.9,
+      "rolling_window": 25,
+      "rolling": [
+        0.4,
+        0.28,
+        0.36,
+        0.48,
+        0.44,
+        0.28,
+        0.16,
+        0.28,
+        0.36,
+        0.28,
+        0.36,
+        0.32,
+        0.24,
+        0.2,
+        0.24,
+        0.36,
+        0.52,
+        0.44,
+        0.24,
+        0.28
+      ]
+    }
+  }
+}

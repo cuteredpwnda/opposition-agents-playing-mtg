@@ -10,6 +10,28 @@ what is in progress, and what remains. It supersedes the phase descriptions in
 
 ## Status Snapshot — November 2026
 
+**November 26 agent audit and deck-diverse campaigns:** an audit of the
+scripted agents found four shared defects that made earlier v374 comparisons
+uninformative:
+- upkeep activation spam;
+- random any-colour mana choices;
+- heuristic cancels and random mulligans;
+- KL combat ties that resolved to "no attack".
+
+The fixes are `action_hygiene_v2` and `analytic_combat_v5`; the legacy arms
+reproduce the pre-fix agents. A 1,620-game Standard round-robin
+(`runs/campaigns/standard_rr_v375b/`) covered 10 meta decks against
+VeryEasy:
+- With deck-adjusted win rates, KL is +0.18 [0.12, 0.25] over random and the
+  heuristic is +0.105.
+- `kl_legacy` falls below random.
+- The online graph arm shows no within-run learning (p = 0.90).
+
+In a frozen-graph test, the graph learned by KL made the heuristic's
+tie-breaks +0.13 [−0.01, +0.24] better (suggestive) but did nothing for KL.
+See `docs/EXPERIMENTS.md` (Agent audit, Frozen learned-graph evaluation,
+native-AI ladder).
+
 **November 25 phase-rs update:** the checkout is pinned to
 `b42447bc3611273fb2413fa95d22a9e5ff623c01` and the bridge targets Full
 protocol v374. An official signed Windows server for this revision passed
@@ -326,6 +348,23 @@ items stay for traceability.
 
 ### Done
 
+- [x] **Agent audit, shared experience graph and deck-diverse campaigns
+      (Nov 26)**:
+      - `action_features.py`: `ActivationGate`, `useful_mana_colours`,
+        `mulligan_choice` and `experience_key`.
+      - `experience_graph.py`: a sharded Beta graph with Thompson, novelty
+        and greedy scorers.
+      - KL and heuristic pickers gained the hygiene and graph hooks.
+      - `mtg_transition.CombatForecast` evaluates attacks and blocks
+        against the visible board.
+      - New scripts: `scripts/run_phase_rs_campaign.py` for resumable
+        arm × deck × opponent × difficulty campaigns and
+        `scripts/analyze_phase_rs_campaign.py` for deck-adjusted
+        logistic estimates with cluster bootstrap.
+      - 30 MTGGoldfish meta decks under `data/decks/meta/`.
+      - Tests: `tests/integrations/phase_rs/test_activation_and_experience.py`
+        and `tests/test_phase_rs_campaign.py`.
+      - Results are in `docs/EXPERIMENTS.md`.
 - [x] **Real native graph/model learning path** — retired placeholder-based
       native optimizers; genuine filtered observations, training-only
       provenance-tagged GraphSAGE, EMA/variance-regularized JEPA, recurrent
@@ -1701,6 +1740,18 @@ items stay for traceability.
       `data/decks/modern/modern_deaths_shadow.txt`.
 
 ### Queue — High Priority
+
+**Learning-claim follow-ups (Nov 26):**
+- Replicate the shared-graph result with independent graphs from
+  several seeds and with more games per deck.
+- Condition credit on the matchup, not just on (context, card).
+- Compare Thompson, novelty and greedy exploration with
+  `--graph-per-arm`.
+- Rerun the heuristic frozen-graph transfer at a size powered to resolve
+  +0.1.
+- Investigate the roughly 4% of games in which the engine rejected an
+  action it had just listed as legal (`action_rejected`).
+- Extend the Standard campaign to the Modern and Pioneer meta sets.
 
 **Publication gate (Oct 5):** PR #2 is public and awaits the protected-main
 requirement of one approving reviewer with write access. Merge normally after

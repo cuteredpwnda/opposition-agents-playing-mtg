@@ -557,7 +557,11 @@ tree search but retains scored tactical decisions and softmax selection
 with temperature 4; it is \emph{not uniform random}. For comparison,
 the native \texttt{Medium} preset enables beam-plus-rollout search with
 depth 2, a 24-node ceiling, branching cap 5 and one depth-1 rollout sample,
-with a 1.5-second interactive search deadline. Special decisions may take
+with a 1.5-second interactive search deadline. \texttt{Hard} lowers the
+temperature to 0.5 and searches to depth 3 with 48 nodes and depth-2
+rollouts against a threat-weighted opponent reply model; \texttt{VeryHard}
+and \texttt{cEDH} raise the node ceiling to 64 and 96 and draw two rollout
+samples. Special decisions may take
 deterministic policy paths rather than the generic softmax path.
 
 An important asymmetry concerns information, not just compute.
@@ -1270,6 +1274,93 @@ for 80\,\% power at two-sided 5\,\% significance to detect that effect, before
 additional dependence or multiplicity. Pilot durations inform a simulation-
 based power analysis and explicit compute budget, not an automatic multi-day
 run.
+
+\subsection{Agent audit and deck-diverse Standard campaign}
+\label{sec:standard-campaign}
+Before a wider benchmark, we read the traces of the scripted agents and
+found four defects shared across them. These defects made earlier
+comparisons uninformative:
+\begin{itemize}[leftmargin=1.2em, itemsep=1pt]
+  \item Both pickers activated abilities in upkeep; one probe animated a
+        man-land 269 times.
+  \item Any-colour mana prompts were answered at random, so casts became
+        unpayable.
+  \item The tiered heuristic sampled \texttt{CancelCast} during targeting and
+        mulliganed at random.
+  \item The analytic KL model valued every attack declaration identically,
+        so its arg-min tie-break never attacked (0 of 128 attack steps).
+\end{itemize}
+The fixes are an activation gate, cost-matched colour choice, a land-count
+mulligan rule and a pessimistic visible-board combat forecast. They are
+versioned (\texttt{action\_hygiene\_v2}, \texttt{analytic\_combat\_v5}), and
+legacy arms reproduce the pre-fix agents. Auditing is a prerequisite for
+interpreting any comparison: the fixes changed the KL arm by more than any
+difference between objectives or graph conditions.
+
+Ten MTGGoldfish Standard meta decks played a full round-robin without
+mirrors against the native AI on VeryEasy: 90 ordered matchups, six arms
+and three games per cell, for 1,620 games. Of these, 1,524 were scored.
+The 96 exclusions were spread across all arms: 59 engine rejections of
+actions the engine had itself listed as legal, and 37 action caps. Deck
+effects are large; logit spans are 2.1 for our decks and 2.9 for opponent
+decks. We therefore report win rates standardised over the empirical deck
+mix from a ridge fractional-logistic model with arm, our-deck and
+opponent-deck terms, with 400 matchup-cluster bootstrap replicates
+(\Cref{tab:standard-rr}).
+
+\begin{table}[ht]
+\centering
+\small
+\begin{tabular}{lrrl}
+\toprule
+Arm & Games & Deck-adjusted & $\Delta$ vs.\ random [95\,\% CI] \\
+\midrule
+random & 265 & 0.179 & --- \\
+heuristic (legacy) & 247 & 0.218 & $+0.038$ [$-0.020$, $+0.093$] \\
+heuristic & 257 & 0.284 & $+0.105$ [$+0.044$, $+0.174$] \\
+KL (legacy) & 239 & 0.072 & $-0.107$ [$-0.151$, $-0.061$] \\
+KL & 257 & 0.362 & $+0.183$ [$+0.119$, $+0.251$] \\
+KL + online graph & 259 & 0.318 & $+0.139$ [$+0.076$, $+0.198$] \\
+\bottomrule
+\end{tabular}
+\caption{Standard round-robin against \texttt{phase-ai} VeryEasy, using ten
+meta decks. Deck-adjusted win rates are standardised over the deck mix.
+Native shuffle and AI RNG are not seeded, and the native AI has
+internal-state access.}
+\label{tab:standard-rr}
+\end{table}
+
+\paragraph{Shared-graph learning.}
+The online arm writes first-visit (context, card/action) outcomes into a
+shared Beta-Bernoulli graph. That graph tilts the KL reference measure,
+$q(a)\propto q_0(a)\exp(\lambda\,\tilde u(a))$, and Thompson sampling
+supplies parameter-level exploration that decays with evidence. In the
+round-robin the online arm did not improve over its run: the first half
+scored 0.333 and the second 0.323 (permutation $p=0.90$). It was also not
+better than KL without the graph. A frozen evaluation used the learned
+graph without updating it, a new seed and five decks, for 240 games. For
+KL the frozen graph had no effect: $+0.000$ against KL alone. For the
+tiered heuristic, which uses the graph only to break ties within a
+priority tier, the graph learned by the KL agent raised the deck-adjusted
+rate from 0.275 to 0.423. The difference was $+0.132$ [$-0.011$, $+0.239$].
+This is suggestive evidence of cross-agent transfer, but not an
+established effect. With about 260 learning games spread over 90 matchups,
+most graph keys have few observations and their credit is confounded with
+deck strength. A learning claim needs replicate graphs, matchup-conditioned
+credit and a powered frozen holdout.
+
+\paragraph{Difficulty ladder.}
+Three decks played all six ordered matchups against native Easy, Medium and
+Hard, with three games per cell (162 games). The win counts were:
+\begin{itemize}[leftmargin=1.2em, itemsep=1pt]
+  \item random: 2/18 against Easy and 0/18 against both Medium and Hard;
+  \item heuristic: 7/18, 4/18 and 3/18;
+  \item KL: 8/18, 6/18 and 3/18.
+\end{itemize}
+Adjusted for deck and difficulty, the heuristic and KL scored $+0.150$
+[$+0.063$, $+0.239$] and $+0.200$ [$+0.088$, $+0.312$] above random. Both
+scripted agents therefore still win some games against perfect-information
+beam search, but this sample does not separate them from each other.
 
 \subsection{Controlled objective and ontology interventions}
 \paragraph{Objective ablation for the control formulation.}

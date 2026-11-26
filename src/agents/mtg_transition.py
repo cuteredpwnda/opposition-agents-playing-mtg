@@ -17,8 +17,9 @@ can be swapped in behind the same protocol.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, Sequence
+from typing import Any
 
 from src.agents.kl_control import BeliefState, LatentState
 
@@ -51,10 +52,156 @@ class ActionForecast:
     removes_permanent: bool = False
 
 
+@dataclass(frozen=True)
+class CombatForecast:
+    """Visible-board outcome of one attack or block declaration.
+
+    Every declaration used to share one board-power forecast, so the empty
+    declaration tied with every attack and won the argmin tie-break.
+    """
+
+    wire: dict[str, Any]
+    damage_to_opponent: int = 0
+    damage_to_us: int = 0
+    our_lost_power: int = 0
+    our_lost_permanents: int = 0
+    opponent_lost_power: int = 0
+    opponent_lost_permanents: int = 0
+
+
+def _keywords(obj: dict[str, Any]) -> set[str]:
+    names: set[str] = set()
+    for keyword in obj.get("keywords") or []:
+        if isinstance(keyword, str):
+            names.add(keyword)
+        elif isinstance(keyword, dict):
+            names.update(str(k) for k in keyword)
+            if isinstance(keyword.get("type"), str):
+                names.add(keyword["type"])
+    return names
+
+
+def _is_creature(obj: dict[str, Any]) -> bool:
+    return "Creature" in ((obj.get("card_types") or {}).get("core_types") or [])
+
+
+def _kills(source: dict[str, Any], victim: dict[str, Any], damage: int) -> bool:
+    if damage <= 0 or "Indestructible" in _keywords(victim):
+        return False
+    if "Deathtouch" in _keywords(source):
+        return True
+    return damage >= _int(victim.get("toughness")) - _int(victim.get("damage_marked"))
+
+
+def _can_block(blocker: dict[str, Any], attacker: dict[str, Any]) -> bool:
+    if "Flying" in _keywords(attacker):
+        return bool({"Flying", "Reach"} & _keywords(blocker))
+    return True
+
+
+def _forecast_attack(
+    action: dict[str, Any], state: dict[str, Any], seat: int,
+) -> CombatForecast | None:
+    objects = state.get("objects") or {}
+    attackers = []
+    for entry in (action.get("data") or {}).get("attacks") or []:
+        if not isinstance(entry, list) or len(entry) != 2:
+            return None
+        obj = objects.get(str(entry[0]))
+        if not isinstance(obj, dict):
+            return None
+        target = entry[1] if isinstance(entry[1], dict) else {}
+        attackers.append((obj, target.get("type") == "Player"))
+    blockers = sorted(
+        (
+            obj for oid in state.get("battlefield") or []
+            if isinstance(obj := objects.get(str(oid)), dict)
+            and obj.get("controller") != seat and _is_creature(obj) and not obj.get("tapped")
+        ),
+        key=lambda o: _int(o.get("power")), reverse=True,
+    )
+    # Pessimistic: each attacker, largest first, meets the strongest remaining
+    # legal blocker. This ignores combat tricks and the defender's own risk.
+    dealt = lost_power = lost = killed_power = killed = 0
+    by_power = sorted(attackers, key=lambda a: _int(a[0].get("power")), reverse=True)
+    for attacker, at_player in by_power:
+        power = _int(attacker.get("power"))
+        blocker = next((b for b in blockers if _can_block(b, attacker)), None)
+        if blocker is None:
+            dealt += power if at_player else 0
+            continue
+        blockers.remove(blocker)
+        if "Trample" in _keywords(attacker) and at_player:
+            dealt += max(0, power - _int(blocker.get("toughness")))
+        if _kills(blocker, attacker, _int(blocker.get("power"))):
+            lost_power += power
+            lost += 1
+        if _kills(attacker, blocker, power):
+            killed_power += _int(blocker.get("power"))
+            killed += 1
+    return CombatForecast(
+        action, damage_to_opponent=dealt, our_lost_power=lost_power, our_lost_permanents=lost,
+        opponent_lost_power=killed_power, opponent_lost_permanents=killed,
+    )
+
+
+def _forecast_block(
+    action: dict[str, Any], state: dict[str, Any], seat: int,
+) -> CombatForecast | None:
+    objects = state.get("objects") or {}
+    incoming: dict[int, tuple[dict[str, Any], bool]] = {}
+    for entry in (state.get("combat") or {}).get("attackers") or []:
+        if not isinstance(entry, dict) or entry.get("defending_player") != seat:
+            continue
+        obj = objects.get(str(entry.get("object_id")))
+        if not isinstance(obj, dict):
+            return None
+        target = entry.get("attack_target") or {}
+        incoming[entry["object_id"]] = (obj, target.get("type") == "Player")
+    blocks: dict[int, list[dict[str, Any]]] = {}
+    for entry in (action.get("data") or {}).get("assignments") or []:
+        if not isinstance(entry, list) or len(entry) != 2 or entry[1] not in incoming:
+            return None
+        blocker = objects.get(str(entry[0]))
+        if not isinstance(blocker, dict):
+            return None
+        blocks.setdefault(entry[1], []).append(blocker)
+    taken = lost_power = lost = killed_power = killed = 0
+    for attacker_id, (attacker, at_player) in incoming.items():
+        power = _int(attacker.get("power"))
+        assigned = blocks.get(attacker_id, [])
+        if not assigned:
+            taken += power if at_player else 0
+            continue
+        remaining = power
+        for blocker in sorted(assigned, key=lambda b: _int(b.get("toughness"))):
+            needed = 1 if "Deathtouch" in _keywords(attacker) else max(
+                1, _int(blocker.get("toughness")) - _int(blocker.get("damage_marked")),
+            )
+            if remaining >= needed and _kills(attacker, blocker, remaining):
+                lost_power += _int(blocker.get("power"))
+                lost += 1
+            remaining = max(0, remaining - needed)
+        if "Trample" in _keywords(attacker) and at_player:
+            taken += remaining
+        block_damage = sum(_int(b.get("power")) for b in assigned)
+        if any(_kills(b, attacker, block_damage) for b in assigned):
+            killed_power += power
+            killed += 1
+    return CombatForecast(
+        action, damage_to_us=taken, our_lost_power=lost_power, our_lost_permanents=lost,
+        opponent_lost_power=killed_power, opponent_lost_permanents=killed,
+    )
+
+
 def forecast_action(
     action: dict[str, Any], state: dict[str, Any], seat: int,
-) -> dict[str, Any] | ActionForecast:
-    """Resolve a conservative two-player fixed-damage target forecast."""
+) -> dict[str, Any] | ActionForecast | CombatForecast:
+    """Resolve conservative combat and two-player fixed-damage target forecasts."""
+    if action.get("type") == "DeclareAttackers":
+        return _forecast_attack(action, state, seat) or action
+    if action.get("type") == "DeclareBlockers":
+        return _forecast_block(action, state, seat) or action
     if action.get("type") not in {"ChooseTarget", "SelectTargets"}:
         return action
     # Opponent life is a minimum aggregate, not a target-specific multiplayer value.
@@ -193,7 +340,7 @@ def action_kind(action: Any) -> str:
     """Normalise a phase-rs ``GameAction`` dict (or ``None``) to a coarse kind."""
     if action is None:
         return "pass"
-    if isinstance(action, ActionForecast):
+    if isinstance(action, (ActionForecast, CombatForecast)):
         action = action.wire
     raw = action.get("type", "") if isinstance(action, dict) else str(action)
     if raw in _LAND:
@@ -308,6 +455,16 @@ class MTGTransitionModel:
                 our_perms += c.cast_permanent_gain if gain > 0 else 0
         elif kind == "activate":
             our_power += c.activate_board_gain
+        elif kind in {"attack", "block"} and isinstance(action, CombatForecast):
+            dealt = action.damage_to_opponent
+            if kind == "attack" and hypothesis == "holds_removal":
+                dealt = int(dealt * (1.0 - c.removal_absorption))
+            opp_life = max(0, opp_life - dealt)
+            our_life = max(0, our_life - action.damage_to_us)
+            our_power = max(0, our_power - action.our_lost_power)
+            our_perms = max(0, our_perms - action.our_lost_permanents)
+            opp_power = max(0, opp_power - action.opponent_lost_power)
+            opp_perms = max(0, opp_perms - action.opponent_lost_permanents)
         elif kind == "attack":
             dealt = int(state.our_board_power * c.attack_damage_fraction)
             if hypothesis == "holds_removal":
@@ -316,11 +473,16 @@ class MTGTransitionModel:
         elif kind == "concede":
             return state.replace(we_are_eliminated=True)
 
-        # Opponent's answer-back over the same step.
+        # Opponent's answer-back over the same step. A block forecast already
+        # carries this combat's incoming damage.
         clock = c.opponent_clock + (
             c.threat_extra_clock if hypothesis == "holds_threat" else 0
         )
-        incoming = clock if state.opponent_board_power > 0 and kind != "cast_choice" else 0
+        resolved_combat = kind == "block" and isinstance(action, CombatForecast)
+        incoming = (
+            clock if state.opponent_board_power > 0 and kind != "cast_choice"
+            and not resolved_combat else 0
+        )
         our_life = max(0, our_life - incoming)
 
         return state.replace(

@@ -1,0 +1,36 @@
+# Boros Energy (Modern) - MTGGoldfish metagame snapshot
+# Source: https://www.mtggoldfish.com/metagame/modern (feed updated 2026-11-24T00:00:00Z)
+# Author: MTGGoldfish; vendored by phase-rs feed mtggoldfish-modern
+
+1 Snow-Covered Plains
+4 Ocelot Pride
+3 Sacred Foundry
+3 Captain James T. Kirk
+1 Dalkovan Encampment
+2 Elegant Parlor
+1 Plains
+4 Galvanic Discharge
+3 Marsh Flats
+4 Guide of Souls
+4 Goblin Bombardment
+1 Snow-Covered Mountain
+4 Flooded Strand
+4 Ragavan, Nimble Pilferer
+3 Arid Mesa
+4 Seasoned Pyromancer
+1 Arid Mesa
+3 Arena of Glory
+2 Thraben Charm
+4 Voice of Victory
+4 Ajani, Nacatl Pariah
+
+Sideboard
+1 Celestial Purge
+2 Rest in Peace
+3 High Noon
+2 Meltdown
+3 Obsidian Charmaw
+1 Prismatic Ending
+1 Wrath of the Skies
+1 The Legend of Roku
+1 Blood Moon

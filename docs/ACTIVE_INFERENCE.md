@@ -200,6 +200,132 @@ Selects one of three objectives:
 All three share belief, transition model, potential, prior and seed. They differ
 in **nothing but the scoring function**, which is what makes the ablation clean.
 
+### 3.4 Action hygiene (`action_hygiene_v2`)
+
+An agent audit of the v374 traces found that the analytic model credits every
+`ActivateAbility` with board gain. The KL picker therefore made 1,430 upkeep
+activations over 60 games. One two-game probe animated Inkmoth Nexus 269 times
+in upkeep, and Oblivion Stone's `DestroyAll` was cracked during our own upkeep.
+The action-type heuristic had the same flaw: it ranked any activation above
+passing. Across 10 Hardened Scales games it made 608 upkeep activations, spending
+mana in upkeep and leaving lands tapped for the main phase.
+
+`src/integrations/phase_rs/action_features.py::ActivationGate` is shared by
+both pickers. It applies only to `ActivateAbility` at an ordinary `Priority`
+stop; activations inside payment prompts continue the payment and are always
+allowed. The gate rejects:
+
+- mana abilities, because the engine prompts for payment and mana empties
+  between steps;
+- activations outside our own pre-combat main, beginning of combat or
+  post-combat main;
+- a second activation of the same (source, ability) in the same turn;
+- `DestroyAll`, `DamageAll`, `ChangeZoneAll` and `SacrificeAll` unless the
+  opponent controls more non-land permanents than we do.
+
+The gate never empties the candidate set. `--activation-policy legacy`
+reproduces the ungated pre-fix arms, so the fix can be measured as an ablation.
+Traces record `activation_policy`.
+
+**Payment hygiene (v2).** The first Standard campaign attempt exposed a
+second shared flaw:
+- Any-colour sources such as Starting Town prompt `ChooseManaColor` during
+  payment. Both pickers chose the colour at random, so a Jund deck often
+  produced White or Blue mana. The pending cast could then not be paid, and
+  `CancelCast` became the only legal action.
+- In target prompts, the heuristic's random fallback also sampled
+  `CancelCast` among the `ChooseTarget` options.
+
+Version 2 adds `useful_mana_colours`, which restricts colour prompts to colours
+that appear in `pending_cast.cost.shards`, including hybrid and Phyrexian
+shards. The heuristic also never chooses `CancelCast` unless it is the only
+legal action. The policy tag is `action_hygiene_v2`; `legacy` disables all of
+this.
+
+**Mulligans.** The heuristic's random fallback also handled
+`MulliganDecision`. In nine calibration games it took 13 mulligans and kept
+only 9 hands. Under `hygiene`, both pickers use
+`action_features.mulligan_choice`:
+
+| Mulligans taken | Keep with this many lands |
+|---|---|
+| none (7 cards) | 2–5 |
+| one | 1–5 |
+| two or more | any |
+
+Under the legacy policy, the heuristic still mulligans at random and KL keeps
+every hand.
+
+**Combat forecasts (`analytic_combat_v5`).** The attack step used to deal
+`0.6 × our_board_power` regardless of which creatures were declared. Every
+`DeclareAttackers` option therefore scored the same, and the argmin
+tie-break chose index 0, the empty attack. Blocks had the same problem. In 24
+Standard calibration games the KL picker declared no attackers in all 128
+attack steps and won 2 games.
+
+`mtg_transition.CombatForecast` now resolves each declaration against the
+visible board:
+- **Attacks:** each attacker, largest first, meets the strongest remaining
+  untapped opposing creature that can legally block it. Flying is respected
+  (only flying or reach creatures can block it), and so are deathtouch,
+  trample and indestructible.
+- **Blocks:** each declaration is evaluated against `combat.attackers`.
+  Unblocked damage replaces the generic opponent clock for that step.
+
+On the same 12 matchups, KL then attacked in 53 of 62 declarations and won
+10 of 24 games. The forecast is still pessimistic and ignores combat tricks,
+first strike and the defender's own risk. It is enabled only under `hygiene`,
+so `kl_legacy` keeps the `analytic_pending_cast_v4` model as an ablation.
+
+### 3.5 Explore to learn: the shared experience graph
+
+`src/integrations/phase_rs/experience_graph.py` is the cross-game,
+cross-agent memory. It is append-only, with one JSONL shard per writer
+process, so parallel workers need no lock. A record is one game with its outcome
+(draw = ½) and the deduplicated `experience_key`s of the choices made:
+`(kind, card_class, card, stage)`, for example
+`CastSpell / creature_mv2 / Heartfire Hero / early`.
+
+Credit is first-visit Monte Carlo. Each node holds a Beta posterior, and child
+nodes borrow `m = 4` pseudo-observations from their parent:
+(kind, stage) → (kind, card class, stage) → (kind, class, card, stage).
+Evidence about "two-drop creatures early" therefore transfers to unseen cards
+and across decks.
+
+The KL picker consumes the graph only through the **reference measure**:
+
+$$
+q(a) \;\propto\; q_0(a)\,\exp\!\big(\lambda\,(u_a - \bar u)\big), \qquad \lambda = 6,
+$$
+
+so deviating from historically winning choices costs $-\ln q(a)$ nats. No
+term is added to the objective, and the invariant in §5 still holds. With an
+attached graph, the heuristic picker breaks ties *within* a priority tier by
+$u_a$ instead of by a coin flip. Evidence written by KL games therefore changes
+heuristic play, which is the cross-agent sharing claim.
+
+$u_a$ depends on `--exploration`:
+
+| Mode | $u_a$ | Role |
+|---|---|---|
+| `greedy` | posterior mean | exploitation only |
+| `thompson` (default) | one draw $\theta_a \sim \mathrm{Beta}(\alpha_a, \beta_a)$ | posterior sampling |
+| `novelty` | mean $+ \;w\cdot I(\theta_a; o)$ | Active Inference parameter-novelty term |
+
+$I(\theta;o) = H[\mathrm{Bern}(\bar\theta)] - \mathbb{E}_\theta H[\mathrm{Bern}(\theta)]$
+has a closed form in digamma functions. This is exploration over **model
+parameters**, not hidden game state. It is reducible, decays as roughly $1/n$,
+and cannot be captured by a noisy TV the way `efe_infogain` can. That is why it
+is allowed here, while the in-game objective keeps no epistemic bonus.
+`--experience-mode read` evaluates a frozen graph; `learn` also appends to it.
+
+Known limits:
+- Credit is confounded by deck: a card that appears only in strong decks looks
+  good.
+- The stage bucket is coarse.
+- The prior tilt is applied to every objective, but only `kl` uses the prior,
+  so the legacy EFE arms are unaffected.
+
 ---
 
 ## 4. Defaults
@@ -279,7 +405,18 @@ foreach ($obj in @("kl","efe_infogain","efe_ambiguity")) {
 --beta 50                           # near-deterministic
 ```
 
-**Currently blocked**: `phase-server` does not build locally — the MSVC toolset
+**Status (November 2026):** the signed v374 `phase-server` is used in practice;
+the local-build note below is historical.
+
+```powershell
+# Deck-diverse campaign with the shared graph (see docs/EXPERIMENTS.md)
+.\.venv\Scripts\python.exe scripts\run_phase_rs_campaign.py run --name standard_rr `
+    --format Standard --our-decks "data/decks/meta/standard/*.txt" `
+    --arms random heuristic kl kl_graph_learn --games-per-cell 3 --workers 6
+.\.venv\Scripts\python.exe scripts\analyze_phase_rs_campaign.py runs\campaigns\standard_rr
+```
+
+**Previously blocked**: `phase-server` does not build locally — the MSVC toolset
 is installed but `link.exe` is not on `PATH`. Run the cargo build from a
 Developer Command Prompt or wrap it in `vcvars64.bat`. Nothing in the Python
 layer needs a live server to import or be tested.

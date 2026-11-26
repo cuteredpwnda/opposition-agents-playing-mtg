@@ -123,9 +123,10 @@ class HeuristicActionPicker:
     1. ``PlayLand`` — always cast a land when allowed (one per turn limit
        is enforced server-side; if it's in ``legal_actions`` it's legal).
     2. ``CastSpell`` / ``PlaySpell`` — develop the board / curve out.
-    3. ``ActivateAbility`` — only if not a tap-for-mana-style ability
-       (those don't appear in ``legal_actions`` at priority anyway —
-       mana abilities are auto-played by phase-rs when paying).
+    3. ``ActivateAbility`` — subject to the ``action_hygiene_v2`` gate:
+       non-mana abilities in our own main phase / beginning of combat, at
+       most once per source per turn, and board wipes only when behind.
+       ``activation_policy="legacy"`` restores the ungated pre-v375 tier.
     4. ``DeclareAttackers`` — attack with whatever's offered; combat
        legality already filtered by the server.
     5. ``Concede`` — never picked.
@@ -150,30 +151,95 @@ class HeuristicActionPicker:
         frozenset({"DeclareAttackers", "Attack"}),
     )
 
-    def __init__(self, seed: int | None = None) -> None:
+    ACTIVATION_POLICIES = ("hygiene", "legacy")
+
+    def __init__(
+        self,
+        seed: int | None = None,
+        *,
+        activation_policy: str = "hygiene",
+        experience: Any | None = None,
+    ) -> None:
+        if activation_policy not in self.ACTIVATION_POLICIES:
+            raise ValueError(f"activation_policy must be one of {self.ACTIVATION_POLICIES}")
+        from src.integrations.phase_rs.action_features import ActivationGate
+
         self._rng = random.Random(seed)
+        self.activation_policy = activation_policy
+        # ``legacy`` reproduces pre-v375 runs, which activated any ability
+        # (including in upkeep) ahead of passing.
+        self._gate = ActivationGate() if activation_policy == "hygiene" else None
+        self.experience = experience
+        if experience is not None:
+            self.name = "phase_rs_heuristic_kg"
 
     def pick(
         self,
         legal_actions: list[dict[str, Any]],
-        state: dict[str, Any],  # noqa: ARG002
-        seat: int,  # noqa: ARG002
+        state: dict[str, Any],
+        seat: int,
     ) -> int:
         if not legal_actions:
             raise ValueError("HeuristicActionPicker received empty legal_actions")
         types = [a.get("type", "") for a in legal_actions]
+        if self._gate is not None:
+            from src.integrations.phase_rs.action_features import (
+                mulligan_choice,
+                useful_mana_colours,
+            )
+
+            mulligan = mulligan_choice(legal_actions, state, seat)
+            if mulligan is not None:
+                return mulligan
+            if all(t == "ChooseManaColor" for t in types):
+                return self._rng.choice(useful_mana_colours(legal_actions, state))
+            # A random fallback must not abandon a cast that is being paid for
+            # or targeted; CancelCast stays available when it is the only option.
+            never_pick = self.NEVER_PICK | {"CancelCast"}
+        else:
+            never_pick = self.NEVER_PICK
+        allowed = [
+            self._gate is None or self._gate.allows(action, state, seat)
+            for action in legal_actions
+        ]
         for tier in self.PRIORITY:
-            tier_idx = [i for i, t in enumerate(types) if t in tier]
+            tier_idx = [i for i, t in enumerate(types) if t in tier and allowed[i]]
             if tier_idx:
-                return self._rng.choice(tier_idx)
+                chosen = self._choose_within_tier(tier_idx, legal_actions, state)
+                if self._gate is not None:
+                    self._gate.record(legal_actions[chosen], state)
+                return chosen
         # Nothing of substance; avoid Concede, fall back to Pass, else any.
-        non_concede = [i for i, t in enumerate(types) if t not in self.NEVER_PICK]
+        non_concede = [i for i, t in enumerate(types) if t not in never_pick]
         pass_idx = [i for i in non_concede if types[i] in self.PASS_TYPES]
         if pass_idx:
             return pass_idx[0]
         if non_concede:
             return self._rng.choice(non_concede)
-        return 0
+        not_conceding = [i for i, t in enumerate(types) if t not in self.NEVER_PICK]
+        return self._rng.choice(not_conceding) if not_conceding else 0
+
+    def _choose_within_tier(
+        self, tier_idx: list[int], legal_actions: list[dict[str, Any]], state: dict[str, Any],
+    ) -> int:
+        """Random within a tier, or graph-argmax when a shared graph is attached."""
+        if self.experience is None:
+            return self._rng.choice(tier_idx)
+        from src.integrations.phase_rs.action_features import experience_key
+
+        keys = [experience_key(legal_actions[i], state) for i in tier_idx]
+        utilities = self.experience.scorer.utilities(keys)
+        if all(u is None for u in utilities):
+            return self._rng.choice(tier_idx)
+        best = max(u for u in utilities if u is not None)
+        best_idx = [i for i, u in zip(tier_idx, utilities) if u is not None and u >= best]
+        chosen = self._rng.choice(best_idx)
+        self.experience.note(keys[tier_idx.index(chosen)])
+        return chosen
+
+    def observe_outcome(self, outcome: str, provenance: dict[str, Any] | None = None) -> bool:
+        """Credit this game's choices to the shared experience graph."""
+        return self.experience.finish(outcome, provenance) if self.experience else False
 
 
 class OllamaActionPicker:

@@ -1,0 +1,37 @@
+# Temur Lessons (Pioneer) - MTGGoldfish metagame snapshot
+# Source: https://www.mtggoldfish.com/metagame/pioneer (feed updated 2026-11-24T00:00:00Z)
+# Author: MTGGoldfish; vendored by phase-rs feed mtggoldfish-pioneer
+
+3 Accumulate Wisdom
+4 Gran-Gran
+4 It'll Quench Ya!
+4 Firebending Lesson
+2 Island
+4 Divide by Zero
+4 Tablet of Discovery
+1 Thundering Falls
+1 Riverglide Pathway
+4 Steam Vents
+3 Combustion Technique
+2 Spirebluff Canal
+3 Riverglide Pathway
+3 Pop Quiz
+4 Abandon Attachments
+3 Thor, God of Thunder
+4 Willowrush Verge
+2 Iroh's Demonstration
+1 Mountain
+4 Thornspire Verge
+
+Sideboard
+1 Boomerang Basics
+1 Environmental Sciences
+1 Sokka's Haiku
+1 Iroh's Demonstration
+1 Accumulate Wisdom
+1 Improvisation Capstone
+4 Origin of Metalbending
+1 True Ancestry
+2 Fresh Start
+1 Waterbending Lesson
+1 Combustion Technique

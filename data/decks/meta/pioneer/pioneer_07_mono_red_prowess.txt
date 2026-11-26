@@ -1,0 +1,28 @@
+# Mono-Red Prowess (Pioneer) - MTGGoldfish metagame snapshot
+# Source: https://www.mtggoldfish.com/metagame/pioneer (feed updated 2026-11-24T00:00:00Z)
+# Author: MTGGoldfish; vendored by phase-rs feed mtggoldfish-pioneer
+
+4 Burst Lightning
+1 Den of the Bugbear
+4 Emberheart Challenger
+4 Kumano Faces Kakkazan
+4 Sunspine Lynx
+4 Monstrous Rage
+2 Ramunap Ruins
+4 Reckless Rage
+1 Rockface Village
+4 Screaming Nemesis
+1 Sokenzan, Crucible of Defiance
+4 Soul-Scar Mage
+4 Monastery Swiftspear
+1 The Legend of Roku
+14 Mountain
+4 Mutavault
+
+Sideboard
+2 Flowstone Infusion
+2 Pyroclasm
+3 Scorching Shot
+2 Weathered Runestone
+4 Magebane Lizard
+2 Redcap Melee

@@ -1,0 +1,40 @@
+# Affinity (Modern) - MTGGoldfish metagame snapshot
+# Source: https://www.mtggoldfish.com/metagame/modern (feed updated 2026-11-24T00:00:00Z)
+# Author: MTGGoldfish; vendored by phase-rs feed mtggoldfish-modern
+
+1 Salvage Titan
+4 Fiery Islet
+1 Krang, Master Mind
+1 Island
+1 Pithing Needle
+4 Engineered Explosives
+4 Kappa Cannoneer
+2 Welding Jar
+1 Skateboard
+4 Mox Opal
+1 Shadowspear
+1 Aether Spellbomb
+2 Shivan Reef
+4 Mishra's Bauble
+4 Pinnacle Emissary
+2 Sink into Stupor
+4 Weapons Manufacturing
+4 Tormod's Crypt
+4 Spirebluff Canal
+1 Emry, Lurker of the Loch
+1 Steam Vents
+1 Metallic Rebuke
+1 Galvanic Blast
+4 Urza's Saga
+3 Claws of Gix
+
+Sideboard
+2 Damping Sphere
+1 Vexing Bauble
+1 Mystical Dispute
+2 Blood Moon
+3 Consign to Memory
+1 Grafdigger's Cage
+2 Galvanic Blast
+1 Whipflare
+2 Metallic Rebuke

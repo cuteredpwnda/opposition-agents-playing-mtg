@@ -1,0 +1,218 @@
+{
+  "schema_version": 1,
+  "format": "pioneer",
+  "source": "https://www.mtggoldfish.com/metagame/pioneer",
+  "feed_id": "mtggoldfish-pioneer",
+  "feed_updated": "2026-11-24T00:00:00Z",
+  "feed_path": "external/phase-rs/client/public/feeds/mtggoldfish-pioneer.json",
+  "feed_sha256": "aa5fef8f63880a8d07da4d0d40240e43cafb7cd0f8be236a80024b8622d169b4",
+  "phase_rs_commit": "b42447bc3611273fb2413fa95d22a9e5ff623c01",
+  "card_data_sha256": "84eca8e6f355c66a4db80504ee0621da6ad3b85265a1c728d410d8969c2107d5",
+  "scope": "Factual metagame deck selections from MTGGoldfish as vendored by phase-rs; legality and coverage are screened against the engine card database.",
+  "decks": [
+    {
+      "file": "pioneer_01_golgari_midrange.txt",
+      "name": "Golgari Midrange",
+      "meta_rank": 1,
+      "colors": [
+        "B",
+        "G"
+      ],
+      "tags": [
+        "metagame"
+      ],
+      "deck_sha256": "ab77c6dd3a2fa22a9d4afa2cbd6da9b87ad3551fb16ba246f2be7d85aa1cdaa5",
+      "normalization": {
+        "Unholy Annex // Ritual Chamber": "Unholy Annex"
+      },
+      "mainboard_count": 60,
+      "missing_cards": [],
+      "illegal_cards": [],
+      "unimplemented_cards": [],
+      "implemented_copy_share": 1.0,
+      "eligible": true
+    },
+    {
+      "file": "pioneer_02_nykthos_ramp.txt",
+      "name": "Nykthos Ramp",
+      "meta_rank": 2,
+      "colors": [
+        "G"
+      ],
+      "tags": [
+        "metagame"
+      ],
+      "deck_sha256": "4047d4517a77f0945674e52b63efc5bbdf833f75a4eac67a9c5fe59fe1803d0d",
+      "normalization": {},
+      "mainboard_count": 60,
+      "missing_cards": [],
+      "illegal_cards": [],
+      "unimplemented_cards": [
+        "Oath of Nissa"
+      ],
+      "implemented_copy_share": 0.9667,
+      "eligible": true
+    },
+    {
+      "file": "pioneer_03_azorius_control.txt",
+      "name": "Azorius Control",
+      "meta_rank": 3,
+      "colors": [
+        "U",
+        "W"
+      ],
+      "tags": [
+        "metagame"
+      ],
+      "deck_sha256": "4921b0683980fc6a94c9ddbc648793a159feab944a4a6f4105003419401aef30",
+      "normalization": {},
+      "mainboard_count": 80,
+      "missing_cards": [],
+      "illegal_cards": [],
+      "unimplemented_cards": [],
+      "implemented_copy_share": 1.0,
+      "eligible": true
+    },
+    {
+      "file": "pioneer_04_selesnya_company.txt",
+      "name": "Selesnya Company",
+      "meta_rank": 4,
+      "colors": [
+        "W",
+        "G"
+      ],
+      "tags": [
+        "metagame"
+      ],
+      "deck_sha256": "d6f344e26b4d81dd32b67c1b3e7acde421946774ddf2e5860a8c3598ba691100",
+      "normalization": {},
+      "mainboard_count": 60,
+      "missing_cards": [],
+      "illegal_cards": [],
+      "unimplemented_cards": [],
+      "implemented_copy_share": 1.0,
+      "eligible": true
+    },
+    {
+      "file": "pioneer_05_izzet_aggro.txt",
+      "name": "Izzet Aggro",
+      "meta_rank": 5,
+      "colors": [
+        "R",
+        "U"
+      ],
+      "tags": [
+        "metagame"
+      ],
+      "deck_sha256": "95ae895a83555b8217afd5a029763a749292824dd8874d68867d2485623c08ef",
+      "normalization": {},
+      "mainboard_count": 60,
+      "missing_cards": [],
+      "illegal_cards": [],
+      "unimplemented_cards": [],
+      "implemented_copy_share": 1.0,
+      "eligible": true
+    },
+    {
+      "file": "pioneer_06_temur_lessons.txt",
+      "name": "Temur Lessons",
+      "meta_rank": 6,
+      "colors": [
+        "U",
+        "R"
+      ],
+      "tags": [
+        "metagame"
+      ],
+      "deck_sha256": "fee4cbaca6d35eec892dcb1b69d7d283039fe8fc82b032d7cfb01c4c4dd014b9",
+      "normalization": {},
+      "mainboard_count": 60,
+      "missing_cards": [],
+      "illegal_cards": [],
+      "unimplemented_cards": [],
+      "implemented_copy_share": 1.0,
+      "eligible": true
+    },
+    {
+      "file": "pioneer_07_mono_red_prowess.txt",
+      "name": "Mono-Red Prowess",
+      "meta_rank": 7,
+      "colors": [
+        "R"
+      ],
+      "tags": [
+        "metagame"
+      ],
+      "deck_sha256": "0dff186ade6e8654905d5241f6b5e14ffc2c9983e8c76eadc0637c9b26b9cd29",
+      "normalization": {},
+      "mainboard_count": 60,
+      "missing_cards": [],
+      "illegal_cards": [],
+      "unimplemented_cards": [],
+      "implemented_copy_share": 1.0,
+      "eligible": true
+    },
+    {
+      "file": "pioneer_08_abzan_greasefang.txt",
+      "name": "Abzan Greasefang",
+      "meta_rank": 8,
+      "colors": [
+        "W",
+        "G",
+        "B"
+      ],
+      "tags": [
+        "metagame"
+      ],
+      "deck_sha256": "1941cfbde4586e763a61e815eaaaafdf9f2f7b89226efa6fc009ebc391f8201a",
+      "normalization": {},
+      "mainboard_count": 60,
+      "missing_cards": [],
+      "illegal_cards": [],
+      "unimplemented_cards": [],
+      "implemented_copy_share": 1.0,
+      "eligible": true
+    },
+    {
+      "file": "pioneer_09_izzet_phoenix.txt",
+      "name": "Izzet Phoenix",
+      "meta_rank": 9,
+      "colors": [
+        "U",
+        "R"
+      ],
+      "tags": [
+        "metagame"
+      ],
+      "deck_sha256": "a99b7045a6946e7160edec2114adc5c7a11dafb6c771498b76de122aba19c063",
+      "normalization": {},
+      "mainboard_count": 60,
+      "missing_cards": [],
+      "illegal_cards": [],
+      "unimplemented_cards": [],
+      "implemented_copy_share": 1.0,
+      "eligible": true
+    },
+    {
+      "file": "pioneer_10_jund_sacrifice.txt",
+      "name": "Jund Sacrifice",
+      "meta_rank": 10,
+      "colors": [
+        "B",
+        "G",
+        "R"
+      ],
+      "tags": [
+        "metagame"
+      ],
+      "deck_sha256": "a2aabf9c57965d806dba76521feee60488786785ba81c6918da0b4133255f7df",
+      "normalization": {},
+      "mainboard_count": 60,
+      "missing_cards": [],
+      "illegal_cards": [],
+      "unimplemented_cards": [],
+      "implemented_copy_share": 1.0,
+      "eligible": true
+    }
+  ]
+}

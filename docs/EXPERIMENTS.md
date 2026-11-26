@@ -122,6 +122,123 @@ frozen and unevaluated. A useful graph study first needs a policy above the
 floor, such as a stronger base policy, a weaker opponent or a graph consumer
 inside the KL prior.
 
+### Agent audit and Standard deck round-robin (v375b, Nov 26, 2026)
+
+**Audit.** Before the wider benchmark, we reviewed traces of both scripted
+pickers. Four shared defects made earlier comparisons uninformative:
+- Upkeep activation spam.
+- Random any-colour mana choices that made casts unpayable.
+- Heuristic `CancelCast` during targeting, plus random mulligans: 13
+  mulligans against 9 keeps in 9 games.
+- The KL model scored every attack declaration identically, so the
+  argmin tie-break always declared no attackers. It declared none in 128 of
+  128 attack steps.
+
+The fixes are described in [ACTIVE_INFERENCE.md §3.4](ACTIVE_INFERENCE.md):
+the policy tag is `action_hygiene_v2` and the transition model is
+`analytic_combat_v5`. The `heuristic_legacy` and `kl_legacy` arms reproduce
+the pre-fix agents. The 40 cells of the first `standard_rr_v375` attempt
+used pre-fix agents and are superseded.
+
+**Design.**
+- Ten MTGGoldfish Standard meta decks (`data/decks/meta/standard/`) in a
+  full round-robin without mirrors: 90 ordered matchups × 6 arms × 3 games,
+  1,620 games in total.
+- The opponent is the native AI on VeryEasy, and every arm plays the same
+  matchups.
+- `kl_graph_learn` starts from an empty shared graph and writes to it after
+  every game, using Thompson-sampling exploration.
+- 1,524 games were scored. Of the 96 excluded games, 59 ended with an
+  engine `action_rejected` for an action it had listed as legal, spread
+  over every arm including random; 37 hit the action cap.
+- Analysis uses `scripts/analyze_phase_rs_campaign.py`: a ridge fractional
+  logistic model with terms for arm, our deck and opponent deck, and
+  matchup-cluster bootstrap CIs.
+
+Run directory: `runs/campaigns/standard_rr_v375b/`.
+
+| Arm | Games | Raw win rate | Deck-adjusted [95% CI] | Δ vs random [95% CI] |
+|---|---:|---:|---|---|
+| random | 265 | 0.174 | 0.179 [0.137, 0.221] | — |
+| heuristic_legacy | 247 | 0.211 | 0.218 [0.162, 0.275] | +0.038 [−0.020, +0.093] |
+| heuristic | 257 | 0.296 | 0.284 [0.226, 0.350] | +0.105 [+0.044, +0.174] |
+| kl_legacy | 239 | 0.063 | 0.072 [0.045, 0.105] | −0.107 [−0.151, −0.061] |
+| kl | 257 | 0.377 | 0.362 [0.306, 0.421] | +0.183 [+0.119, +0.251] |
+| kl_graph_learn | 259 | 0.328 | 0.318 [0.259, 0.381] | +0.139 [+0.076, +0.198] |
+
+Deck strength is large. Our-deck logit effects span 2.05 (Boros Dwarves
++0.36, 4c Control −1.69); opponent-deck effects span 2.89 (Azorius Control
++2.10, Azorius Momo −0.79). This is why raw pooled rates are not reported
+as the result.
+
+**Findings.**
+- After the audit, the KL planner is the strongest scripted arm against
+  VeryEasy (+0.18 over random). It also finishes games faster: 17.4 turns
+  on average against 19.9 for random.
+- The audit fixes are the largest effect in the study: +0.29 for KL and
+  +0.07 for the heuristic. Before the fixes, KL was worse than random.
+- `kl_graph_learn` shows no within-run learning. Its score was 0.333 in the
+  first half and 0.323 in the second (permutation p = 0.90). It is no better
+  than `kl` without the graph.
+
+### Frozen learned-graph evaluation (v375b)
+
+This test reuses the graph learned in the round-robin: 259 games and
+443 KB of evidence. A new seed (2027) and five decks (01, 03, 05, 07 and
+09) give 20 matchups × 4 arms × 3 games, all 240 games scored. Frozen arms
+read the graph and never write to it. The heuristic uses the graph only to
+break ties among actions of equal priority. KL uses it to tilt the passive
+prior.
+
+Run directory: `runs/campaigns/standard_frozen_v375b/`.
+
+| Arm | Wins | Deck-adjusted [95% CI] | Δ vs heuristic [95% CI] |
+|---|---:|---|---|
+| heuristic | 16/60 | 0.275 [0.172, 0.413] | — |
+| heuristic_graph_frozen | 26/60 | 0.423 [0.311, 0.542] | +0.132 [−0.011, +0.239] |
+| kl | 23/60 | 0.376 [0.293, 0.463] | +0.085 [−0.032, +0.190] |
+| kl_graph_frozen | 23/60 | 0.376 [0.265, 0.504] | +0.085 [−0.060, +0.220] |
+
+Interpretation:
+- **Cross-agent transfer:** graph evidence collected by the KL agent made
+  the heuristic's tie-breaks better. This is suggestive but not conclusive:
+  the interval crosses zero.
+- **KL with the graph:** no effect. Its own analytic forecast already
+  dominates the tilted prior, and its earlier graph-guided choices are
+  what produced the graph in the first place.
+- **Why there is little learning:** the graph credits first-visit
+  `(context, card/action)` keys with Beta win evidence. With about 260
+  games spread over 10 decks and 90 matchups, most keys have only a few
+  observations, and deck strength confounds the credit.
+- **Next tests:** a learning claim needs more games per deck, credit that
+  conditions on the matchup, and replicate graphs from independent seeds.
+
+### Native-AI difficulty ladder (v375b)
+
+This campaign used three Standard decks (01 Mono-Green Landfall, 03 Dimir
+Midrange and 05 Lifegain), all six ordered matchups, the arms random,
+heuristic and KL, and native difficulties Easy, Medium and Hard, with three
+games per cell and seed 2028. All 162 games were scored. Medium and Hard
+use beam search with rollouts and perfect information (see "What the
+built-in opponent does").
+
+Run directory: `runs/campaigns/standard_ladder_v375b/`.
+
+| Opponent | random | heuristic | KL |
+|---|---:|---:|---:|
+| Easy | 2/18 | 7/18 | 8/18 |
+| Medium | 0/18 | 4/18 | 6/18 |
+| Hard | 0/18 | 3/18 | 3/18 |
+
+Adjusted for deck and difficulty:
+- heuristic: +0.150 [+0.063, +0.239] over random;
+- KL: +0.200 [+0.088, +0.312] over random.
+
+Random play stops winning once native search is enabled. Both scripted
+agents still win some games against search, but with 18 games per cell the
+heuristic-versus-KL difference is not resolved at any level. VeryHard and
+cEDH were not run.
+
 ### Running an objective ablation
 
 ```powershell
@@ -356,20 +473,48 @@ further audit before confirmatory use.
 
 ### What the built-in opponent does
 
-`phase-ai` is upstream's Rust tactical evaluator/search policy, not our
-uniform wire-random or action-type wire-heuristic picker. At the pinned
-revision, VeryEasy disables tree search but retains tactical scoring and
-temperature-4 softmax decisions; Medium enables depth-2 beam/rollout search
-with 24 nodes, branching cap 5 and one depth-1 rollout sample, bounded by
-a 1.5-second interactive search deadline. Dedicated decision paths can
-choose deterministically. Presets load fixed, turn-dependent fitted evaluation
-weights; the opponent does not learn from this campaign.
+`phase-ai` is upstream's Rust tactical evaluator and search policy. It is not
+our uniform wire-random picker or action-type wire-heuristic picker. All
+evaluation weights are fixed, and the opponent does not learn from our
+campaigns.
 
-The upstream AI accepts internal `GameState`, and shipped search presets
-disable hidden-zone resampling (`determinization_samples=0`). Our policies
-receive perspective-filtered observations. Treat native-AI games as
-anchor-opponent deployment comparisons, not matched-information rankings.
-The paper's baseline and ablation tables state this distinction explicitly.
+Each decision scores the legal candidates with a hand-built tactical evaluator:
+- fitted, turn-dependent evaluation weights (`EvalWeightSet::learned()`);
+- policy penalties and bonuses from about 120 tactical policy modules in
+  `crates/phase-ai/src/policies/` (mana efficiency, counter-magic tap-out,
+  wipe overextension, and others);
+- deck and archetype features.
+
+It then samples from a softmax at the preset temperature. Dedicated decision
+paths, such as mulligans and some targets, choose deterministically. From
+Medium up, a beam search with rollouts re-ranks the candidates. The presets in
+`crates/phase-ai/src/config.rs::create_config` at the pinned revision are:
+
+| Preset | Softmax T | Search | Depth / nodes | Rollouts (depth × samples) | Opponent model | Threat awareness | Lookahead |
+|---|---:|---|---|---|---|---|---|
+| VeryEasy | 4.0 | off | — | — | — | none | — |
+| Easy | 2.0 | off | — | — | — | none | play |
+| Medium | 1.0 | beam + rollout | 2 / 24 | 1 × 1 | deterministic best reply | archetype only | play |
+| Hard | 0.5 | beam + rollout | 3 / 48 | 2 × 1 | threat-weighted reply | full (hypergeometric) | play |
+| VeryHard | 0.3 | beam + rollout | 3 / 64 | 2 × 2 | threat-weighted reply | full | play |
+| cEDH | 0.2 | beam + rollout | 3 / 96 | 2 × 2 | threat-weighted reply | full | play + combat |
+
+All search presets use branching cap 5 and a 1.5-second interactive budget.
+Depth and nodes scale down in three- and four-player pods, except for cEDH.
+
+**Information asymmetry.** Every shipped search preset sets
+`determinization_samples = 0`, which means *perfect-information* search.
+Medium and above therefore read our real hidden hand and library inside the
+search. Upstream made this a product decision on 2026-07-18 because
+determinised sampling broke the monotonicity of the difficulty ladder. VeryEasy
+and Easy do not search, but their evaluator still receives the internal
+`GameState`.
+
+Our policies receive perspective-filtered observations. Native-AI results are
+therefore anchor-opponent deployment comparisons, not matched-information
+rankings. A difficulty ladder measures robustness against an increasingly
+strong, and from Medium up omniscient, opponent. The paper's baseline and
+ablation tables state this distinction explicitly.
 
 ### Recorded initial local execution
 

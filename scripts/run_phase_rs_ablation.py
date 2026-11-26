@@ -140,13 +140,37 @@ def _revision(path: Path) -> str:
     ).stdout.strip()
 
 
+def _experience_session(args: argparse.Namespace, seed: int, agent: str):
+    mode = getattr(args, "experience_mode", "off")
+    if mode == "off":
+        return None
+    from src.integrations.phase_rs.experience_graph import (
+        ExperienceGraph,
+        ExperienceScorer,
+        ExperienceSession,
+    )
+
+    if not args.experience_root:
+        raise ValueError("--experience-mode read/learn requires --experience-root")
+    # Reload per game so evidence from concurrent workers is picked up.
+    graph = ExperienceGraph.load(args.experience_root, prior_strength=args.experience_prior)
+    scorer = ExperienceScorer(
+        graph, mode=args.exploration, novelty_weight=args.novelty_weight, seed=seed,
+    )
+    return ExperienceSession(scorer, learn=mode == "learn", agent=agent)
+
+
 def _make_picker(args: argparse.Namespace, seed: int):
     if args.picker == "random":
         return RandomActionPicker(seed=seed)
     if args.picker == "prefer-nonpass":
         return PreferNonPassPicker(seed=seed)
     if args.picker == "heuristic":
-        return HeuristicActionPicker(seed=seed)
+        return HeuristicActionPicker(
+            seed=seed,
+            activation_policy=getattr(args, "activation_policy", "hygiene"),
+            experience=_experience_session(args, seed, "heuristic"),
+        )
     if args.picker == "tev1":
         return make_tev1_picker(args, seed)
     if args.picker == "decision2":
@@ -170,6 +194,9 @@ def _make_picker(args: argparse.Namespace, seed: int):
             beta=args.beta,
             rollouts=args.rollouts,
             engine=args.planner,
+            activation_policy=getattr(args, "activation_policy", "hygiene"),
+            experience=_experience_session(args, seed, f"kl_control:{args.objective}"),
+            experience_weight=getattr(args, "experience_weight", 6.0),
         )
     if args.picker == "ollama":
         return OllamaActionPicker(
@@ -331,6 +358,17 @@ def run(args: argparse.Namespace) -> int:
             if result.reason != "stream_timeout" or attempt == args.max_retries:
                 break
             print(f"[retry {attempt}/{args.max_retries}] game {run_index}: {result.reason}")
+        observe = getattr(picker, "observe_outcome", None)
+        if callable(observe):
+            observe(_outcome(result), {
+                "seed": game_seed,
+                "our_deck": args.our_deck_file,
+                "ai_decks": args.ai_deck_file,
+                "ai_difficulty": args.ai_difficulty,
+                "format": args.format,
+                "turns": result.turns_observed,
+                "run_dir": out_dir.name,
+            })
         row = GameRow(
             game_index=i + 1,
             winner_seat=result.winner_seat,
@@ -400,6 +438,21 @@ def run(args: argparse.Namespace) -> int:
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--games", type=int, default=4)
+    parser.add_argument(
+        "--activation-policy", choices=["hygiene", "legacy"], default="hygiene",
+        help="Heuristic/KL activation gate; legacy reproduces pre-v375 ungated runs.",
+    )
+    parser.add_argument(
+        "--experience-mode", choices=["off", "read", "learn"], default="off",
+        help="Shared experience graph: read = frozen prior, learn = also append games.",
+    )
+    parser.add_argument("--experience-root", help="Directory of experience-graph shards.")
+    parser.add_argument(
+        "--exploration", choices=["greedy", "thompson", "novelty"], default="thompson",
+    )
+    parser.add_argument("--experience-weight", type=float, default=6.0)
+    parser.add_argument("--experience-prior", type=float, default=4.0)
+    parser.add_argument("--novelty-weight", type=float, default=1.0)
     parser.add_argument(
         "--objectives", nargs="+", choices=OBJECTIVES,
         help="Interleave multiple objective arms with the same picker seed schedule.",

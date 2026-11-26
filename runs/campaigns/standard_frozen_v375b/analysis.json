@@ -1,0 +1,119 @@
+{
+  "schema": "phase_rs_campaign_analysis_v1",
+  "campaign": "standard_frozen_v375b",
+  "games_scored": 240,
+  "excluded": {},
+  "model": "fractional logistic, treatment coding, ridge on non-intercept terms",
+  "factors": [
+    "arm",
+    "our_deck",
+    "opp_deck"
+  ],
+  "ridge": 1.0,
+  "bootstrap": {
+    "replicates": 400,
+    "unit": "matchup cluster"
+  },
+  "reference_arm": "heuristic",
+  "arms": {
+    "heuristic": {
+      "games": 60,
+      "wins": 16,
+      "draws": 0,
+      "raw_score": 0.26666666666666666,
+      "raw_wilson95": [
+        0.17132496487078852,
+        0.3900895360189135
+      ],
+      "adjusted": 0.29097593636553504,
+      "adjusted_ci95": [
+        0.19953715324498808,
+        0.40989333524773
+      ],
+      "diff_vs_heuristic": 0.0,
+      "diff_vs_heuristic_ci95": [
+        0.0,
+        0.0
+      ],
+      "mean_turns": 16.6
+    },
+    "heuristic_graph_frozen": {
+      "games": 60,
+      "wins": 26,
+      "draws": 0,
+      "raw_score": 0.43333333333333335,
+      "raw_wilson95": [
+        0.31572200394400635,
+        0.5589678534530513
+      ],
+      "adjusted": 0.4228925721949712,
+      "adjusted_ci95": [
+        0.31118401788406025,
+        0.5418060205353237
+      ],
+      "diff_vs_heuristic": 0.13191663582943614,
+      "diff_vs_heuristic_ci95": [
+        -0.011002529262736113,
+        0.23854373476685917
+      ],
+      "mean_turns": 16.1
+    },
+    "kl": {
+      "games": 60,
+      "wins": 23,
+      "draws": 0,
+      "raw_score": 0.38333333333333336,
+      "raw_wilson95": [
+        0.2708808958488824,
+        0.5098263545959686
+      ],
+      "adjusted": 0.37639907905308023,
+      "adjusted_ci95": [
+        0.292533562496106,
+        0.46346065861188424
+      ],
+      "diff_vs_heuristic": 0.0854231426875452,
+      "diff_vs_heuristic_ci95": [
+        -0.03174014321791592,
+        0.19012025603490892
+      ],
+      "mean_turns": 15.016666666666667
+    },
+    "kl_graph_frozen": {
+      "games": 60,
+      "wins": 23,
+      "draws": 0,
+      "raw_score": 0.38333333333333336,
+      "raw_wilson95": [
+        0.2708808958488824,
+        0.5098263545959686
+      ],
+      "adjusted": 0.37639907905308023,
+      "adjusted_ci95": [
+        0.2651113823592439,
+        0.5038011469863213
+      ],
+      "diff_vs_heuristic": 0.0854231426875452,
+      "diff_vs_heuristic_ci95": [
+        -0.060133189883979345,
+        0.22019832714981544
+      ],
+      "mean_turns": 14.883333333333333
+    }
+  },
+  "our_deck_logit": {
+    "standard_01_mono_green_landfall": 0.0,
+    "standard_03_dimir_midrange": -0.8805419945971196,
+    "standard_05_lifegain": 0.5016279796810997,
+    "standard_07_izzet_spellementals": -1.109647920415259,
+    "standard_09_azorius_momo": -0.379578458331516
+  },
+  "opp_deck_logit": {
+    "standard_01_mono_green_landfall": 0.0,
+    "standard_03_dimir_midrange": -0.34537633440704735,
+    "standard_05_lifegain": 0.5042793308680747,
+    "standard_07_izzet_spellementals": -0.4739065477725342,
+    "standard_09_azorius_momo": -0.14717054915927097
+  },
+  "learning": {}
+}

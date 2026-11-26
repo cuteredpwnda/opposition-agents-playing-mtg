@@ -22,8 +22,10 @@ Kaufmann (2026) can be run inside MTG rather than only on toy POMDPs:
 from __future__ import annotations
 
 import logging
+import math
 import random
-from typing import Any, Sequence
+from collections.abc import Sequence
+from typing import Any
 
 import numpy as np
 
@@ -38,6 +40,7 @@ from src.agents.kl_control import (
 )
 from src.agents.mtg_transition import (
     ActionForecast,
+    CombatForecast,
     MTGTransitionModel,
     action_kind,
     default_belief,
@@ -45,6 +48,14 @@ from src.agents.mtg_transition import (
     latent_from_phase_rs,
     passive_prior,
 )
+from src.integrations.phase_rs.action_features import (
+    ACTIVATION_POLICY,
+    ActivationGate,
+    experience_key,
+    mulligan_choice,
+    useful_mana_colours,
+)
+from src.integrations.phase_rs.experience_graph import ExperienceSession, centred
 
 logger = logging.getLogger(__name__)
 
@@ -65,12 +76,21 @@ class KLControlActionPicker:
         engine: str = "mppi",
         preference: PreferenceConfig | None = None,
         sample_policy: bool = False,
+        experience: ExperienceSession | None = None,
+        experience_weight: float = 6.0,
+        activation_policy: str = "hygiene",
     ) -> None:
         if objective not in OBJECTIVES:
             raise ValueError(f"objective must be one of {OBJECTIVES}, got {objective!r}")
+        if activation_policy not in ("hygiene", "legacy"):
+            raise ValueError("activation_policy must be hygiene or legacy")
         self.objective = objective
         self.name = f"phase_rs_klcontrol:{objective}"
         self.sample_policy = sample_policy
+        self.experience = experience
+        self.experience_weight = experience_weight
+        self.activation_policy = activation_policy
+        self._gate = ActivationGate() if activation_policy == "hygiene" else None
 
         self._rng = random.Random(seed)
         self._np_rng = np.random.default_rng(seed)
@@ -101,6 +121,17 @@ class KLControlActionPicker:
     ) -> int:
         if not legal_actions:
             raise ValueError("KLControlActionPicker received empty legal_actions")
+        if self._gate is not None:
+            # The analytic model has no notion of hand quality, so the
+            # mulligan follows the shared land-count rule.
+            mulligan = mulligan_choice(legal_actions, state, seat)
+            if mulligan is not None:
+                self.last_reasoning = {
+                    "rule": "mulligan_land_count", "chosen_index": mulligan,
+                    "chosen_type": "MulliganDecision",
+                    "activation_policy": ACTIVATION_POLICY,
+                }
+                return mulligan
         if len(legal_actions) == 1:
             self.last_reasoning = {
                 "forced": True, "chosen_index": 0,
@@ -114,9 +145,20 @@ class KLControlActionPicker:
             # announcement, including cost-payment prompts whose wire data
             # does not expose ``pending_cast`` directly.
             latent = latent.replace(our_pending_cast=True)
-        candidates, index_map = self._filter_candidates(legal_actions)
-        projected_candidates = [forecast_action(action, state, seat) for action in candidates]
-        prior = np.array(passive_prior(projected_candidates), dtype=float)
+        candidates, index_map = self._filter_candidates(legal_actions, state, seat, self._gate)
+        projected_candidates = [
+            action if self._gate is None and action_kind(action) in {"attack", "block"}
+            else forecast_action(action, state, seat)
+            for action in candidates
+        ]
+        keys = [experience_key(action, state) for action in candidates]
+        tilt = None
+        if self.experience is not None:
+            # The shared graph tilts the reference measure q(a): deviating from
+            # what has historically won costs -ln q(a) in the KL objective.
+            utilities = centred(self.experience.scorer.utilities(keys))
+            tilt = [math.exp(self.experience_weight * u) - 1.0 for u in utilities]
+        prior = np.array(passive_prior(projected_candidates, tilt), dtype=float)
 
         self._belief = self._observe(state, seat)
 
@@ -146,12 +188,25 @@ class KLControlActionPicker:
             local = int(np.argmin(costs))
 
         chosen = index_map[local]
+        if self._gate is not None:
+            self._gate.record(legal_actions[chosen], state)
+        if self.experience is not None:
+            self.experience.note(keys[local])
+            self.last_reasoning.update(self.experience.trace())
         self.last_reasoning["chosen_index"] = chosen
         self.last_reasoning["chosen_type"] = str(legal_actions[chosen].get("type", ""))
-        self.last_reasoning["transition_model"] = "analytic_pending_cast_v4"
+        self.last_reasoning["transition_model"] = (
+            "analytic_combat_v5" if self._gate is not None else "analytic_pending_cast_v4"
+        )
+        self.last_reasoning["activation_policy"] = (
+            ACTIVATION_POLICY if self._gate is not None else "legacy_ungated"
+        )
         self.last_reasoning["pending_cast"] = latent.our_pending_cast
         self.last_reasoning["fixed_damage_forecasts"] = sum(
             isinstance(action, ActionForecast) for action in projected_candidates
+        )
+        self.last_reasoning["combat_forecasts"] = sum(
+            isinstance(action, CombatForecast) for action in projected_candidates
         )
         return chosen
 
@@ -160,13 +215,28 @@ class KLControlActionPicker:
     @staticmethod
     def _filter_candidates(
         legal_actions: Sequence[dict[str, Any]],
+        state: dict[str, Any] | None = None,
+        seat: int | None = None,
+        gate: ActivationGate | None = None,
     ) -> tuple[list[dict[str, Any]], list[int]]:
-        """Drop ``Concede`` unless it is the only option.
+        """Drop ``Concede`` and gated activations unless nothing else remains.
 
-        The passive prior already prices it at ~0, but removing it keeps a
-        sampled policy from ever hitting it through numerical noise.
+        The passive prior already prices Concede at ~0, but removing it keeps a
+        sampled policy from ever hitting it through numerical noise. The
+        analytic transition model credits every activation with board gain, so
+        without the activation gate it animated man-lands in upkeep and
+        cracked self-destructive board wipes.
         """
-        keep = [i for i, a in enumerate(legal_actions) if action_kind(a) != "concede"]
+        keep = [
+            i for i, a in enumerate(legal_actions)
+            if action_kind(a) != "concede"
+            and (gate is None or state is None or seat is None or gate.allows(a, state, seat))
+        ]
+        if gate is not None and state is not None:
+            useful = set(useful_mana_colours(legal_actions, state))
+            keep = [i for i in keep if i in useful]
+        if not keep:
+            keep = [i for i, a in enumerate(legal_actions) if action_kind(a) != "concede"]
         if not keep:
             keep = list(range(len(legal_actions)))
         return [legal_actions[i] for i in keep], keep
@@ -208,6 +278,11 @@ class KLControlActionPicker:
                 count += 1
         return count
 
+    def observe_outcome(self, outcome: str, provenance: dict[str, Any] | None = None) -> bool:
+        """Credit this game's choices to the shared experience graph."""
+        return self.experience.finish(outcome, provenance) if self.experience else False
+
     def reset(self) -> None:
         self._belief = default_belief()
+        self._gate = ActivationGate() if self.activation_policy == "hygiene" else None
         self.last_reasoning = {}

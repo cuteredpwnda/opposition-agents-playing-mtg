@@ -1,0 +1,37 @@
+# Golgari Midrange (Pioneer) - MTGGoldfish metagame snapshot
+# Source: https://www.mtggoldfish.com/metagame/pioneer (feed updated 2026-11-24T00:00:00Z)
+# Author: MTGGoldfish; vendored by phase-rs feed mtggoldfish-pioneer
+
+1 Professor Dellian Fel
+2 Professor Dellian Fel
+4 Llanowar Wastes
+2 Bitter Triumph
+3 Abrupt Decay
+1 Boseiju, Who Endures
+4 Fatal Push
+3 Sheoldred, the Apocalypse
+1 Takenuma, Abandoned Mire
+4 Graveyard Trespasser
+1 Culling Ritual
+4 Overgrown Tomb
+1 Forest
+1 Urborg, Tomb of Yawgmoth
+3 Mutavault
+4 Unholy Annex
+4 Blooming Marsh
+1 Castle Locthwain
+3 Swamp
+4 Badgermole Cub
+1 Restless Cottage
+3 Salt Vampire
+1 Mutavault
+4 Thoughtseize
+
+Sideboard
+2 Extinction Event
+2 Go Blank
+1 Culling Ritual
+4 Strategic Betrayal
+2 Duress
+2 Invoke Despair
+2 Damping Sphere
