@@ -1,0 +1,37 @@
+# Izzet Phoenix (Pioneer) - MTGGoldfish metagame snapshot
+# Source: https://www.mtggoldfish.com/metagame/pioneer (feed updated 2026-11-24T00:00:00Z)
+# Author: MTGGoldfish; vendored by phase-rs feed mtggoldfish-pioneer
+
+4 Arclight Phoenix
+4 Artist's Talent
+4 Consider
+4 Fiery Impulse
+2 Into the Flood Maw
+3 Lightning Axe
+2 Island
+4 Spirebluff Canal
+1 Otawara, Soaring City
+4 Picklock Prankster
+1 Prismari Charm
+1 Proft's Eidetic Memory
+1 Stormcarved Coast
+4 Treasure Cruise
+4 Opt
+3 Steam Vents
+4 Sleight of Hand
+2 Spell Pierce
+1 Island
+1 Island
+4 Riverglide Pathway
+1 Hall of Storm Giants
+1 Steam Vents
+
+Sideboard
+1 Abrade
+1 Disdainful Stroke
+2 Anger of the Gods
+3 Mystical Dispute
+1 Abrade
+2 Brazen Borrower
+2 Crackling Drake
+3 Thing in the Ice

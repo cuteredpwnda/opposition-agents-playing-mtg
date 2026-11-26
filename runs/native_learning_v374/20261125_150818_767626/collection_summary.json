@@ -1,0 +1,14 @@
+{
+  "train": {
+    "scheduled": 32,
+    "completed": 32
+  },
+  "validation": {
+    "scheduled": 8,
+    "completed": 8
+  },
+  "test": {
+    "scheduled": 8,
+    "completed": 8
+  }
+}

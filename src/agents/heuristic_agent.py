@@ -9,8 +9,8 @@ from __future__ import annotations
 import random
 from typing import Iterable
 
-from src.agents.base_agent import MTGAgent
-from src.engine.game_state import Action, ActionType, GameState
+from src.agents.base_agent import MTGAgent, AgentStrategy
+from src.engine_legacy.game_state import Action, ActionType, GameState
 
 # Action-type priority. Higher = picked first.
 _PRIORITY: dict[ActionType, int] = {
@@ -42,6 +42,11 @@ class HeuristicAgent(MTGAgent):
         super().__init__(player_id=player_id, name=name or f"Heuristic({player_id})")
         self._rng = random.Random(seed)
         self._prefer_aggressive = prefer_aggressive
+
+    @property
+    def strategy(self) -> AgentStrategy | None:
+        """Return the mulligan strategy based on play style."""
+        return AgentStrategy.AGGRESSIVE if self._prefer_aggressive else AgentStrategy.CONTROL
 
     async def decide_action(
         self, game_state: GameState, legal_actions: list[Action]
@@ -152,7 +157,7 @@ class HeuristicAgent(MTGAgent):
         self, game_state: GameState, candidates: list[Action]
     ) -> Action | None:
         """Pick a single blocker assignment for the most threatening attacker."""
-        from src.engine.game_state import Zone
+        from src.engine_legacy.game_state import Zone
 
         def _power(card_id: str) -> int:
             card = next((c for c in game_state.cards if c.instance_id == card_id), None)

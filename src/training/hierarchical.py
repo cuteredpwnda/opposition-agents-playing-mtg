@@ -14,7 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from src.engine.game_state import Action, GameState
+from src.engine_legacy.game_state import Action, GameState
 
 
 @dataclass
@@ -64,7 +64,7 @@ class HierarchicalAgent:
 
     async def plan_turn(self, game_state: GameState) -> TurnPlan:
         """Level 1: Plan the broad strokes of this turn."""
-        from src.engine.game_state import Zone
+        from src.engine_legacy.game_state import Zone
         
         # Analyze current board state
         our_player = game_state.players[0]
@@ -104,7 +104,7 @@ class HierarchicalAgent:
         self, game_state: GameState, legal_actions: list[Action]
     ) -> Action:
         """Level 0: Choose specific card/action consistent with turn plan."""
-        from src.engine.game_state import ActionType
+        from src.engine_legacy.game_state import ActionType
         
         if not legal_actions:
             raise ValueError("No legal actions available")

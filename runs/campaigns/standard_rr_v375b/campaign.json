@@ -1,0 +1,97 @@
+{
+  "schema": "phase_rs_campaign_v1",
+  "created": "2026-11-26T10:49:17.401215+00:00",
+  "argv": [
+    "run",
+    "--name",
+    "standard_rr_v375b",
+    "--format",
+    "Standard",
+    "--our-decks",
+    "data/decks/meta/standard/*.txt",
+    "--arms",
+    "random",
+    "heuristic",
+    "heuristic_legacy",
+    "kl",
+    "kl_legacy",
+    "kl_graph_learn",
+    "--games-per-cell",
+    "3",
+    "--workers",
+    "6"
+  ],
+  "config": {
+    "command": "run",
+    "name": "standard_rr_v375b",
+    "output_root": "runs/campaigns",
+    "format": "Standard",
+    "our_decks": "data/decks/meta/standard/*.txt",
+    "opp_decks": null,
+    "include_mirrors": false,
+    "arms": [
+      "random",
+      "heuristic",
+      "heuristic_legacy",
+      "kl",
+      "kl_legacy",
+      "kl_graph_learn"
+    ],
+    "difficulties": [
+      "VeryEasy"
+    ],
+    "games_per_cell": 3,
+    "workers": 6,
+    "uri": [
+      "ws://127.0.0.1:9474/ws"
+    ],
+    "seed": 2026,
+    "max_game_seconds": 600,
+    "cell_timeout": 3600,
+    "graph_root": null,
+    "graph_per_arm": false
+  },
+  "arms": {
+    "random": [
+      "--picker",
+      "random"
+    ],
+    "heuristic": [
+      "--picker",
+      "heuristic"
+    ],
+    "heuristic_legacy": [
+      "--picker",
+      "heuristic",
+      "--activation-policy",
+      "legacy"
+    ],
+    "kl": [
+      "--picker",
+      "kl_control",
+      "--objective",
+      "kl"
+    ],
+    "kl_legacy": [
+      "--picker",
+      "kl_control",
+      "--objective",
+      "kl",
+      "--activation-policy",
+      "legacy"
+    ],
+    "kl_graph_learn": [
+      "--picker",
+      "kl_control",
+      "--objective",
+      "kl",
+      "--experience-mode",
+      "learn",
+      "--exploration",
+      "thompson"
+    ]
+  },
+  "cells": 540,
+  "repository_commit": "0d56297857d7d58de93813743788a3c5b0909040",
+  "seed_scope": "picker seeds only; native shuffle and AI RNG are not seeded"
+}

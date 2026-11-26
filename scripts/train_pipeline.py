@@ -136,10 +136,14 @@ async def stage_2_build_kg() -> bool:
 
         logger.info("Initialising n10s + ontologyâ€¦")
         setup = N10sSetup()
-        await setup.full_setup()
+        try:
+            await setup.full_setup()
+        finally:
+            await setup.close()
         logger.info("n10s setup complete")
     except Exception as e:
-        logger.warning("n10s setup skipped: %s", e)
+        logger.error("n10s setup failed; refusing an unqualified KG import: %s", e)
+        return False
 
     # Scryfall import
     try:
@@ -492,7 +496,20 @@ async def stage_7_eval_game(world_model: "WorldModel | None" = None) -> None:
         logger.error("Evaluation game failed: %s", e)
 
 
-# â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—
+async def stage_4_1_phase_rs_traces(
+    num_games: int = 64,
+    picker_name: str = "heuristic",
+    ai_difficulty: str = "Medium",
+) -> "TrajectoryStore":
+    """Reject the retired deck-summary-as-transition conversion."""
+    raise ValueError(
+        "Native training requires actual observation/action pairs. "
+        "Use python -m scripts.run_native_learning; deck-summary KG "
+        "placeholders must never be passed to a world-model optimizer."
+    )
+
+
+
 # â•‘  Main Orchestrator                                                â•‘
 # â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
@@ -501,6 +518,14 @@ async def run_pipeline(args: argparse.Namespace) -> None:
     start = args.stage
     end = getattr(args, "end_stage", 7)
     t0 = time.time()
+
+    if args.phase_rs_traces:
+        raise ValueError(
+            "The old stage 4.1 used deck-summary placeholders, not native transitions. "
+            "Use python -m scripts.run_native_learning for the real native graph, "
+            "JEPA, recurrent dynamics/reward and controller pipeline. Legacy dream "
+            "self-play must not be mixed into native training."
+        )
 
     def _in_range(n: int) -> bool:
         return start <= n <= end
@@ -528,7 +553,15 @@ async def run_pipeline(args: argparse.Namespace) -> None:
 
     # --- Stage 4 ---
     if _in_range(4):
-        if args.iterative_training:
+        # Phase-RS traces (stage 4.1 NEW)
+        if args.phase_rs_traces:
+            logger.info("Running phase-rs-first trace collection (stage 4.1)...")
+            store = await stage_4_1_phase_rs_traces(
+                num_games=args.num_games,
+                picker_name=args.phase_rs_picker,
+                ai_difficulty=args.phase_rs_difficulty,
+            )
+        elif args.iterative_training:
             store = await stage_4_iterative_self_play(
                 num_iterations=args.iterative_iters,
                 games_per_iteration=args.iterative_games_per_iter,
@@ -709,6 +742,15 @@ def main() -> None:
     parser.add_argument("--checkpoint-dir", type=str, default="checkpoints/rl",
                         help="Checkpoint directory for RLTrainer during iterative training")
 
+    # Phase-RS trace collection (NEW: stage 4.1)
+    parser.add_argument("--phase-rs-traces", action="store_true",
+                        help="Enable phase-rs-first trace collection (stage 4.1) before JEPA training")
+    parser.add_argument("--phase-rs-picker", type=str, default="heuristic",
+                        help="Picker for phase-rs runs: random | heuristic | agent:<name>")
+    parser.add_argument("--phase-rs-difficulty", type=str, default="Medium",
+                        choices=["VeryEasy", "Easy", "Medium", "Hard", "VeryHard"],
+                        help="AI difficulty for phase-rs training games")
+
     # JEPA training
     parser.add_argument("--jepa-beta", type=float, default=1.0,
                         help="JEPA KL regularizer weight (the ONE hyperparameter)")
@@ -737,4 +779,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

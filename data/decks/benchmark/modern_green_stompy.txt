@@ -1,0 +1,13 @@
+# Development benchmark: mono-green creature aggro, 60 cards.
+# Hand-authored experimental list, not a tournament-performance claim.
+Mainboard
+4 Llanowar Elves
+4 Elvish Mystic
+4 Experiment One
+4 Strangleroot Geist
+4 Avatar of the Resolute
+4 Leatherback Baloth
+4 Steel Leaf Champion
+4 Rancor
+4 Aspect of Hydra
+24 Forest

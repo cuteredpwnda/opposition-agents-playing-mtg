@@ -15,7 +15,7 @@ from typing import Any
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from src.engine.game_state import GameState
+from src.engine_legacy.game_state import GameState
 from src.knowledge.knowledge_graph import MTGKnowledgeGraph
 
 

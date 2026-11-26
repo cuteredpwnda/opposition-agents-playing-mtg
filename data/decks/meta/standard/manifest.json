@@ -1,0 +1,224 @@
+{
+  "schema_version": 1,
+  "format": "standard",
+  "source": "https://www.mtggoldfish.com/metagame/standard",
+  "feed_id": "mtggoldfish-standard",
+  "feed_updated": "2026-11-24T00:00:00Z",
+  "feed_path": "external/phase-rs/client/public/feeds/mtggoldfish-standard.json",
+  "feed_sha256": "deeff052c0b2392322f16c3d93d0e3b0656f52234b58c1fd1217fd93579395db",
+  "phase_rs_commit": "b42447bc3611273fb2413fa95d22a9e5ff623c01",
+  "card_data_sha256": "84eca8e6f355c66a4db80504ee0621da6ad3b85265a1c728d410d8969c2107d5",
+  "scope": "Factual metagame deck selections from MTGGoldfish as vendored by phase-rs; legality and coverage are screened against the engine card database.",
+  "decks": [
+    {
+      "file": "standard_01_mono_green_landfall.txt",
+      "name": "Mono-Green Landfall",
+      "meta_rank": 1,
+      "colors": [
+        "G"
+      ],
+      "tags": [
+        "metagame"
+      ],
+      "deck_sha256": "416ed3b6a61bad75d40f332a8e8cc890fc3cdef74ba282db545577970210c2ac",
+      "normalization": {},
+      "mainboard_count": 60,
+      "missing_cards": [],
+      "illegal_cards": [],
+      "unimplemented_cards": [],
+      "implemented_copy_share": 1.0,
+      "eligible": true
+    },
+    {
+      "file": "standard_02_jund_sacrifice.txt",
+      "name": "Jund Sacrifice",
+      "meta_rank": 2,
+      "colors": [
+        "B",
+        "G",
+        "R"
+      ],
+      "tags": [
+        "metagame"
+      ],
+      "deck_sha256": "f6ee1884c2ab5a48651f3b6517dfd256a69f9392d948c32f2fa0534ec73a9f7f",
+      "normalization": {},
+      "mainboard_count": 60,
+      "missing_cards": [],
+      "illegal_cards": [],
+      "unimplemented_cards": [],
+      "implemented_copy_share": 1.0,
+      "eligible": true
+    },
+    {
+      "file": "standard_03_dimir_midrange.txt",
+      "name": "Dimir Midrange",
+      "meta_rank": 3,
+      "colors": [
+        "B",
+        "U"
+      ],
+      "tags": [
+        "metagame"
+      ],
+      "deck_sha256": "c8a87617575de8ae02d8b78bfdad03dd377dc13fcb857d678fface165cda2921",
+      "normalization": {},
+      "mainboard_count": 60,
+      "missing_cards": [],
+      "illegal_cards": [],
+      "unimplemented_cards": [],
+      "implemented_copy_share": 1.0,
+      "eligible": true
+    },
+    {
+      "file": "standard_04_dimir_reanimator.txt",
+      "name": "Dimir Reanimator",
+      "meta_rank": 4,
+      "colors": [
+        "B",
+        "U"
+      ],
+      "tags": [
+        "metagame"
+      ],
+      "deck_sha256": "80e90cb114ea9e6895954f13097bde0ad2c06df38be6946fc8b34c73afd785b2",
+      "normalization": {},
+      "mainboard_count": 60,
+      "missing_cards": [],
+      "illegal_cards": [],
+      "unimplemented_cards": [
+        "Seasoned Cryomancer",
+        "Uldaros Theorix"
+      ],
+      "implemented_copy_share": 0.9,
+      "eligible": true
+    },
+    {
+      "file": "standard_05_lifegain.txt",
+      "name": "Lifegain",
+      "meta_rank": 5,
+      "colors": [
+        "W",
+        "B"
+      ],
+      "tags": [
+        "metagame"
+      ],
+      "deck_sha256": "d1422eeae6f06e1bcefdec6279c20352fdea680a7db45262ab3b250b9b6ff5d7",
+      "normalization": {},
+      "mainboard_count": 60,
+      "missing_cards": [],
+      "illegal_cards": [],
+      "unimplemented_cards": [],
+      "implemented_copy_share": 1.0,
+      "eligible": true
+    },
+    {
+      "file": "standard_06_azorius_control.txt",
+      "name": "Azorius Control",
+      "meta_rank": 6,
+      "colors": [
+        "W",
+        "U"
+      ],
+      "tags": [
+        "metagame"
+      ],
+      "deck_sha256": "8ac28ae109ab688cc88d1da04b05c0caf916d2df9fc8d8fbbf6ad914dc8986e1",
+      "normalization": {},
+      "mainboard_count": 60,
+      "missing_cards": [],
+      "illegal_cards": [],
+      "unimplemented_cards": [
+        "Jace's Machinations"
+      ],
+      "implemented_copy_share": 0.95,
+      "eligible": true
+    },
+    {
+      "file": "standard_07_izzet_spellementals.txt",
+      "name": "Izzet Spellementals",
+      "meta_rank": 7,
+      "colors": [
+        "U",
+        "R"
+      ],
+      "tags": [
+        "metagame"
+      ],
+      "deck_sha256": "b89af40119d09030bfca77cdd89aad631feee3156ba3ec679bb659c99504f7fd",
+      "normalization": {},
+      "mainboard_count": 60,
+      "missing_cards": [],
+      "illegal_cards": [],
+      "unimplemented_cards": [],
+      "implemented_copy_share": 1.0,
+      "eligible": true
+    },
+    {
+      "file": "standard_08_4c_control.txt",
+      "name": "4c Control",
+      "meta_rank": 8,
+      "colors": [
+        "B",
+        "R",
+        "W",
+        "U"
+      ],
+      "tags": [
+        "metagame"
+      ],
+      "deck_sha256": "440ea46e83a18e0f63c0aa4826d5f1f0f3db86adc2fa59fb4e28c0b0acb8af56",
+      "normalization": {},
+      "mainboard_count": 60,
+      "missing_cards": [],
+      "illegal_cards": [],
+      "unimplemented_cards": [],
+      "implemented_copy_share": 1.0,
+      "eligible": true
+    },
+    {
+      "file": "standard_09_azorius_momo.txt",
+      "name": "Azorius Momo",
+      "meta_rank": 9,
+      "colors": [
+        "W",
+        "U"
+      ],
+      "tags": [
+        "metagame"
+      ],
+      "deck_sha256": "da30b2231170f82eec36d9b393b8dc11698d32edc23b2c4a35c91583ea7d3ba9",
+      "normalization": {},
+      "mainboard_count": 60,
+      "missing_cards": [],
+      "illegal_cards": [],
+      "unimplemented_cards": [],
+      "implemented_copy_share": 1.0,
+      "eligible": true
+    },
+    {
+      "file": "standard_10_boros_dwarves.txt",
+      "name": "Boros Dwarves",
+      "meta_rank": 10,
+      "colors": [
+        "W",
+        "R"
+      ],
+      "tags": [
+        "metagame"
+      ],
+      "deck_sha256": "e28d6b70feb34a267b0275e6fe9d75137c32b0955ef930c2dc9c961ec60c1d17",
+      "normalization": {
+        "Dain's Company": "D\u00e1in's Company",
+        "Kili the Resourceful": "K\u00edli the Resourceful"
+      },
+      "mainboard_count": 60,
+      "missing_cards": [],
+      "illegal_cards": [],
+      "unimplemented_cards": [],
+      "implemented_copy_share": 1.0,
+      "eligible": true
+    }
+  ]
+}

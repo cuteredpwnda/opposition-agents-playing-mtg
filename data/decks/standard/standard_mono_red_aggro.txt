@@ -1,15 +1,14 @@
 # Mono-Red Aggro (Standard) — 60 cards
-# Curve-out red aggro list. Showcases haste, prowess, and direct damage.
+# Bounded integration-smoke list; legality can change with Standard rotation.
 
-4 Monastery Swiftspear
-4 Heartfire Hero
+Mainboard
 4 Slickshot Show-Off
 4 Manifold Mouse
-4 Screaming Nemesis
-4 Bloodthirsty Conqueror
+4 Emberheart Challenger
+4 Hired Claw
+4 Valley Flamecaller
 4 Lightning Strike
 4 Burst Lightning
-2 Torch the Tower
-4 Sokenzan, Crucible of Defiance
-4 Mishra's Foundry
-18 Mountain
+4 Torch the Tower
+4 Rockface Village
+24 Mountain

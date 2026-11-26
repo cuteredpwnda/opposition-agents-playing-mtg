@@ -1,0 +1,95 @@
+{
+  "schema": "phase_rs_campaign_analysis_v1",
+  "campaign": "standard_ladder_v375b",
+  "games_scored": 162,
+  "excluded": {},
+  "model": "fractional logistic, treatment coding, ridge on non-intercept terms",
+  "factors": [
+    "arm",
+    "our_deck",
+    "opp_deck",
+    "difficulty"
+  ],
+  "ridge": 1.0,
+  "bootstrap": {
+    "replicates": 400,
+    "unit": "matchup cluster"
+  },
+  "reference_arm": "random",
+  "arms": {
+    "random": {
+      "games": 54,
+      "wins": 2,
+      "draws": 0,
+      "raw_score": 0.037037037037037035,
+      "raw_wilson95": [
+        0.010216153585413057,
+        0.12535409343403314
+      ],
+      "adjusted": 0.08721551645492899,
+      "adjusted_ci95": [
+        0.05788688783536601,
+        0.12071416028191302
+      ],
+      "diff_vs_random": 0.0,
+      "diff_vs_random_ci95": [
+        0.0,
+        0.0
+      ],
+      "mean_turns": 14.203703703703704
+    },
+    "heuristic": {
+      "games": 54,
+      "wins": 14,
+      "draws": 0,
+      "raw_score": 0.25925925925925924,
+      "raw_wilson95": [
+        0.16118507964793902,
+        0.38931144880217294
+      ],
+      "adjusted": 0.23671681541149914,
+      "adjusted_ci95": [
+        0.1517633643476885,
+        0.3234434782569338
+      ],
+      "diff_vs_random": 0.14950129895657016,
+      "diff_vs_random_ci95": [
+        0.06279946732869413,
+        0.23943358926007063
+      ],
+      "mean_turns": 16.38888888888889
+    },
+    "kl": {
+      "games": 54,
+      "wins": 17,
+      "draws": 0,
+      "raw_score": 0.3148148148148148,
+      "raw_wilson95": [
+        0.2067911428909822,
+        0.44743695591679633
+      ],
+      "adjusted": 0.28717877924468305,
+      "adjusted_ci95": [
+        0.1687461113056347,
+        0.3963933451813588
+      ],
+      "diff_vs_random": 0.19996326278975407,
+      "diff_vs_random_ci95": [
+        0.08755258780039396,
+        0.3116372537025746
+      ],
+      "mean_turns": 14.981481481481481
+    }
+  },
+  "our_deck_logit": {
+    "standard_01_mono_green_landfall": 0.0,
+    "standard_03_dimir_midrange": 0.16470991695354414,
+    "standard_05_lifegain": 0.4816588133390178
+  },
+  "opp_deck_logit": {
+    "standard_01_mono_green_landfall": 0.0,
+    "standard_03_dimir_midrange": -0.5407149887334235,
+    "standard_05_lifegain": -0.03170370261061307
+  },
+  "learning": {}
+}

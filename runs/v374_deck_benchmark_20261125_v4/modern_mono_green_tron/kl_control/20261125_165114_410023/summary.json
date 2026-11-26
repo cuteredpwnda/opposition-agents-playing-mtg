@@ -1,0 +1,108 @@
+{
+  "games": 15,
+  "completed_games": 15,
+  "wins": 6,
+  "losses": 9,
+  "draws": 0,
+  "incomplete_games": 0,
+  "completion_rate": 1.0,
+  "win_rate": 0.4,
+  "win_rate_ci95": [
+    0.1982449614134158,
+    0.6425316987937539
+  ],
+  "reason_counts": {
+    "game_rules": 15
+  },
+  "decision_count": 7318,
+  "decision_latency_sec": {
+    "p50": 8.300004992634058e-06,
+    "p95": 0.008972439998615295
+  },
+  "candidate_coverage_mean": null,
+  "shortlisted_decisions": 0,
+  "schema_version": 2,
+  "by_objective": {
+    "kl": {
+      "games": 5,
+      "completed_games": 5,
+      "wins": 3,
+      "losses": 2,
+      "draws": 0,
+      "incomplete_games": 0,
+      "completion_rate": 1.0,
+      "win_rate": 0.6,
+      "win_rate_ci95": [
+        0.2307242812760128,
+        0.882379225767352
+      ],
+      "reason_counts": {
+        "game_rules": 5
+      },
+      "decision_count": 3174,
+      "decision_latency_sec": {
+        "p50": 8.39999847812578e-06,
+        "p95": 0.018089385000348547
+      },
+      "candidate_coverage_mean": null,
+      "shortlisted_decisions": 0
+    },
+    "efe_infogain": {
+      "games": 5,
+      "completed_games": 5,
+      "wins": 2,
+      "losses": 3,
+      "draws": 0,
+      "incomplete_games": 0,
+      "completion_rate": 1.0,
+      "win_rate": 0.4,
+      "win_rate_ci95": [
+        0.11762077423264783,
+        0.769275718723987
+      ],
+      "reason_counts": {
+        "game_rules": 5
+      },
+      "decision_count": 2468,
+      "decision_latency_sec": {
+        "p50": 8.300004992634058e-06,
+        "p95": 0.0009437600001547253
+      },
+      "candidate_coverage_mean": null,
+      "shortlisted_decisions": 0
+    },
+    "efe_ambiguity": {
+      "games": 5,
+      "completed_games": 5,
+      "wins": 1,
+      "losses": 4,
+      "draws": 0,
+      "incomplete_games": 0,
+      "completion_rate": 1.0,
+      "win_rate": 0.2,
+      "win_rate_ci95": [
+        0.03622410863243014,
+        0.6244653702374747
+      ],
+      "reason_counts": {
+        "game_rules": 5
+      },
+      "decision_count": 1676,
+      "decision_latency_sec": {
+        "p50": 8.200004231184721e-06,
+        "p95": 0.0007739999982732115
+      },
+      "candidate_coverage_mean": null,
+      "shortlisted_decisions": 0
+    }
+  },
+  "picker": "kl_control",
+  "ai_difficulty": "VeryEasy",
+  "ai_deck": null,
+  "autostart": false,
+  "seed": 1000,
+  "player_count": 2,
+  "ai_deck_files": [
+    "data/decks/benchmark/modern_azorius_control.txt"
+  ]
+}

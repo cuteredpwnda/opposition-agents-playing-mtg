@@ -1,0 +1,43 @@
+# Amulet Titan (Modern) - MTGGoldfish metagame snapshot
+# Source: https://www.mtggoldfish.com/metagame/modern (feed updated 2026-11-24T00:00:00Z)
+# Author: MTGGoldfish; vendored by phase-rs feed mtggoldfish-modern
+
+1 Echoing Deeps
+1 Otawara, Soaring City
+4 Gruul Turf
+4 Arboreal Grazer
+4 Scapeshift
+2 Forest
+1 Tolaria West
+4 Amulet of Vigor
+1 Dryad Arbor
+4 Simic Growth Chamber
+3 Green Sun's Zenith
+1 Explore
+4 Crumbling Vestige
+1 Yavimaya, Cradle of Growth
+1 Ba Sing Se
+3 Malevolent Rumble
+1 Roiling Canopy
+4 Primeval Titan
+4 Spelunking
+1 Hanweir Battlements
+1 Cultivator Colossus
+2 Summoner's Pact
+1 Mirrorpool
+4 Urza's Saga
+3 Boseiju, Who Endures
+1 Vesuva
+
+Sideboard
+1 Endurance
+1 Thrun, the Last Troll
+1 Vexing Bauble
+3 Dismember
+2 Trinisphere
+1 Skyline Cascade
+1 Bojuka Bog
+1 Grafdigger's Cage
+1 Force of Vigor
+1 Ba Sing Se
+2 Sowing Mycospawn

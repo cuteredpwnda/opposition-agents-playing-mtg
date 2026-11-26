@@ -1,0 +1,2 @@
+{"picker": "heuristic", "ai_difficulty": "Easy", "game_index": 1, "seed": 7, "winner_seat": 0, "our_seat": 0, "result": "win", "reason": "game_rules", "turns": 2, "actions": 5, "elapsed_sec": 0.7902916000020923}
+{"picker": "heuristic", "ai_difficulty": "Easy", "game_index": 2, "seed": 8, "winner_seat": 0, "our_seat": 0, "result": "win", "reason": "game_rules", "turns": 2, "actions": 5, "elapsed_sec": 0.774432500002149}

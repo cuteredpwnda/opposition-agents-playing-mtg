@@ -1,0 +1,98 @@
+{
+  "schema": "phase_rs_campaign_analysis_v1",
+  "campaign": "modern_5deck_rr_v374_20261126",
+  "games_scored": 120,
+  "excluded": {},
+  "model": "fractional logistic, treatment coding, ridge on non-intercept terms",
+  "factors": [
+    "arm",
+    "our_deck",
+    "opp_deck"
+  ],
+  "ridge": 1.0,
+  "bootstrap": {
+    "replicates": 400,
+    "unit": "matchup cluster"
+  },
+  "reference_arm": "random",
+  "arms": {
+    "random": {
+      "games": 40,
+      "wins": 4,
+      "draws": 0,
+      "raw_score": 0.1,
+      "raw_wilson95": [
+        0.03957888759557486,
+        0.23052074380473897
+      ],
+      "adjusted": 0.1536657207657483,
+      "adjusted_ci95": [
+        0.09415360234877813,
+        0.2255807558845556
+      ],
+      "diff_vs_random": 0.0,
+      "diff_vs_random_ci95": [
+        0.0,
+        0.0
+      ],
+      "mean_turns": 15.7
+    },
+    "heuristic": {
+      "games": 40,
+      "wins": 14,
+      "draws": 0,
+      "raw_score": 0.35,
+      "raw_wilson95": [
+        0.2213433317104915,
+        0.5049440300646263
+      ],
+      "adjusted": 0.3231671396171259,
+      "adjusted_ci95": [
+        0.183221960713524,
+        0.455257126305391
+      ],
+      "diff_vs_random": 0.1695014188513776,
+      "diff_vs_random_ci95": [
+        0.05097195279520398,
+        0.29582212311510747
+      ],
+      "mean_turns": 15.85
+    },
+    "kl": {
+      "games": 40,
+      "wins": 14,
+      "draws": 0,
+      "raw_score": 0.35,
+      "raw_wilson95": [
+        0.2213433317104915,
+        0.5049440300646263
+      ],
+      "adjusted": 0.3231671396171258,
+      "adjusted_ci95": [
+        0.18542928889855512,
+        0.471660058091232
+      ],
+      "diff_vs_random": 0.16950141885137748,
+      "diff_vs_random_ci95": [
+        0.031532986525457954,
+        0.30785858723596693
+      ],
+      "mean_turns": 15.475
+    }
+  },
+  "our_deck_logit": {
+    "modern_01_eldrazi_ramp": 0.0,
+    "modern_02_boros_energy": -0.4659720237415773,
+    "modern_03_amulet_titan": -0.8483874866553153,
+    "modern_04_affinity": 0.49789788561048226,
+    "modern_05_rakdos_midrange": 0.3558658450396111
+  },
+  "opp_deck_logit": {
+    "modern_01_eldrazi_ramp": 0.0,
+    "modern_02_boros_energy": -1.08485966904163,
+    "modern_03_amulet_titan": 0.7641923716023966,
+    "modern_04_affinity": 0.21792090408269468,
+    "modern_05_rakdos_midrange": -0.4260550991102564
+  },
+  "learning": {}
+}

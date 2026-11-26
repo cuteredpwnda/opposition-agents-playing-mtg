@@ -14,13 +14,20 @@ Reference: https://neo4j.com/labs/neosemantics/
 from __future__ import annotations
 
 import logging
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
+from typing import Any
+from urllib.parse import quote
 
 from neo4j import AsyncGraphDatabase
-
 from src.config import settings
 
 logger = logging.getLogger(__name__)
+
+GRAPH_CONFIG = {
+    "handleVocabUris": "MAP",
+    "handleMultival": "ARRAY",
+    "handleRDFTypes": "LABELS_AND_NODES",
+}
 
 
 class N10sSetup:
@@ -45,21 +52,52 @@ class N10sSetup:
         handleMultival: 'ARRAY' — multi-valued properties become arrays.
         handleRDFTypes: 'LABELS_AND_NODES' — RDF types become Neo4j labels.
         """
+        await self.driver.verify_connectivity()
         async with self.driver.session() as session:
-            # Drop existing config if any (idempotent setup)
-            await session.run("CALL n10s.graphconfig.drop() YIELD value RETURN value")
-            await session.run(
-                """
-                CALL n10s.graphconfig.init({
-                    handleVocabUris: 'MAP',
-                    handleMultival: 'ARRAY',
-                    handleRDFTypes: 'LABELS_AND_NODES'
-                })
-                """
+            result = await session.run("CALL n10s.graphconfig.show()")
+            current = {record["param"]: record["value"] async for record in result}
+            if current:
+                mismatches = {
+                    key: current.get(key) for key, value in GRAPH_CONFIG.items()
+                    if current.get(key) != value
+                }
+                if mismatches:
+                    raise RuntimeError(
+                        f"Incompatible n10s graph config {mismatches}; "
+                        "review migration explicitly. Existing config was not changed."
+                    )
+            result = await session.run(
+                "CREATE CONSTRAINT n10s_unique_uri IF NOT EXISTS "
+                "FOR (r:Resource) REQUIRE r.uri IS UNIQUE"
             )
+            await result.consume()
+            if current:
+                logger.info("Compatible n10s graph config retained")
+                return
+            result = await session.run("CALL n10s.graphconfig.init($config)", config=GRAPH_CONFIG)
+            await result.consume()
             logger.info("n10s graph config initialized")
 
-    async def import_ontology(self, ontology_path: str | None = None) -> dict:
+    async def _import(
+        self, procedure: str, path: str, format_: str | None = None,
+    ) -> dict[str, Any]:
+        uri = self._file_uri(path)
+        format_ = format_ or self._rdf_format(path)
+        async with self.driver.session() as session:
+            result = await session.run(
+                f"CALL {procedure}($uri, $format)", uri=uri, format=format_,
+            )
+            record = await result.single()
+            stats = dict(record) if record else {}
+            if stats.get("terminationStatus") != "OK":
+                raise RuntimeError(f"{procedure} failed: {stats}")
+            for key in ("triplesParsed", "triplesLoaded"):
+                if type(stats.get(key)) is not int or stats[key] <= 0:
+                    raise RuntimeError(f"{procedure} returned no verified {key}: {stats}")
+            logger.info("%s completed: %s", procedure, stats)
+            return stats
+
+    async def import_ontology(self, ontology_path: str | None = None) -> dict[str, Any]:
         """Import the OWL ontology TBox into Neo4j.
 
         Uses n10s.onto.import.fetch() which creates:
@@ -70,36 +108,15 @@ class N10sSetup:
         - [:DOMAIN] / [:RANGE] edges
         """
         path = ontology_path or settings.ontology_path
-        uri = self._file_uri(path)
+        return await self._import("n10s.onto.import.fetch", path)
 
-        async with self.driver.session() as session:
-            result = await session.run(
-                "CALL n10s.onto.import.fetch($uri, 'RDF/XML')",
-                uri=uri,
-            )
-            record = await result.single()
-            stats = dict(record) if record else {}
-            logger.info(f"Ontology TBox imported: {stats}")
-            return stats
+    async def import_instances(self, ontology_path: str | None = None) -> dict[str, Any]:
+        """Import RDF statements, including schema and seed individuals.
 
-    async def import_instances(self, ontology_path: str | None = None) -> dict:
-        """Import ABox instances (seed data) from the OWL file.
-
-        Uses n10s.rdf.import.fetch() which creates actual card/combo nodes
-        from the NamedIndividual declarations in the ontology.
+        This is not a bulk card/combo import; n10s.rdf imports all source triples.
         """
         path = ontology_path or settings.ontology_path
-        uri = self._file_uri(path)
-
-        async with self.driver.session() as session:
-            result = await session.run(
-                "CALL n10s.rdf.import.fetch($uri, 'RDF/XML')",
-                uri=uri,
-            )
-            record = await result.single()
-            stats = dict(record) if record else {}
-            logger.info(f"ABox instances imported: {stats}")
-            return stats
+        return await self._import("n10s.rdf.import.fetch", path)
 
     async def import_shacl_shapes(self, shapes_path: str | None = None) -> dict:
         """Import SHACL shapes for data validation."""
@@ -134,36 +151,48 @@ class N10sSetup:
 
     async def create_indexes(self) -> None:
         """Create Neo4j indexes for efficient querying."""
+        from src.knowledge.abox_builder import CONSTRAINTS
+
         async with self.driver.session() as session:
             # Unique constraint on card name
-            await session.run(
+            result = await session.run(
                 "CREATE CONSTRAINT card_name_unique IF NOT EXISTS "
                 "FOR (c:Card) REQUIRE c.cardName IS UNIQUE"
             )
+            await result.consume()
+            for statement in CONSTRAINTS:
+                result = await session.run(statement)
+                await result.consume()
             # Index on scryfall ID
-            await session.run(
+            result = await session.run(
                 "CREATE CONSTRAINT scryfall_id_unique IF NOT EXISTS "
                 "FOR (c:Card) REQUIRE c.scryfallId IS UNIQUE"
             )
+            await result.consume()
             # Combo + outcome uniqueness (added with the outcome ontology
             # so MERGE on (:Combo {comboId}) / (:Outcome {outcomeId})
             # stays O(1)).
-            await session.run(
+            result = await session.run(
                 "CREATE CONSTRAINT combo_id_unique IF NOT EXISTS "
                 "FOR (c:Combo) REQUIRE c.comboId IS UNIQUE"
             )
-            await session.run(
+            await result.consume()
+            result = await session.run(
                 "CREATE CONSTRAINT outcome_id_unique IF NOT EXISTS "
                 "FOR (o:Outcome) REQUIRE o.outcomeId IS UNIQUE"
             )
+            await result.consume()
             # Full-text search index (idempotent — Neo4j 5+ syntax)
-            try:
-                await session.run(
-                    "CREATE FULLTEXT INDEX cardSearch IF NOT EXISTS "
-                    "FOR (c:Card) ON EACH [c.cardName, c.oracleText, c.typeLine]"
-                )
-            except Exception as e:
-                logger.debug("cardSearch fulltext index: %s", e)
+            result = await session.run(
+                "CREATE FULLTEXT INDEX cardSearch IF NOT EXISTS "
+                "FOR (c:Card) ON EACH [c.cardName, c.oracleText, c.typeLine]"
+            )
+            await result.consume()
+            result = await session.run(
+                "CREATE FULLTEXT INDEX cardDesignSearch IF NOT EXISTS "
+                "FOR (c:CardDesign) ON EACH [c.cardName, c.oracleText, c.typeLine]"
+            )
+            await result.consume()
             logger.info("Neo4j indexes created")
 
     async def create_vector_index(self, dimensions: int = 128) -> None:
@@ -183,13 +212,26 @@ class N10sSetup:
             )
             logger.info(f"Vector index created (dim={dimensions})")
 
-    async def full_setup(self) -> None:
+    async def full_setup(self) -> dict[str, dict[str, Any]]:
         """Run complete setup: config → ontology → instances → indexes."""
         await self.init_graph_config()
-        await self.import_ontology()
-        await self.import_instances()
+        reports = {
+            "schema": await self.import_ontology(),
+            "schema_rdf": await self.import_instances(),
+            "vocabulary": await self.import_instances(settings.ontology_vocabulary_path),
+        }
         await self.create_indexes()
         logger.info("Full n10s setup complete")
+        return reports
+
+    @staticmethod
+    def _rdf_format(path: str) -> str:
+        formats = {".ttl": "Turtle", ".owl": "RDF/XML", ".rdf": "RDF/XML",
+                   ".xml": "RDF/XML", ".nt": "N-Triples", ".jsonld": "JSON-LD"}
+        suffix = Path(path).suffix.lower()
+        if suffix not in formats:
+            raise ValueError(f"Unsupported RDF file extension: {path}")
+        return formats[suffix]
 
     @staticmethod
     def _file_uri(path: str) -> str:
@@ -201,7 +243,7 @@ class N10sSetup:
         if p.is_absolute():
             return p.as_uri()
         # Docker mount: ./data/ontology/ → /import/ontology/
-        if path.startswith("data/ontology/"):
-            docker_path = path.replace("data/ontology/", "/import/ontology/")
-            return f"file://{docker_path}"
+        parts = PureWindowsPath(path).parts
+        if parts[:2] == ("data", "ontology") and ".." not in parts:
+            return "file:///import/ontology/" + quote("/".join(parts[2:]))
         return f"file:///{p.resolve().as_posix()}"

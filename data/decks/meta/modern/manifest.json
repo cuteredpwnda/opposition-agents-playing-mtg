@@ -1,0 +1,218 @@
+{
+  "schema_version": 1,
+  "format": "modern",
+  "source": "https://www.mtggoldfish.com/metagame/modern",
+  "feed_id": "mtggoldfish-modern",
+  "feed_updated": "2026-11-24T00:00:00Z",
+  "feed_path": "external/phase-rs/client/public/feeds/mtggoldfish-modern.json",
+  "feed_sha256": "9823a35e9c6e6c0fdba070df3bb54f7a73181bba340cf382a661809eb8344577",
+  "phase_rs_commit": "b42447bc3611273fb2413fa95d22a9e5ff623c01",
+  "card_data_sha256": "84eca8e6f355c66a4db80504ee0621da6ad3b85265a1c728d410d8969c2107d5",
+  "scope": "Factual metagame deck selections from MTGGoldfish as vendored by phase-rs; legality and coverage are screened against the engine card database.",
+  "decks": [
+    {
+      "file": "modern_01_eldrazi_ramp.txt",
+      "name": "Eldrazi Ramp",
+      "meta_rank": 1,
+      "colors": [
+        "G"
+      ],
+      "tags": [
+        "metagame"
+      ],
+      "deck_sha256": "2dc3137487f27d16c71428346c265b7c789669adf1a37a9924f08eea694860e0",
+      "normalization": {},
+      "mainboard_count": 60,
+      "missing_cards": [],
+      "illegal_cards": [],
+      "unimplemented_cards": [],
+      "implemented_copy_share": 1.0,
+      "eligible": true
+    },
+    {
+      "file": "modern_02_boros_energy.txt",
+      "name": "Boros Energy",
+      "meta_rank": 2,
+      "colors": [
+        "W",
+        "R"
+      ],
+      "tags": [
+        "metagame"
+      ],
+      "deck_sha256": "9199c68db57b1b48bb2407e750f2970b311dd06af087a9922bc14bc29b92b7d9",
+      "normalization": {},
+      "mainboard_count": 60,
+      "missing_cards": [],
+      "illegal_cards": [],
+      "unimplemented_cards": [],
+      "implemented_copy_share": 1.0,
+      "eligible": true
+    },
+    {
+      "file": "modern_03_amulet_titan.txt",
+      "name": "Amulet Titan",
+      "meta_rank": 3,
+      "colors": [
+        "G"
+      ],
+      "tags": [
+        "metagame"
+      ],
+      "deck_sha256": "f259fcb9e6737f76a92f74c41de0f5c1c4b7ef62dfe7ab0141d8545400c395f5",
+      "normalization": {},
+      "mainboard_count": 61,
+      "missing_cards": [],
+      "illegal_cards": [],
+      "unimplemented_cards": [],
+      "implemented_copy_share": 1.0,
+      "eligible": true
+    },
+    {
+      "file": "modern_04_affinity.txt",
+      "name": "Affinity",
+      "meta_rank": 4,
+      "colors": [
+        "U",
+        "R"
+      ],
+      "tags": [
+        "metagame"
+      ],
+      "deck_sha256": "64741f0aaeb3a03ee0f4a28dcad0511039646fe35f17a8aad73ff000eee27cea",
+      "normalization": {},
+      "mainboard_count": 60,
+      "missing_cards": [],
+      "illegal_cards": [],
+      "unimplemented_cards": [],
+      "implemented_copy_share": 1.0,
+      "eligible": true
+    },
+    {
+      "file": "modern_05_rakdos_midrange.txt",
+      "name": "Rakdos Midrange",
+      "meta_rank": 5,
+      "colors": [
+        "B",
+        "R"
+      ],
+      "tags": [
+        "metagame"
+      ],
+      "deck_sha256": "f989fbf5759943c3546551cf9dfe2500f6f746d3702abba42421f3f14585a6cc",
+      "normalization": {
+        "Troll of Khazad-dum": "Troll of Khazad-d\u00fbm"
+      },
+      "mainboard_count": 60,
+      "missing_cards": [],
+      "illegal_cards": [],
+      "unimplemented_cards": [
+        "Nethergoyf"
+      ],
+      "implemented_copy_share": 0.9333,
+      "eligible": true
+    },
+    {
+      "file": "modern_06_izzet_prowess.txt",
+      "name": "Izzet Prowess",
+      "meta_rank": 6,
+      "colors": [
+        "U",
+        "R"
+      ],
+      "tags": [
+        "metagame"
+      ],
+      "deck_sha256": "47fd28e167f31c96a8ace3c61a83a7ba8e0231c104ae947327019acd5a467bc1",
+      "normalization": {},
+      "mainboard_count": 60,
+      "missing_cards": [],
+      "illegal_cards": [],
+      "unimplemented_cards": [],
+      "implemented_copy_share": 1.0,
+      "eligible": true
+    },
+    {
+      "file": "modern_07_ruby_storm.txt",
+      "name": "Ruby Storm",
+      "meta_rank": 7,
+      "colors": [
+        "R",
+        "G"
+      ],
+      "tags": [
+        "metagame"
+      ],
+      "deck_sha256": "c1d239d9ea11e44fa1e07cc0e97d1e71d993ca2db0c2bdd3e911ac8deb27bb6d",
+      "normalization": {},
+      "mainboard_count": 60,
+      "missing_cards": [],
+      "illegal_cards": [],
+      "unimplemented_cards": [],
+      "implemented_copy_share": 1.0,
+      "eligible": true
+    },
+    {
+      "file": "modern_08_jeskai_energy.txt",
+      "name": "Jeskai Energy",
+      "meta_rank": 8,
+      "colors": [
+        "U",
+        "R",
+        "W"
+      ],
+      "tags": [
+        "metagame"
+      ],
+      "deck_sha256": "5306704c885caf29e3b1f8b2297bd3a360851ba7c9aab8d9095c06fd8e8a5cc6",
+      "normalization": {},
+      "mainboard_count": 60,
+      "missing_cards": [],
+      "illegal_cards": [],
+      "unimplemented_cards": [],
+      "implemented_copy_share": 1.0,
+      "eligible": true
+    },
+    {
+      "file": "modern_09_eldrazi_tron.txt",
+      "name": "Eldrazi Tron",
+      "meta_rank": 9,
+      "colors": [
+        "B"
+      ],
+      "tags": [
+        "metagame"
+      ],
+      "deck_sha256": "ee255c7bdba29e1c67fd1c7d9ed099da1ee21360a6ac649b40370566af4846e4",
+      "normalization": {},
+      "mainboard_count": 60,
+      "missing_cards": [],
+      "illegal_cards": [],
+      "unimplemented_cards": [],
+      "implemented_copy_share": 1.0,
+      "eligible": true
+    },
+    {
+      "file": "modern_10_goryo_s_vengeance.txt",
+      "name": "Goryo's Vengeance",
+      "meta_rank": 10,
+      "colors": [
+        "W",
+        "B",
+        "U",
+        "G"
+      ],
+      "tags": [
+        "metagame"
+      ],
+      "deck_sha256": "e21ab1cc56c4646ae4c72f02f8a580d01d70c81819b3358b89da502535c7faaa",
+      "normalization": {},
+      "mainboard_count": 60,
+      "missing_cards": [],
+      "illegal_cards": [],
+      "unimplemented_cards": [],
+      "implemented_copy_share": 1.0,
+      "eligible": true
+    }
+  ]
+}

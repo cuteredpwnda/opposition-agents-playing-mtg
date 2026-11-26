@@ -1,0 +1,38 @@
+# Rakdos Midrange (Modern) - MTGGoldfish metagame snapshot
+# Source: https://www.mtggoldfish.com/metagame/modern (feed updated 2026-11-24T00:00:00Z)
+# Author: MTGGoldfish; vendored by phase-rs feed mtggoldfish-modern
+
+4 Thoughtseize
+1 Swamp
+1 Swamp
+4 Street Wraith
+1 Raucous Theater
+4 Dark Matter Manipulator
+1 Nihil Spellbomb
+1 Fatal Push
+4 Fear of Missing Out
+1 Mountain
+4 Marsh Flats
+4 Mishra's Bauble
+4 Moonshadow
+4 Lightning Bolt
+4 Nethergoyf
+4 Detective's Phoenix
+4 Bloodstained Mire
+1 Blood Moon
+3 Blood Crypt
+1 Blackcleave Cliffs
+1 Arid Mesa
+2 Unholy Heat
+2 Troll of Khazad-dûm
+
+Sideboard
+2 Ob Nixilis, the Adversary
+2 Fatal Push
+2 Glistening Deluge
+1 Nihil Spellbomb
+2 Meltdown
+1 Inquisition of Kozilek
+1 Ingot Chewer
+1 Blood Moon
+3 Obsidian Charmaw

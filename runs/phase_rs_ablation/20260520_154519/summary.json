@@ -1,0 +1,15 @@
+{
+  "games": 1,
+  "wins": 0,
+  "losses": 0,
+  "draws": 1,
+  "win_rate": 0.0,
+  "reason_counts": {
+    "stream_timeout": 1
+  },
+  "picker": "random",
+  "ai_difficulty": "VeryEasy",
+  "ai_deck": "Red Deck Wins",
+  "autostart": true,
+  "seed": 7
+}

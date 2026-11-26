@@ -1,15 +1,13 @@
 """Catalogue of LLM models used by ``OllamaAgent`` and ablation sweeps.
 
-Every entry is constrained to **<= 7 B effective parameters at inference
-time** (so a quantised 8 B model with q4 weights occupying ~5 GB still
-counts as "8B base"; we mark it explicitly).  The registry is consumed by
-``scripts/ablation_sweep.py`` to enumerate the LLM-size axis.
+The catalogue may include larger models for explicit lookup. ``list_llms``
+limits the default sweep to at most 7 B base parameters; quantisation does
+not make an 8 B model eligible for that budget.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
 
 @dataclass(frozen=True)
@@ -86,6 +84,15 @@ LLM_REGISTRY: dict[str, LLMSpec] = {
         params_billion=7.0,
         vram_gb_estimate=5.0,
     ),
+    "lfm2.5-8b": LLMSpec(
+        name="lfm2.5-8b",
+        ollama_tag="lfm2.5:8b",
+        family="liquidfoundation",
+        params_billion=8.0,
+        vram_gb_estimate=6.0,
+        context_tokens=8192,
+        notes="Liquid Foundation Model 2.5; strong reasoning at small scale. Requires Ollama 0.3+.",
+    ),
 }
 
 
@@ -98,8 +105,8 @@ def get_llm_spec(name: str) -> LLMSpec:
     return LLM_REGISTRY[name]
 
 
-def list_llms(max_vram_gb: Optional[float] = None) -> list[LLMSpec]:
-    """Return all registered LLMs that fit ``max_vram_gb`` (None = all)."""
+def list_llms(max_vram_gb: float | None = None) -> list[LLMSpec]:
+    """Return <=7 B models, optionally filtered by estimated VRAM."""
     specs = [s for s in LLM_REGISTRY.values() if s.fits_seven_billion_budget]
     if max_vram_gb is not None:
         specs = [s for s in specs if s.vram_gb_estimate <= max_vram_gb]

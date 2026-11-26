@@ -1,0 +1,102 @@
+{
+  "schema": "phase_rs_campaign_analysis_v1",
+  "campaign": "pioneer_5deck_rr_v374_20261126",
+  "games_scored": 113,
+  "excluded": {
+    "heuristic:action_rejected": 1,
+    "kl:action_cap": 3,
+    "random:action_rejected": 3
+  },
+  "model": "fractional logistic, treatment coding, ridge on non-intercept terms",
+  "factors": [
+    "arm",
+    "our_deck",
+    "opp_deck"
+  ],
+  "ridge": 1.0,
+  "bootstrap": {
+    "replicates": 400,
+    "unit": "matchup cluster"
+  },
+  "reference_arm": "random",
+  "arms": {
+    "random": {
+      "games": 37,
+      "wins": 8,
+      "draws": 0,
+      "raw_score": 0.21621621621621623,
+      "raw_wilson95": [
+        0.11386376851955585,
+        0.37195461273876906
+      ],
+      "adjusted": 0.26852421296136086,
+      "adjusted_ci95": [
+        0.15174200303409469,
+        0.36741475506574334
+      ],
+      "diff_vs_random": 0.0,
+      "diff_vs_random_ci95": [
+        0.0,
+        0.0
+      ],
+      "mean_turns": 17.756756756756758
+    },
+    "heuristic": {
+      "games": 39,
+      "wins": 14,
+      "draws": 0,
+      "raw_score": 0.358974358974359,
+      "raw_wilson95": [
+        0.22741884696491105,
+        0.515821368153105
+      ],
+      "adjusted": 0.35472662679637473,
+      "adjusted_ci95": [
+        0.22717906786783323,
+        0.47129339698428
+      ],
+      "diff_vs_random": 0.08620241383501387,
+      "diff_vs_random_ci95": [
+        -0.007075432181849065,
+        0.19312733492432274
+      ],
+      "mean_turns": 18.46153846153846
+    },
+    "kl": {
+      "games": 37,
+      "wins": 20,
+      "draws": 0,
+      "raw_score": 0.5405405405405406,
+      "raw_wilson95": [
+        0.38383779524767364,
+        0.6896167217154228
+      ],
+      "adjusted": 0.4790387049299234,
+      "adjusted_ci95": [
+        0.3403750149651664,
+        0.6065358573803502
+      ],
+      "diff_vs_random": 0.21051449196856253,
+      "diff_vs_random_ci95": [
+        0.082726220838283,
+        0.33682211634211345
+      ],
+      "mean_turns": 15.324324324324325
+    }
+  },
+  "our_deck_logit": {
+    "pioneer_01_golgari_midrange": 0.0,
+    "pioneer_02_nykthos_ramp": 0.05316238755511692,
+    "pioneer_03_azorius_control": -1.7272423334401532,
+    "pioneer_04_selesnya_company": 0.7113433081703069,
+    "pioneer_05_izzet_aggro": -0.42329046828344324
+  },
+  "opp_deck_logit": {
+    "pioneer_01_golgari_midrange": 0.0,
+    "pioneer_02_nykthos_ramp": 0.13034837490050435,
+    "pioneer_03_azorius_control": 1.3191651461753862,
+    "pioneer_04_selesnya_company": -0.8832675077731328,
+    "pioneer_05_izzet_aggro": -0.6775609071112326
+  },
+  "learning": {}
+}

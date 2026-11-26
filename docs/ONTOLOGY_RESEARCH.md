@@ -1139,9 +1139,13 @@ class OntologyQueryEngine:
 
 ## References & Further Reading
 
+Related paper and background-reading entries are maintained in
+[references.bib](../paper/references.bib); see the
+[shared-reference guide](../paper/README.md#shared-references).
+
 ### Academic Papers (Ontology Engineering)
 
-- **Noy, N. F., & McGuinness, D. L.** (2001). Ontology development 101: A guide to creating your first ontology. https://www.w3.org/TR/owl-guide/
+- **Noy, N. F., & McGuinness, D. L.** (2001). Ontology development 101: A guide to creating your first ontology. [Stanford report](https://protege.stanford.edu/publications/ontology_development/ontology101.pdf).
 - **Allemang, D., & Hendler, J.** (2011). *Semantic Web for the Working Ontologist* (2nd ed.). Morgan Kaufmann.
 - **Hitzler, P., Krötzsch, M., & Rudolph, S.** (2009). *Foundations of Semantic Web Technologies*. CRC Press.
 

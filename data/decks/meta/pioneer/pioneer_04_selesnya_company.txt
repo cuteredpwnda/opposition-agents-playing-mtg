@@ -1,0 +1,36 @@
+# Selesnya Company (Pioneer) - MTGGoldfish metagame snapshot
+# Source: https://www.mtggoldfish.com/metagame/pioneer (feed updated 2026-11-24T00:00:00Z)
+# Author: MTGGoldfish; vendored by phase-rs feed mtggoldfish-pioneer
+
+2 Abandoned Air Temple
+1 Archon of Emeria
+2 Aven Interrupter
+4 Badgermole Cub
+1 Boseiju, Who Endures
+4 Temple Garden
+4 Collected Company
+2 Razorverge Thicket
+2 Plains
+4 Enduring Innocence
+2 Plains
+4 Hushwood Verge
+2 Multiversal Passage
+4 Llanowar Elves
+3 Ouroboroid
+2 Forest
+3 Professor of Symbology
+4 Elvish Mystic
+4 Skyclave Apparition
+2 Elspeth, Storm Slayer
+1 Brushland
+3 Thalia, Guardian of Thraben
+
+Sideboard
+3 Archon of Emeria
+1 Elspeth, Storm Slayer
+1 Germination Practicum
+1 Origin of Metalbending
+1 Remorseful Cleric
+2 Seam Rip
+4 Solarium Sentry
+2 Unlicensed Hearse

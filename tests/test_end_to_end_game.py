@@ -24,7 +24,7 @@ from src.orchestrator.game_runner import GameRunner, GameConfig
 @pytest.fixture
 def game_config():
     """Standard game configuration."""
-    return GameConfig(format="standard", starting_life=20, max_turns=20)
+    return GameConfig(format="standard", starting_life=20, max_turns=20, mulligan_enabled=False)
 
 
 @pytest.fixture
@@ -99,8 +99,8 @@ async def test_game_initializes(game_config, test_deck):
     
     # Verify game state
     assert len(game_state.players) == 2
-    assert game_state.players[0].name == "Alice"
-    assert game_state.players[1].name == "Bob"
+    assert game_state.players[0].player_id == "Alice"
+    assert game_state.players[1].player_id == "Bob"
     assert all(p.life_total == 20 for p in game_state.players)
     assert len(game_state.cards) == 80  # 40 per player
     

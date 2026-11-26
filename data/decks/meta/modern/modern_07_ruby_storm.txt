@@ -1,0 +1,35 @@
+# Ruby Storm (Modern) - MTGGoldfish metagame snapshot
+# Source: https://www.mtggoldfish.com/metagame/modern (feed updated 2026-11-24T00:00:00Z)
+# Author: MTGGoldfish; vendored by phase-rs feed mtggoldfish-modern
+
+4 Pyretic Ritual
+1 Gemstone Caverns
+3 Arid Mesa
+2 Twinned Vision
+3 Reckless Impulse
+1 Stomping Ground
+4 Ruby Medallion
+4 Ral, Monsoon Mage
+3 Wish
+4 Mountain
+4 Desperate Ritual
+3 Past in Flames
+3 Wooded Foothills
+2 Valakut Awakening
+3 Wrenn's Resolve
+1 Artist's Talent
+2 Commercial District
+4 Manamorphose
+4 Hex Magic
+2 Boseiju, Who Endures
+3 Bloodstained Mire
+
+Sideboard
+1 Galvanic Relay
+1 Stormscale Scion
+2 Defense Grid
+1 Past in Flames
+4 Nature's Claim
+3 Veil of Summer
+1 Grapeshot
+2 Brotherhood's End

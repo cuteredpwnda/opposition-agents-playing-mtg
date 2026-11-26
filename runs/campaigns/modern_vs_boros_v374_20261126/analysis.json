@@ -1,0 +1,98 @@
+{
+  "schema": "phase_rs_campaign_analysis_v1",
+  "campaign": "modern_vs_boros_v374_20261126",
+  "games_scored": 54,
+  "excluded": {},
+  "model": "fractional logistic, treatment coding, ridge on non-intercept terms",
+  "factors": [
+    "arm",
+    "our_deck",
+    "opp_deck"
+  ],
+  "ridge": 1.0,
+  "bootstrap": {
+    "replicates": 400,
+    "unit": "matchup cluster"
+  },
+  "reference_arm": "random",
+  "arms": {
+    "random": {
+      "games": 18,
+      "wins": 1,
+      "draws": 0,
+      "raw_score": 0.05555555555555555,
+      "raw_wilson95": [
+        0.009874935830924525,
+        0.2575779980200754
+      ],
+      "adjusted": 0.12165799146363704,
+      "adjusted_ci95": [
+        0.06032453787092608,
+        0.1837954296500209
+      ],
+      "diff_vs_random": 0.0,
+      "diff_vs_random_ci95": [
+        0.0,
+        0.0
+      ],
+      "mean_turns": 14.777777777777779
+    },
+    "heuristic": {
+      "games": 18,
+      "wins": 7,
+      "draws": 0,
+      "raw_score": 0.3888888888888889,
+      "raw_wilson95": [
+        0.20304991926931162,
+        0.6138133141934384
+      ],
+      "adjusted": 0.3190734506744606,
+      "adjusted_ci95": [
+        0.15887212938813128,
+        0.458843524703749
+      ],
+      "diff_vs_random": 0.19741545921082354,
+      "diff_vs_random_ci95": [
+        0.06888883963560972,
+        0.3266300096107737
+      ],
+      "mean_turns": 16.055555555555557
+    },
+    "kl": {
+      "games": 18,
+      "wins": 2,
+      "draws": 0,
+      "raw_score": 0.1111111111111111,
+      "raw_wilson95": [
+        0.031018868453582787,
+        0.3280024486660421
+      ],
+      "adjusted": 0.11482411341745798,
+      "adjusted_ci95": [
+        0.037632814242914286,
+        0.21264323457636633
+      ],
+      "diff_vs_random": -0.006833878046179062,
+      "diff_vs_random_ci95": [
+        -0.08335885382475113,
+        0.083316625526153
+      ],
+      "mean_turns": 13.38888888888889
+    }
+  },
+  "our_deck_logit": {
+    "modern_01_eldrazi_ramp": 0.0,
+    "modern_03_amulet_titan": -0.6678424252682568,
+    "modern_04_affinity": 0.434770880734277,
+    "modern_05_rakdos_midrange": 0.4347708807342769,
+    "modern_06_izzet_prowess": -0.07816449655100506,
+    "modern_07_ruby_storm": -0.6678424252682568,
+    "modern_08_jeskai_energy": 0.43477088073427694,
+    "modern_09_eldrazi_tron": -0.07816449655100506,
+    "modern_10_goryo_s_vengeance": -0.6678424252682569
+  },
+  "opp_deck_logit": {
+    "modern_02_boros_energy": 0.0
+  },
+  "learning": {}
+}

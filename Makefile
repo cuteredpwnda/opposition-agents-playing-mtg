@@ -61,7 +61,8 @@ TRAIN_TARGETS := train-A train-B train-C
 endif
 
 .PHONY: help overnight smoke train-A train-B train-C ablations wm-compare \
-        tournaments pod-ablation tourney-swiss tourney-pod clean-runs
+        tournaments pod-ablation tourney-swiss tourney-pod clean-runs \
+        phase-rs-ablation phase-rs-commander phase-rs-all-formats phase-rs-traces phase-rs-training
 
 help:
 	@echo "Targets:"
@@ -70,6 +71,14 @@ help:
 	@echo "  make overnight SKIP_TRAINING=1   Skip WM training, reuse checkpoint."
 	@echo "  make train-A | train-B | train-C"
 	@echo "  make ablations wm-compare tournaments"
+	@echo ""
+	@echo "  Phase-RS Ablations (NEW — May 2026):"
+	@echo "  make phase-rs-ablation      Standard 1v1 (picker × difficulty × deck)"
+	@echo "  make phase-rs-commander     Commander pod format"
+	@echo "  make phase-rs-all-formats   Cartesian sweep (4 formats × 3 difficulties)"
+	@echo "  make phase-rs-traces N=16   Collect event-only diagnostic traces"
+	@echo "  make phase-rs-training      Native graph/model learning and held-out play"
+	@echo ""
 	@echo "  ROOT=$(ROOT)"
 
 # ----- smoke = quick, tiny -----------------------------------------------
@@ -209,3 +218,117 @@ tourney-pod:
 clean-runs:
 	@echo "Removing runs/overnight_* (use with care)"
 	rm -rf runs/overnight_*
+
+# ========================================================================
+# PHASE-RS ABLATION SUITE (NEW — May 2026)
+# ========================================================================
+# These targets run comprehensive evaluation on phase-rs engine.
+# All produce JSONL traces + structured summary.json for analysis.
+#
+# Usage:
+#   make phase-rs-ablation              # Standard 1v1 against AI difficulties
+#   make phase-rs-commander             # Commander/Brawl pod format
+#   make phase-rs-all-formats           # Cartesian sweep: format × difficulty × deck
+#   make phase-rs-traces N=16           # Collect event-only diagnostic traces
+#   make phase-rs-training              # Real observations → graph/model → held-out play
+# ========================================================================
+
+PHASE_RS_ROOT ?= runs/phase_rs_$(TS)
+
+# Phase-RS 1v1 ablations (Standard format, various picker × difficulty combos)
+phase-rs-ablation:
+	@echo "=== Phase-RS 1v1 Ablation (Standard) ==="
+	@mkdir -p $(PHASE_RS_ROOT)/1v1_standard
+	$(PY) scripts/phase_rs_rollout_sweep.py \
+	    --pickers random prefer-nonpass heuristic agent:heuristic agent:world_model \
+	    --difficulties VeryEasy Easy Medium Hard VeryHard \
+	    --ai-decks "Red Deck Wins" "Azorius Control" "Green Stompy" \
+	    --games-per-cell 5 \
+	    --autostart \
+	    --stream-timeout 30 \
+	    --max-retries 2 \
+	    --output-dir $(PHASE_RS_ROOT)/1v1_standard
+	@echo "Output: $(PHASE_RS_ROOT)/1v1_standard/"
+
+# Phase-RS Commander pod (multiplayer format)
+phase-rs-commander:
+	@echo "=== Phase-RS Commander Pod (4-player) ==="
+	@mkdir -p $(PHASE_RS_ROOT)/commander_pod
+	$(PY) scripts/phase_rs_rollout_sweep.py \
+	    --pickers random heuristic agent:heuristic \
+	    --difficulties Medium Hard \
+	    --format commander \
+	    --ai-decks $(POD_DECKS) \
+	    --games-per-cell 3 \
+	    --autostart \
+	    --stream-timeout 45 \
+	    --max-retries 2 \
+	    --output-dir $(PHASE_RS_ROOT)/commander_pod
+	@echo "Output: $(PHASE_RS_ROOT)/commander_pod/"
+
+# Phase-RS all formats (cartesian sweep across Standard, Pioneer, Modern, Commander)
+phase-rs-all-formats:
+	@echo "=== Phase-RS All Formats (Comprehensive Sweep) ==="
+	@mkdir -p $(PHASE_RS_ROOT)/all_formats
+	@echo "[1/4] Standard format..."
+	$(PY) scripts/phase_rs_rollout_sweep.py \
+	    --pickers random heuristic agent:heuristic \
+	    --difficulties Easy Medium Hard \
+	    --format standard \
+	    --ai-decks "Red Deck Wins" "Azorius Control" \
+	    --games-per-cell 3 \
+	    --autostart \
+	    --output-dir $(PHASE_RS_ROOT)/all_formats/standard
+	@echo "[2/4] Pioneer format..."
+	$(PY) scripts/phase_rs_rollout_sweep.py \
+	    --pickers random heuristic agent:heuristic \
+	    --difficulties Easy Medium Hard \
+	    --format pioneer \
+	    --ai-decks "Red Deck Wins" "Azorius Control" \
+	    --games-per-cell 3 \
+	    --autostart \
+	    --output-dir $(PHASE_RS_ROOT)/all_formats/pioneer
+	@echo "[3/4] Modern format..."
+	$(PY) scripts/phase_rs_rollout_sweep.py \
+	    --pickers random heuristic agent:heuristic \
+	    --difficulties Easy Medium Hard \
+	    --format modern \
+	    --ai-decks "Red Deck Wins" "Azorius Control" \
+	    --games-per-cell 3 \
+	    --autostart \
+	    --output-dir $(PHASE_RS_ROOT)/all_formats/modern
+	@echo "[4/4] Commander format..."
+	$(PY) scripts/phase_rs_rollout_sweep.py \
+	    --pickers random heuristic agent:heuristic \
+	    --difficulties Easy Medium \
+	    --format commander \
+	    --games-per-cell 3 \
+	    --autostart \
+	    --output-dir $(PHASE_RS_ROOT)/all_formats/commander
+	@echo "Output: $(PHASE_RS_ROOT)/all_formats/"
+
+# Collect event-only JSONL diagnostics, not reconstructable observation tensors.
+phase-rs-traces:
+	@echo "=== Collecting Phase-RS Traces (N=$(N) games) ==="
+	@mkdir -p $(PHASE_RS_ROOT)/traces
+	$(PY) scripts/collect_phase_rs_traces.py \
+	    --games $(N) \
+	    --picker agent:heuristic \
+	    --ai-difficulty Medium \
+	    --autostart \
+	    --output-dir $(PHASE_RS_ROOT)/traces
+	@echo "Output: $(PHASE_RS_ROOT)/traces/"
+	@echo "Native training records fresh observations: make phase-rs-training"
+
+# Native offline development training; no legacy trajectories or dream collection.
+phase-rs-training:
+	@echo "=== Native graph/model development learning ==="
+	@mkdir -p $(PHASE_RS_ROOT)/training
+	$(PY) -u -m scripts.run_native_learning \
+	    --train-games 64 --validation-games 16 --test-games 8 \
+	    --training-seeds 0 1 2 3 4 --epochs 20 --graph-epochs 100 \
+	    --eval-games 20 --selection sample \
+	    --output-dir $(PHASE_RS_ROOT)/training \
+	    > $(PHASE_RS_ROOT)/training/train.log 2>&1
+	@echo "Output: $(PHASE_RS_ROOT)/training/"
+	@echo "Checkpoints: training/<timestamp>/seed_<seed>/trained.pt"

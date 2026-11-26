@@ -1,0 +1,44 @@
+# Abzan Greasefang (Pioneer) - MTGGoldfish metagame snapshot
+# Source: https://www.mtggoldfish.com/metagame/pioneer (feed updated 2026-11-24T00:00:00Z)
+# Author: MTGGoldfish; vendored by phase-rs feed mtggoldfish-pioneer
+
+3 Bitter Triumph
+4 Concealed Courtyard
+4 Thoughtseize
+1 Emptiness
+4 Esika's Chariot
+4 Temple Garden
+4 Greasefang, Okiba Boss
+1 Plains
+1 Swamp
+4 Parhelion II
+4 Multiversal Passage
+4 Professor of Symbology
+4 Blooming Marsh
+1 Collective Brutality
+1 Boseiju, Who Endures
+2 Thundering Broodwagon
+2 Yathan Roadwatcher
+1 Caves of Koilos
+4 Formidable Speaker
+1 Forest
+1 Overlord of the Balemurk
+1 Brightclimb Pathway
+2 Something Worth Saving
+1 Jennifer Walters
+1 The Unicomplex
+
+Sideboard
+1 Enter the Avatar State
+1 Origin of Metalbending
+2 Abrupt Decay
+1 Pest Control
+1 Vanishing Verse
+1 True Ancestry
+1 Culling Ritual
+1 Beza, the Bounding Spring
+1 Duress
+1 Skyclave Apparition
+1 Seismic Sense
+1 Spectacular Spider-Man
+2 Unlicensed Hearse

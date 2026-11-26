@@ -1,0 +1,655 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "defaultLanguage": {
+      "default": "en",
+      "type": "string"
+    },
+    "languages": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/language"
+      }
+    },
+    "name": {
+      "type": "string"
+    },
+    "usecase": {
+      "default": "",
+      "type": "string"
+    },
+    "version": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "modules": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/module"
+      }
+    },
+    "classes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/class"
+      }
+    },
+    "relations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/relation"
+      }
+    },
+    "relationAttributes": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/relationAttribute"
+      }
+    },
+    "competencyQuestions": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/competencyQuestion"
+      }
+    },
+    "notes": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/note"
+      }
+    },
+    "examples": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/example"
+      }
+    },
+    "localizedTexts": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/localizedText"
+      }
+    },
+    "visual": {
+      "$ref": "#/$defs/visual"
+    }
+  },
+  "required": [
+    "name",
+    "classes",
+    "relations"
+  ],
+  "$defs": {
+    "language": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "label": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code"
+      ]
+    },
+    "module": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ]
+    },
+    "class": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "moduleId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "module": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "description": {
+          "default": "",
+          "type": "string"
+        },
+        "parentClassId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "attributes": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/attribute"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ]
+    },
+    "attribute": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "dataType": {
+          "default": "xsd:string",
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "rdfs:Literal",
+                "rdf:PlainLiteral",
+                "rdf:langString",
+                "rdf:XMLLiteral",
+                "xsd:string",
+                "xsd:normalizedString",
+                "xsd:token",
+                "xsd:language",
+                "xsd:Name",
+                "xsd:NCName",
+                "xsd:NMTOKEN",
+                "xsd:boolean",
+                "owl:real",
+                "owl:rational",
+                "xsd:decimal",
+                "xsd:integer",
+                "xsd:nonNegativeInteger",
+                "xsd:nonPositiveInteger",
+                "xsd:positiveInteger",
+                "xsd:negativeInteger",
+                "xsd:long",
+                "xsd:int",
+                "xsd:short",
+                "xsd:byte",
+                "xsd:unsignedLong",
+                "xsd:unsignedInt",
+                "xsd:unsignedShort",
+                "xsd:unsignedByte",
+                "xsd:double",
+                "xsd:float",
+                "xsd:hexBinary",
+                "xsd:base64Binary",
+                "xsd:anyURI",
+                "xsd:dateTime",
+                "xsd:dateTimeStamp"
+              ]
+            },
+            {
+              "type": "string",
+              "enum": [
+                "string",
+                "text",
+                "number",
+                "boolean",
+                "date"
+              ]
+            }
+          ]
+        },
+        "required": {
+          "default": false,
+          "type": "boolean"
+        },
+        "description": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ]
+    },
+    "relation": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "domainClassId": {
+          "type": "string"
+        },
+        "rangeClassId": {
+          "type": "string"
+        },
+        "description": {
+          "default": "",
+          "type": "string"
+        },
+        "inverseName": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "cardinality": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "domainClassId",
+        "rangeClassId"
+      ]
+    },
+    "relationAttribute": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "relationId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "dataType": {
+          "default": "xsd:string",
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "rdfs:Literal",
+                "rdf:PlainLiteral",
+                "rdf:langString",
+                "rdf:XMLLiteral",
+                "xsd:string",
+                "xsd:normalizedString",
+                "xsd:token",
+                "xsd:language",
+                "xsd:Name",
+                "xsd:NCName",
+                "xsd:NMTOKEN",
+                "xsd:boolean",
+                "owl:real",
+                "owl:rational",
+                "xsd:decimal",
+                "xsd:integer",
+                "xsd:nonNegativeInteger",
+                "xsd:nonPositiveInteger",
+                "xsd:positiveInteger",
+                "xsd:negativeInteger",
+                "xsd:long",
+                "xsd:int",
+                "xsd:short",
+                "xsd:byte",
+                "xsd:unsignedLong",
+                "xsd:unsignedInt",
+                "xsd:unsignedShort",
+                "xsd:unsignedByte",
+                "xsd:double",
+                "xsd:float",
+                "xsd:hexBinary",
+                "xsd:base64Binary",
+                "xsd:anyURI",
+                "xsd:dateTime",
+                "xsd:dateTimeStamp"
+              ]
+            },
+            {
+              "type": "string",
+              "enum": [
+                "string",
+                "text",
+                "number",
+                "boolean",
+                "date"
+              ]
+            }
+          ]
+        },
+        "required": {
+          "default": false,
+          "type": "boolean"
+        },
+        "description": {
+          "default": "",
+          "type": "string"
+        },
+        "sortOrder": {
+          "default": 0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "relationId",
+        "name"
+      ]
+    },
+    "competencyQuestion": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "question": {
+          "default": "",
+          "type": "string"
+        },
+        "subjectClassId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "predicateRelationId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "objectClassId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "subjectExampleId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "predicateExampleId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "objectExampleId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sortOrder": {
+          "default": 0,
+          "type": "number"
+        },
+        "modules": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/moduleRef"
+          }
+        }
+      }
+    },
+    "moduleRef": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "isCurrentModule": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name"
+      ]
+    },
+    "note": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "targetType": {
+          "type": "string",
+          "enum": [
+            "ontology",
+            "module",
+            "class",
+            "relation",
+            "attribute",
+            "relation_attribute",
+            "cq"
+          ]
+        },
+        "targetId": {
+          "type": "string"
+        },
+        "body": {
+          "default": "",
+          "type": "string"
+        },
+        "authorName": {
+          "default": "",
+          "type": "string"
+        },
+        "sortOrder": {
+          "default": 0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "targetType",
+        "targetId"
+      ]
+    },
+    "example": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "targetType": {
+          "type": "string",
+          "enum": [
+            "class",
+            "attribute",
+            "relation",
+            "relation_attribute",
+            "cq"
+          ]
+        },
+        "targetId": {
+          "type": "string"
+        },
+        "value": {
+          "default": "",
+          "type": "string"
+        },
+        "subjectLabel": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "predicateLabel": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "objectLabel": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "isInstanceCandidate": {
+          "default": false,
+          "type": "boolean"
+        },
+        "sortOrder": {
+          "default": 0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "targetType",
+        "targetId"
+      ]
+    },
+    "localizedText": {
+      "type": "object",
+      "properties": {
+        "targetType": {
+          "type": "string",
+          "enum": [
+            "ontology",
+            "module",
+            "class",
+            "relation",
+            "attribute",
+            "relation_attribute",
+            "cq"
+          ]
+        },
+        "targetId": {
+          "type": "string"
+        },
+        "fieldName": {
+          "type": "string"
+        },
+        "languageCode": {
+          "type": "string"
+        },
+        "value": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "required": [
+        "targetType",
+        "targetId",
+        "fieldName",
+        "languageCode"
+      ]
+    },
+    "visual": {
+      "type": "object",
+      "properties": {
+        "moduleLayouts": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/visualModuleLayout"
+          }
+        },
+        "classPositions": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/visualClassPosition"
+          }
+        }
+      }
+    },
+    "visualModuleLayout": {
+      "type": "object",
+      "properties": {
+        "moduleId": {
+          "type": "string"
+        },
+        "module": {
+          "type": "string"
+        },
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "width": {
+          "type": "number"
+        },
+        "height": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "module",
+        "x",
+        "y",
+        "width",
+        "height"
+      ]
+    },
+    "visualClassPosition": {
+      "type": "object",
+      "properties": {
+        "classId": {
+          "type": "string"
+        },
+        "moduleId": {
+          "type": "string"
+        },
+        "module": {
+          "type": "string"
+        },
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "classId",
+        "module",
+        "x",
+        "y"
+      ]
+    }
+  },
+  "description": "KG Workbench import contract generated from MIT-licensed DataScienceLabFHSWF/kg-workbench at 4d61c37f4e52c22c344aab004ada7622bec9fead with Zod 4.6.5. Copyright KG Workbench contributors. Source: src/features/ontology/schemas/import.ts."
+}

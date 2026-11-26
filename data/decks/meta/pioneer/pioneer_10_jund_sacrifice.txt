@@ -1,0 +1,43 @@
+# Jund Sacrifice (Pioneer) - MTGGoldfish metagame snapshot
+# Source: https://www.mtggoldfish.com/metagame/pioneer (feed updated 2026-11-24T00:00:00Z)
+# Author: MTGGoldfish; vendored by phase-rs feed mtggoldfish-pioneer
+
+4 Scavenger's Talent
+1 Obsessive Pursuit
+1 Lively Dirge
+2 Blazemire Verge
+4 Witch's Oven
+4 Cauldron Familiar
+1 Professor Dellian Fel
+2 Overgrown Tomb
+4 Blooming Marsh
+2 Thoughtseize
+1 Sokenzan, Crucible of Defiance
+3 Blackcleave Cliffs
+1 Blackcleave Cliffs
+1 Blood Crypt
+1 Blood Crypt
+4 Mana Confluence
+1 Swamp
+1 Mountain
+4 Deadly Dispute
+2 Fatal Push
+2 Mayhem Devil
+4 Biotech Specialist
+2 Eyetwitch
+1 Copperline Gorge
+3 The Sackville-Bagginses
+3 Gilded Goose
+1 Ygra, Eater of All
+
+Sideboard
+2 Fatal Push
+1 Origin of Metalbending
+2 Unlicensed Hearse
+2 Thoughtseize
+2 Pick Your Poison
+1 Decorum Dissertation
+1 The Meathook Massacre
+1 Iroh's Demonstration
+1 Abrade
+2 Leyline of the Void

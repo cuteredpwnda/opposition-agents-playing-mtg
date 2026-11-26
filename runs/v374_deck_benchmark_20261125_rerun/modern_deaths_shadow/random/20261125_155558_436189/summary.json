@@ -1,0 +1,35 @@
+{
+  "games": 5,
+  "completed_games": 5,
+  "wins": 0,
+  "losses": 5,
+  "draws": 0,
+  "incomplete_games": 0,
+  "completion_rate": 1.0,
+  "win_rate": 0.0,
+  "win_rate_ci95": [
+    0.0,
+    0.43448246478317476
+  ],
+  "reason_counts": {
+    "game_rules": 5
+  },
+  "decision_count": 1665,
+  "decision_latency_sec": {
+    "p50": 1.2500000593718141e-05,
+    "p95": 1.799999881768599e-05
+  },
+  "candidate_coverage_mean": null,
+  "shortlisted_decisions": 0,
+  "schema_version": 2,
+  "by_objective": {},
+  "picker": "random",
+  "ai_difficulty": "VeryEasy",
+  "ai_deck": null,
+  "autostart": false,
+  "seed": 1000,
+  "player_count": 2,
+  "ai_deck_files": [
+    "data/decks/benchmark/modern_azorius_control.txt"
+  ]
+}

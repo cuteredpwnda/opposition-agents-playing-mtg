@@ -1,0 +1,87 @@
+{
+  "schema": "phase_rs_campaign_v1",
+  "created": "2026-11-26T13:15:54.397519+00:00",
+  "argv": [
+    "run",
+    "--name",
+    "standard_frozen_v375b",
+    "--format",
+    "Standard",
+    "--our-decks",
+    "data/decks/meta/standard/standard_0[13579]_*.txt",
+    "--arms",
+    "kl",
+    "kl_graph_frozen",
+    "heuristic",
+    "heuristic_graph_frozen",
+    "--graph-root",
+    "runs/campaigns/standard_rr_v375b/graph",
+    "--games-per-cell",
+    "3",
+    "--workers",
+    "6",
+    "--seed",
+    "2027"
+  ],
+  "config": {
+    "command": "run",
+    "name": "standard_frozen_v375b",
+    "output_root": "runs/campaigns",
+    "format": "Standard",
+    "our_decks": "data/decks/meta/standard/standard_0[13579]_*.txt",
+    "opp_decks": null,
+    "include_mirrors": false,
+    "arms": [
+      "kl",
+      "kl_graph_frozen",
+      "heuristic",
+      "heuristic_graph_frozen"
+    ],
+    "difficulties": [
+      "VeryEasy"
+    ],
+    "games_per_cell": 3,
+    "workers": 6,
+    "uri": [
+      "ws://127.0.0.1:9474/ws"
+    ],
+    "seed": 2027,
+    "max_game_seconds": 600,
+    "cell_timeout": 3600,
+    "graph_root": "runs/campaigns/standard_rr_v375b/graph",
+    "graph_per_arm": false
+  },
+  "arms": {
+    "kl": [
+      "--picker",
+      "kl_control",
+      "--objective",
+      "kl"
+    ],
+    "kl_graph_frozen": [
+      "--picker",
+      "kl_control",
+      "--objective",
+      "kl",
+      "--experience-mode",
+      "read",
+      "--exploration",
+      "greedy"
+    ],
+    "heuristic": [
+      "--picker",
+      "heuristic"
+    ],
+    "heuristic_graph_frozen": [
+      "--picker",
+      "heuristic",
+      "--experience-mode",
+      "read",
+      "--exploration",
+      "greedy"
+    ]
+  },
+  "cells": 80,
+  "repository_commit": "0d56297857d7d58de93813743788a3c5b0909040",
+  "seed_scope": "picker seeds only; native shuffle and AI RNG are not seeded"
+}

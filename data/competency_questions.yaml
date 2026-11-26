@@ -1,0 +1,248 @@
+# Competency questions — first-class, versioned artefacts.
+#
+# Each entry drives three things at once:
+#   1. authoring   — every CQ must be answerable by declared terms;
+#   2. evaluation  — `scripts/validate_ontology.py` checks term coverage and
+#                    executes the SPARQL against the TBox;
+#   3. discovery   — the question text is surfaced as a starter template so a
+#                    user who cannot yet articulate their need has somewhere
+#                    to begin.
+#
+# `terms` follows the explicit / implicit / derived annotation convention:
+#   explicit — lexically present in the question
+#   implicit — synonymous phrasing
+#   derived  — needed to answer, but unstated in the question
+#
+# Axioms in data/ontology/mtg-ontology-v2.0.ttl carry `mtg:derivedFromCQ`
+# pointing back at these identifiers, giving CQ -> axiom provenance in both
+# directions.
+
+version: "2.0.0"
+ontology: data/ontology/mtg-ontology-v2.0.ttl
+namespaces:
+  mtg: http://purl.org/mtg/ontology#
+  mtgd: http://purl.org/mtg/ontology/decision#
+  dul: http://www.ontologydesignpatterns.org/ont/dul/DUL.owl#
+  prov: http://www.w3.org/ns/prov#
+
+questions:
+  # ---------------------------------------------------------------- cards --
+  - id: CQ-CARD-01
+    question: What is the oracle text and mana cost of a given card?
+    terms:
+      explicit: [mtg:oracleText, mtg:manaCostString]
+      derived: [mtg:CardDesign]
+    sparql: |
+      ASK { mtg:oracleText rdfs:domain mtg:CardDesign }
+
+  - id: CQ-CARD-02
+    question: Which printings realise a given card design, and in which sets?
+    terms:
+      explicit: [mtg:CardPrinting, mtg:realizes]
+      derived: [mtg:CardDesign, mtg:scryfallId]
+    sparql: |
+      ASK { mtg:realizes rdfs:range mtg:CardDesign }
+
+  - id: CQ-CARD-03
+    question: Which game objects currently correspond to a given card, and in which zone is each?
+    terms:
+      explicit: [mtg:GameObject, mtg:inZone]
+      implicit: [mtg:Zone]
+      derived: [mtg:realizes]
+
+  - id: CQ-CARD-04
+    question: What is the printed power of a creature whose power is characteristic-defining (for example `*`)?
+    terms:
+      explicit: [mtg:Power]
+      derived: [mtg:ValueRegion, mtg:regionValue, mtg:hasRegion]
+
+  - id: CQ-CARD-05
+    question: What card types does a given object have right now, and did they change during the game?
+    terms:
+      explicit: [mtg:CardType, mtg:hasCardType]
+      derived: [mtg:GameSituation]
+
+  - id: CQ-CARD-06
+    question: Which keyword abilities does a given card have?
+    terms:
+      explicit: [mtg:Keyword, mtg:hasKeyword]
+
+  - id: CQ-CARD-07
+    question: In which formats is a given card legal?
+    terms:
+      explicit: [mtg:legalIn, mtg:Format]
+
+  - id: CQ-CARD-08
+    question: What subtypes does a given card have, and which card type is each correlated to?
+    terms:
+      explicit: [mtg:Subtype, mtg:hasSubtype]
+      implicit: [mtg:ArtifactType, mtg:CreatureType, mtg:LandType]
+      derived: [mtg:CardType, mtg:hasCardType]
+    sparql: |
+      ASK { mtg:ArtifactType rdfs:subClassOf mtg:Subtype }
+
+  - id: CQ-CARD-09
+    question: Is a given land a basic land, and which basic land types does it have?
+    terms:
+      explicit: [mtg:BasicLandType]
+      derived: [mtg:LandType, mtg:hasSubtype]
+    sparql: |
+      ASK { mtg:BasicLandType rdfs:subClassOf mtg:LandType }
+
+  - id: CQ-CARD-10
+    question: Which artifact subtypes exist, and is Vehicle or Spacecraft among them?
+    terms:
+      explicit: [mtg:ArtifactType]
+      derived: [mtg:groundedIn, mtg:ComprehensiveRule]
+
+  # -------------------------------------------------------------- combos ---
+  - id: CQ-COMBO-02
+    question: Which cards are needed to assemble a given combo, and how many pieces does it require?
+    terms:
+      explicit: [mtg:Combo, mtg:hasPiece]
+      derived: [mtg:partOfCombo]
+    sparql: |
+      ASK { mtg:hasPiece owl:inverseOf mtg:partOfCombo }
+
+  - id: CQ-COMBO-03
+    question: What outcome does a given combo produce?
+    terms:
+      explicit: [mtg:producesOutcome, mtg:Outcome]
+
+  - id: CQ-COMBO-04
+    question: Which combos can be assembled from the cards currently available to me?
+    terms:
+      explicit: [mtg:Combo, mtg:hasPiece]
+      derived: [mtg:inZone, mtg:controlledBy]
+
+  # ------------------------------------------------------------ synergies --
+  - id: CQ-SYN-01
+    question: Which cards synergise with a given card according to curated knowledge?
+    terms:
+      explicit: [mtg:synergisesWith]
+
+  - id: CQ-SYN-03
+    question: Which card pairs did self-play discover to co-occur in winning positions, and how strong is the evidence?
+    terms:
+      explicit: [mtg:InducedSynergy, mtg:evidenceWeight]
+      derived: [mtg:supportCount, mtg:refutationCount, prov:wasGeneratedBy, mtg:SelfPlayRun]
+    sparql: |
+      ASK { mtg:InducedSynergy rdfs:subClassOf mtg:InducedAssertion }
+
+  - id: CQ-SYN-04
+    question: Which synergy claims are curated and which are induced?
+    terms:
+      explicit: [mtg:epistemicStatus]
+      derived: [mtg:InducedAssertion, mtg:synergisesWith]
+
+  # ----------------------------------------------------------- archetypes --
+  - id: CQ-ARCH-04
+    question: What strategy does a given decklist employ?
+    terms:
+      explicit: [mtg:Deck, mtg:deckEmploysStrategy, mtg:Strategy]
+      derived: [mtg:hasArchetype, mtg:Archetype]
+    sparql: |
+      ASK { mtg:deckEmploysStrategy owl:propertyChainAxiom ?chain }
+
+  # -------------------------------------------------------------- answers --
+  - id: CQ-ANSW-01
+    question: Which cards answer a given threat?
+    terms:
+      explicit: [mtg:counters]
+
+  - id: CQ-ANSW-05
+    question: Which cards disrupt a given combo by answering one of its pieces?
+    terms:
+      explicit: [mtg:answersCombo]
+      derived: [mtg:counters, mtg:partOfCombo]
+    sparql: |
+      ASK { mtg:answersCombo owl:propertyChainAxiom ?chain }
+
+  # ------------------------------------------------------------ mechanics --
+  - id: CQ-MECH-01
+    question: Which step precedes the declare-blockers step in a turn?
+    terms:
+      explicit: [mtg:precedes, mtg:Step]
+      derived: [mtg:Turn, mtg:hasSubEvent]
+    sparql: |
+      ASK { mtg:precedes a owl:TransitiveProperty }
+
+  - id: CQ-MECH-03
+    question: In which zone is a given object, and can it be in more than one?
+    terms:
+      explicit: [mtg:inZone, mtg:Zone]
+    sparql: |
+      ASK { mtg:inZone a owl:FunctionalProperty }
+
+  - id: CQ-MECH-08
+    question: Which game event does a given triggered ability trigger on?
+    terms:
+      explicit: [mtg:TriggeredAbility, mtg:triggersOn, mtg:GameEvent]
+
+  - id: CQ-MECH-11
+    question: Which creatures were attackers in a given combat, and which blocked them?
+    terms:
+      explicit: [mtg:AttackerRole, mtg:BlockerRole]
+      derived: [mtg:playsRole, mtg:roleInSituation, mtg:involvedIn, mtg:GameSituation]
+    sparql: |
+      ASK { mtg:involvedIn owl:propertyChainAxiom ?chain }
+
+  - id: CQ-MECH-12
+    question: What is a permanent's power after continuous effects are applied?
+    terms:
+      explicit: [mtg:Power, mtg:hasRegion]
+      derived: [mtg:ValueRegion, mtg:numericValue]
+
+  - id: CQ-MECH-13
+    question: Which keyword action does a given game action perform?
+    terms:
+      explicit: [mtg:KeywordAction, mtg:performsKeywordAction]
+      derived: [mtg:GameAction]
+
+  - id: CQ-MECH-14
+    question: Which keywords can exist as counters on a permanent?
+    terms:
+      explicit: [mtg:KeywordCounter]
+      derived: [mtg:Keyword]
+    sparql: |
+      ASK { mtg:KeywordCounter rdfs:subClassOf mtg:Keyword }
+
+  # ----------------------------------------------------------------- rules --
+  - id: CQ-RULE-01
+    question: Which Comprehensive Rules section grounds a given modelled term?
+    terms:
+      explicit: [mtg:ComprehensiveRule, mtg:groundedIn]
+      implicit: [mtg:crRule]
+
+  - id: CQ-RULE-02
+    question: What is the full text of a given rule, and which rules are nested under it?
+    terms:
+      explicit: [mtg:ruleNumber, mtg:ruleText, mtg:subRuleOf]
+      derived: [mtg:ComprehensiveRule, mtg:ruleSection]
+    sparql: |
+      ASK { mtg:subRuleOf a owl:TransitiveProperty }
+
+  # ------------------------------------------------------ opponent models --
+  - id: CQ-OPP-02
+    question: What is the agent's current belief about the opponent's hand, and how uncertain is it?
+    terms:
+      explicit: [mtgd:BeliefState, mtgd:beliefEntropy]
+
+  # -------------------------------------------------------------- agents ---
+  - id: CQ-AGENT-01
+    question: Why did an agent choose a particular action at a particular priority window?
+    terms:
+      explicit: [mtgd:Decision, mtgd:hasObjective, mtgd:ExpectedFreeEnergy]
+      derived: [mtgd:controlCost, mtgd:risk, mtgd:underBelief, mtgd:followsPolicy]
+    sparql: |
+      ASK { mtgd:Decision rdfs:subClassOf prov:Activity }
+
+  - id: CQ-AGENT-02
+    question: Under which deliberation precision was a policy executed?
+    terms:
+      explicit: [mtgd:Policy, mtgd:precision]
+
+  - id: CQ-AGENT-03
+    question: Which goals is an agent pursuing, expressed as a preference potential over game state?
+    terms:
+      explicit: [mtgd:PreferencePotential]

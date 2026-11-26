@@ -17,7 +17,7 @@ from typing import Any
 
 import numpy as np
 
-from src.engine.game_state import Action, GameState
+from src.engine_legacy.game_state import Action, GameState
 from src.knowledge.knowledge_graph import MTGKnowledgeGraph
 
 

@@ -370,6 +370,10 @@ src/agents/
 
 ## References
 
+Shared manuscript and background-reading entries are maintained in
+[references.bib](../paper/references.bib); the list below is historical design
+context, not a separate authoritative bibliography.
+
 - Ha, D. & Schmidhuber, J. (2018). "Recurrent World Models Facilitate Policy Evolution." NeurIPS 2018. https://worldmodels.github.io/
 - Silver, D. et al. (2016). "The Predictron: End-to-End Learning and Planning."
 - Schrittwieser, J. et al. (2020). "MuZero: Mastering Atari, Go, Chess and Shogi by Planning with a Learned Model."

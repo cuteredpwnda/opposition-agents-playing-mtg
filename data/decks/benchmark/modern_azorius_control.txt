@@ -1,0 +1,16 @@
+# Development benchmark: blue-white control, 60 cards.
+# Hand-authored experimental list, not a tournament-performance claim.
+Mainboard
+4 Wall of Omens
+4 Snapcaster Mage
+4 Counterspell
+4 Mana Leak
+4 Path to Exile
+4 Supreme Verdict
+4 Think Twice
+2 Detention Sphere
+2 Sphinx's Revelation
+4 Hallowed Fountain
+4 Glacial Fortress
+10 Island
+10 Plains

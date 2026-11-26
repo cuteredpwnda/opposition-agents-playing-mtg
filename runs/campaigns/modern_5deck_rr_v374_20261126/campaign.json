@@ -1,0 +1,73 @@
+{
+  "schema": "phase_rs_campaign_v1",
+  "created": "2026-11-26T14:22:16.218069+00:00",
+  "argv": [
+    "run",
+    "--name",
+    "modern_5deck_rr_v374_20261126",
+    "--format",
+    "Modern",
+    "--our-decks",
+    "data\\decks\\meta\\modern\\modern_0[1-5]_*.txt",
+    "--arms",
+    "random",
+    "heuristic",
+    "kl",
+    "--games-per-cell",
+    "2",
+    "--workers",
+    "2",
+    "--seed",
+    "2031",
+    "--max-game-seconds",
+    "300",
+    "--cell-timeout",
+    "900"
+  ],
+  "config": {
+    "command": "run",
+    "name": "modern_5deck_rr_v374_20261126",
+    "output_root": "runs/campaigns",
+    "format": "Modern",
+    "our_decks": "data\\decks\\meta\\modern\\modern_0[1-5]_*.txt",
+    "opp_decks": null,
+    "include_mirrors": false,
+    "arms": [
+      "random",
+      "heuristic",
+      "kl"
+    ],
+    "difficulties": [
+      "VeryEasy"
+    ],
+    "games_per_cell": 2,
+    "workers": 2,
+    "uri": [
+      "ws://127.0.0.1:9474/ws"
+    ],
+    "seed": 2031,
+    "max_game_seconds": 300.0,
+    "cell_timeout": 900.0,
+    "graph_root": null,
+    "graph_per_arm": false
+  },
+  "arms": {
+    "random": [
+      "--picker",
+      "random"
+    ],
+    "heuristic": [
+      "--picker",
+      "heuristic"
+    ],
+    "kl": [
+      "--picker",
+      "kl_control",
+      "--objective",
+      "kl"
+    ]
+  },
+  "cells": 60,
+  "repository_commit": "3a0c5ca7d7c157d99d48a1e05dab05cb765c451b",
+  "seed_scope": "picker seeds only; native shuffle and AI RNG are not seeded"
+}

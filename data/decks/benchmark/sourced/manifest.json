@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "source_project": "Card-Forge/forge",
+  "source_license": "GPL-3.0",
+  "source_revision": "69b963e4e519e75b3f9953ac2b57301aea6cd48b",
+  "oracle_sha256": "5f0ff20c145e3716ee3024d47e3ae35877e463e1c6e42823a1e344a07d04117f",
+  "scope": "historical factual deck selections, not current tournament recommendations",
+  "decks": [
+    {
+      "id": "forge_boros_burn",
+      "archetype": "burn",
+      "file": "forge_boros_burn.txt",
+      "source_url": "https://raw.githubusercontent.com/Card-Forge/forge/69b963e4e519e75b3f9953ac2b57301aea6cd48b/forge-gui/res/quest/world/Kaladesh/duels/82.dck",
+      "source_revision": "69b963e4e519e75b3f9953ac2b57301aea6cd48b",
+      "source_sha256": "5a2af1883d3cb800826ca87cadc51123706003e6a4e653712a790152b1f79537",
+      "deck_sha256": "7ca631ea84bb82aac2d9f1e5cf3eb100a837af7e6bd388bb276a65b3d20c413d",
+      "mainboard_count": 60,
+      "sideboard_count": 15,
+      "modern_oracle_eligible": true,
+      "native_qualification": "pending",
+      "normalization": {
+        "Ghirapur AEther Grid": "Ghirapur Aether Grid"
+      }
+    },
+    {
+      "id": "forge_atarka_burn",
+      "archetype": "burn",
+      "file": "forge_atarka_burn.txt",
+      "source_url": "https://raw.githubusercontent.com/Card-Forge/forge/69b963e4e519e75b3f9953ac2b57301aea6cd48b/forge-gui/res/quest/world/Kaladesh/duels/93.dck",
+      "source_revision": "69b963e4e519e75b3f9953ac2b57301aea6cd48b",
+      "source_sha256": "55851ef7b0b0705d378c146ff5aad6dc6e559785aaca8a21491ce81ad9f8b153",
+      "deck_sha256": "144e7e8c43332ec17a2638d602aa9701dec387267e1fd8972542623617987249",
+      "mainboard_count": 60,
+      "sideboard_count": 15,
+      "modern_oracle_eligible": true,
+      "native_qualification": "pending",
+      "normalization": {
+        "Ghirapur AEther Grid": "Ghirapur Aether Grid"
+      }
+    },
+    {
+      "id": "forge_eldrazi_tron",
+      "archetype": "big-mana",
+      "file": "forge_eldrazi_tron.txt",
+      "source_url": "https://raw.githubusercontent.com/Card-Forge/forge/69b963e4e519e75b3f9953ac2b57301aea6cd48b/forge-gui/res/quest/world/Aether_Revolt/duels/67.dck",
+      "source_revision": "69b963e4e519e75b3f9953ac2b57301aea6cd48b",
+      "source_sha256": "a4ea876ec62bae0f1ea8dab72bab213dcf3635b22c0d05545d41839f4e9e2bd2",
+      "deck_sha256": "ce5381eb89b03cde4f8b0246ff5b0fe98bcd3d6dc2ea8d4b80a3e361e706a79f",
+      "mainboard_count": 60,
+      "sideboard_count": 15,
+      "modern_oracle_eligible": true,
+      "native_qualification": "pending",
+      "normalization": {
+        "Ghirapur AEther Grid": "Ghirapur Aether Grid"
+      }
+    },
+    {
+      "id": "forge_affinity",
+      "archetype": "artifact-aggro",
+      "file": "forge_affinity.txt",
+      "source_url": "https://raw.githubusercontent.com/Card-Forge/forge/69b963e4e519e75b3f9953ac2b57301aea6cd48b/forge-gui/res/quest/world/Magic_Origins/duels/100.dck",
+      "source_revision": "69b963e4e519e75b3f9953ac2b57301aea6cd48b",
+      "source_sha256": "33fd3bc1f4a9806de2fb3e331d6ed0760daff68160f99ef2ca883a4a692d02d8",
+      "deck_sha256": "63eff46e72b19a6368b210499c0353b6a05cac32f52de2a4867c33fb12b1e60c",
+      "mainboard_count": 61,
+      "sideboard_count": 15,
+      "modern_oracle_eligible": true,
+      "native_qualification": "pending",
+      "normalization": {
+        "Ghirapur AEther Grid": "Ghirapur Aether Grid"
+      }
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+# Boros Dwarves (Standard) - MTGGoldfish metagame snapshot
+# Source: https://www.mtggoldfish.com/metagame/standard (feed updated 2026-11-24T00:00:00Z)
+# Author: MTGGoldfish; vendored by phase-rs feed mtggoldfish-standard
+
+2 Basilisk Collar
+4 Cavern of Souls
+2 Chainsaw
+4 Dragonfire Blade
+3 Dwalin, Weaponmaster
+4 Dwarven Mauler
+4 Dáin's Company
+4 Inspiring Vantage
+4 Kíli the Resourceful
+4 Lavaspur Boots
+4 Leyline Axe
+1 Plains
+4 Sacred Foundry
+2 Skateboard
+4 Sunbillow Verge
+4 The Lonely Mountain
+4 Thorin, Mountain-king
+2 Mountain
+
+Sideboard
+1 Anzrag's Rampage
+2 Bofur, Reliable Guardian
+2 Chainsaw
+2 Giant Cindermaw
+4 Rest in Peace
+2 Shattered Acolyte
+2 Sheltered by Ghosts

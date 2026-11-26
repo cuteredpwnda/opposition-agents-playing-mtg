@@ -1,0 +1,75 @@
+{
+  "schema": "phase_rs_campaign_v1",
+  "created": "2026-11-26T14:12:36.821185+00:00",
+  "argv": [
+    "run",
+    "--name",
+    "modern_vs_boros_v374_20261126",
+    "--format",
+    "Modern",
+    "--our-decks",
+    "data\\decks\\meta\\modern\\*.txt",
+    "--opp-decks",
+    "data\\decks\\meta\\modern\\modern_02_boros_energy.txt",
+    "--arms",
+    "random",
+    "heuristic",
+    "kl",
+    "--games-per-cell",
+    "2",
+    "--workers",
+    "2",
+    "--seed",
+    "2029",
+    "--max-game-seconds",
+    "300",
+    "--cell-timeout",
+    "900"
+  ],
+  "config": {
+    "command": "run",
+    "name": "modern_vs_boros_v374_20261126",
+    "output_root": "runs/campaigns",
+    "format": "Modern",
+    "our_decks": "data\\decks\\meta\\modern\\*.txt",
+    "opp_decks": "data\\decks\\meta\\modern\\modern_02_boros_energy.txt",
+    "include_mirrors": false,
+    "arms": [
+      "random",
+      "heuristic",
+      "kl"
+    ],
+    "difficulties": [
+      "VeryEasy"
+    ],
+    "games_per_cell": 2,
+    "workers": 2,
+    "uri": [
+      "ws://127.0.0.1:9474/ws"
+    ],
+    "seed": 2029,
+    "max_game_seconds": 300.0,
+    "cell_timeout": 900.0,
+    "graph_root": null,
+    "graph_per_arm": false
+  },
+  "arms": {
+    "random": [
+      "--picker",
+      "random"
+    ],
+    "heuristic": [
+      "--picker",
+      "heuristic"
+    ],
+    "kl": [
+      "--picker",
+      "kl_control",
+      "--objective",
+      "kl"
+    ]
+  },
+  "cells": 27,
+  "repository_commit": "3a0c5ca7d7c157d99d48a1e05dab05cb765c451b",
+  "seed_scope": "picker seeds only; native shuffle and AI RNG are not seeded"
+}

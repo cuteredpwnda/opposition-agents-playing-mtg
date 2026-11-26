@@ -16,8 +16,7 @@
 4 Bloodstained Mire
 4 Polluted Delta
 4 Verdant Catacombs
-2 Watery Grave
-2 Underground Sea
+4 Watery Grave
 2 Blood Crypt
-2 Bayou
+2 Overgrown Tomb
 2 Swamp

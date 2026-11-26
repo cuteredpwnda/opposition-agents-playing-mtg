@@ -1,0 +1,38 @@
+# Jund Sacrifice (Standard) - MTGGoldfish metagame snapshot
+# Source: https://www.mtggoldfish.com/metagame/standard (feed updated 2026-11-24T00:00:00Z)
+# Author: MTGGoldfish; vendored by phase-rs feed mtggoldfish-standard
+
+1 Swamp
+2 Magda, the Hoardmaster
+4 Greedy Freebooter
+4 Umbral Collar Zealot
+1 Forest
+4 Obsessive Pursuit
+4 Lively Dirge
+4 Starting Town
+1 Torch the Tower
+3 Stomping Ground
+1 Molten Collapse
+4 Gene Pollinator
+1 Mountain
+1 Smaug the Magnificent
+2 The Misty Mountains Cold
+4 Biotech Specialist
+4 Blooming Marsh
+1 Wolverine, Fierce Fighter
+4 Overgrown Tomb
+1 Requiting Hex
+4 The Sackville-Bagginses
+2 Blazemire Verge
+1 Witherbloom Charm
+2 Blood Crypt
+
+Sideboard
+2 Strategic Betrayal
+4 Duress
+2 Seedship Impact
+1 Leatherhead, Swamp Stalker
+2 Bitter Triumph
+1 Professor Dellian Fel
+1 The Ooze
+2 Fire Magic

@@ -29,7 +29,7 @@ def _card(name: str, oracle: str = "", type_line: str = "Instant") -> dict:
 
 
 def run(coro):
-    return asyncio.get_event_loop().run_until_complete(coro)
+    return asyncio.run(coro)
 
 
 # ---------------------------------------------------------------------------

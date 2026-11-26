@@ -14,6 +14,8 @@ import time
 
 import httpx
 
+from src.integrations.scryfall_bulk import bulk_download_info
+
 
 class ScryfallClient:
     """Async client for the Scryfall REST API with rate limiting."""
@@ -66,13 +68,13 @@ class ScryfallClient:
     async def get_bulk_data_url(
         self, bulk_type: str = "oracle_cards"
     ) -> str:
-        """Get download URI for a Scryfall bulk data type."""
+        """Get its source URI (legacy JSON or current gzip JSONL)."""
         await self._rate_limit()
         resp = await self.client.get(f"{self.BASE_URL}/bulk-data")
         resp.raise_for_status()
         for item in resp.json()["data"]:
             if item["type"] == bulk_type:
-                return item["download_uri"]
+                return bulk_download_info(item)[0]
         raise ValueError(f"Bulk data type '{bulk_type}' not found")
 
     async def _rate_limit(self) -> None:

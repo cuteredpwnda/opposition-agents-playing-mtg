@@ -1,0 +1,45 @@
+# 4c Control (Standard) - MTGGoldfish metagame snapshot
+# Source: https://www.mtggoldfish.com/metagame/standard (feed updated 2026-11-24T00:00:00Z)
+# Author: MTGGoldfish; vendored by phase-rs feed mtggoldfish-standard
+
+3 Blood Crypt
+3 Consult the Star Charts
+1 Cori Mountain Monastery
+2 Day of Judgment
+1 Deserted Beach
+2 Fire Magic
+3 Firebending Lesson
+2 Flashback
+1 Gloomlake Verge
+2 Godless Shrine
+4 Great Hall of the Biblioplex
+2 Hallowed Fountain
+4 Inevitable Defeat
+4 Jeskai Revelation
+2 Lightning Helix
+1 Mistrise Village
+1 Mountain
+3 No More Lies
+1 North Wind Avatar
+1 Plains
+2 Sacred Foundry
+1 Shipwreck Marsh
+3 Steam Vents
+3 Stock Up
+1 Stormcarved Coast
+1 Sundown Pass
+4 Tablet of Discovery
+1 Together as One
+1 Watery Grave
+
+Sideboard
+2 Deadly Cover-Up
+2 Disdainful Stroke
+1 Doorkeeper Thrull
+1 Emeritus of Ideation
+2 Flashfreeze
+2 Negate
+1 Outrageous Robbery
+2 Strategic Betrayal
+1 Torpor Orb
+1 Uldaros Theorix

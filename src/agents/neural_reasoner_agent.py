@@ -9,7 +9,7 @@ from typing import List, Optional
 from src.agents.base_agent import MTGAgent
 from src.agents.neural_reasoner import NeuralReasoningModule
 from src.agents.random_agent import RandomAgent
-from src.engine.game_state import GameState, Action, ActionType, Zone
+from src.engine_legacy.game_state import GameState, Action, ActionType, Zone
 
 logger = logging.getLogger(__name__)
 

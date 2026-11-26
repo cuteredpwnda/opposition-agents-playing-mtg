@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from src.agents.base_agent import MTGAgent
-from src.engine.game_state import Action, ActionType, GameState, Zone
+from src.engine_legacy.game_state import Action, ActionType, GameState, Zone
 
 logger = logging.getLogger(__name__)
 

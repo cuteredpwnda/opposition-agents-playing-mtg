@@ -1,0 +1,33 @@
+# Historical Forge deck facts; not a current metagame or strength claim.
+# Source: https://raw.githubusercontent.com/Card-Forge/forge/69b963e4e519e75b3f9953ac2b57301aea6cd48b/forge-gui/res/quest/world/Aether_Revolt/duels/67.dck
+# Source project: Card-Forge/forge, GPL-3.0; see LICENSE.forge.txt.
+Mainboard
+3 Endbringer
+2 Hangarback Walker
+4 Matter Reshaper
+4 Reality Smasher
+4 Thought-Knot Seer
+2 Ulamog, the Ceaseless Hunger
+4 Walking Ballista
+1 Basilisk Collar
+2 Batterskull
+4 Expedition Map
+3 Dismember
+3 Warping Wail
+4 Eldrazi Temple
+3 Ghost Quarter
+1 Sanctum of Ugin
+1 Sea Gate Wreckage
+4 Urza's Mine
+4 Urza's Power Plant
+4 Urza's Tower
+3 Wastes
+Sideboard
+1 All Is Dust
+3 Chalice of the Void
+1 Karn Liberated
+2 Pithing Needle
+3 Ratchet Bomb
+3 Relic of Progenitus
+1 Ugin, the Spirit Dragon
+1 Warping Wail
