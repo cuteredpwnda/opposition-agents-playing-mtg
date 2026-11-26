@@ -100,6 +100,100 @@ that every arm completes games across four archetypes. It does not rank
 objectives or show that active inference beats the baselines. Tron is the
 clearest warning sign: each baseline won 5/5, while the KL family won 6/15.
 
+### Diagnosing the native-AI gap
+
+The Standard round-robin and ladder below compare random, a hand-written
+heuristic and a hand-built KL-control planner with phase-rs's native AI;
+they do **not** compare the LLM or decision-model agents. In the 18-game
+ladder cells, KL won 8, 6 and 3 games against Easy, Medium and Hard,
+respectively. The opponent won most games in those particular conditions,
+but their confidence intervals are wide; they do not establish an overall
+ranking across decks, seats or model families.
+
+The KL picker is not a trained policy: its analytic transition model uses
+generic cast gains for most card effects and targets, and its rollouts reuse
+the root action candidates rather than generating rules-exact future legal
+actions. The native AI instead has card-aware policies and, from Medium
+onward, searches simulated engine states. Its shipped search presets use
+perfect-information states, so they can exploit hidden cards; this does not
+apply to the VeryEasy and Easy search-disabled presets. These are plausible
+mechanistic disadvantages, not measured causal contributions to the gap.
+Seat assignment is not rotated and the native RNG is not seeded.
+
+The separately trained native world-model controller is an imitation learner
+trained on collected policy actions, not a policy optimized directly for
+winning games. The earlier evaluation won 2/100 games across mixed initial
+and trained conditions, but that floor and the small development training set
+do not establish why it lost or whether more training would suffice. Chat
+and decision-model execution/strength qualifications have different
+limitations and cannot be inferred from these scripted-arm results. Isolating
+training effects requires matched initial/trained checkpoints, independent
+training seeds, held-out decks, and controls for information, compute and
+seat position.
+
+### Modern and Pioneer fixed-opponent pilots (Nov 26)
+
+Each format used nine controlled meta decks against one fixed native VeryEasy
+opponent deck, excluding the mirror: Modern Boros Energy or Pioneer Nykthos
+Ramp. Random, heuristic and KL each played two games per controlled deck
+(54 scheduled per format). The opponent and seat were not rotated, and the
+picker seed does not seed native game randomness. These are exploratory
+pilots, not cross-deck strength rankings or tests of trained models.
+
+| Format | Random wins | Heuristic wins | KL wins | Incomplete |
+|---|---:|---:|---:|---:|
+| Modern | 1/18 | 7/18 | 2/18 | 0/54 |
+| Pioneer | 1/18 | 5/17 | 6/18 | 1/54 (heuristic action rejected) |
+
+The excluded Pioneer game is not a loss or draw. The ridge-adjusted analysis
+is retained alongside the raw results, but only nine matchup clusters and two
+games per arm/matchup make uncertainty substantial; no opponent-deck effect
+can be estimated with one opposing deck. The different KL outcomes in these
+two pilots are not enough to identify a cause or generalize across formats.
+See `runs/campaigns/modern_vs_boros_v374_20261126/` and
+`runs/campaigns/pioneer_vs_nykthos_v374_20261126/`.
+
+As a trace-level diagnostic, when both `CastSpell` and `PassPriority` were
+legal, neither scripted picker passed: heuristic 0/226 and KL 0/125 such
+decisions in Modern; heuristic 0/202 and KL 0/175 in Pioneer. They sometimes
+chose a land rather than a spell. This exposes a possible timing weakness
+(for example, holding up interaction), not proof that any particular pass
+would have been better or that this explains the win-rate gap. The per-game
+decision traces used for this diagnostic remain local, under the ignored
+campaign `cells/` directories; they are not included in the result summaries.
+
+### Five-deck Modern and Pioneer round-robins (Nov 26)
+
+Each format used the first five meta decks in all 20 ordered non-mirror
+matchups against VeryEasy. Random, heuristic and KL each played two games per
+matchup: 120 scheduled games per format. The controlled seat remained fixed
+and native shuffle/AI randomness was not seeded. These scripted baselines
+do not test trained models, LLMs or decision models.
+
+| Format | Random wins | Heuristic wins | KL wins | Incomplete |
+|---|---:|---:|---:|---:|
+| Modern | 4/40 | 14/40 | 14/40 | 0/120 |
+| Pioneer | 8/37 | 14/39 | 20/37 | 7/120 |
+
+Pioneer exclusions comprise four `action_rejected` games and three KL
+`action_cap` games. All three capped KL games used Azorius Control; their
+traces show repeated `CastSpell` followed by a prompt offering only
+`CancelCast`. The reason the cast cannot be completed is not established.
+The detailed traces are local under the ignored campaign `cells/` directory.
+The runner printed `ok` for these cells because a summary existed, even
+though the subprocess exited nonzero; the raw incomplete outcomes are
+retained and excluded from the scored denominators. In particular, Pioneer
+KL completed only 37/40 games, below the 95% reliability gate.
+
+The deck-adjusted KL-minus-random estimates are +0.170 [0.032, 0.308] for
+Modern and +0.211 [0.083, 0.337] for Pioneer, using the existing ridge model
+and 400 matchup-cluster bootstrap replicates. These exploratory intervals
+do not account for the informative incomplete games, lack of seat rotation,
+or native unseeded randomness. Two games per arm/matchup are insufficient to
+settle detailed agent rankings. The separate campaign summaries and results
+are in `runs/campaigns/modern_5deck_rr_v374_20261126/` and
+`runs/campaigns/pioneer_5deck_rr_v374_20261126/`.
+
 ### Protocol-v374 native shared-graph learning campaign
 
 `scripts/run_native_learning.py` used the signed v374 server and a private data

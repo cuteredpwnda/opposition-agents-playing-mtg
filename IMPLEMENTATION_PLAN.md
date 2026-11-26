@@ -32,6 +32,13 @@ tie-breaks +0.13 [−0.01, +0.24] better (suggestive) but did nothing for KL.
 See `docs/EXPERIMENTS.md` (Agent audit, Frozen learned-graph evaluation,
 native-AI ladder).
 
+**November 26 Modern/Pioneer continuation:** fixed-opponent pilots and
+five-deck round-robins scheduled 348 games across both formats. The Pioneer
+round-robin retained four rejected actions and three KL action-cap loops,
+so its KL arm failed the 95% completion gate. These scripted-arm studies do
+not establish LLM, decision-model or trained-policy strength; details and
+diagnostic limits are in `docs/EXPERIMENTS.md`.
+
 **November 25 phase-rs update:** the checkout is pinned to
 `b42447bc3611273fb2413fa95d22a9e5ff623c01` and the bridge targets Full
 protocol v374. An official signed Windows server for this revision passed
@@ -348,6 +355,9 @@ items stay for traceability.
 
 ### Done
 
+- [x] **Modern/Pioneer exploratory campaigns and native-AI gap diagnosis
+      (Nov 26)**: 108 fixed-opponent games and 240 five-deck round-robin
+      games; recorded results and execution failures in `docs/EXPERIMENTS.md`.
 - [x] **Agent audit, shared experience graph and deck-diverse campaigns
       (Nov 26)**:
       - `action_features.py`: `ActivationGate`, `useful_mana_colours`,
@@ -1751,7 +1761,17 @@ items stay for traceability.
   +0.1.
 - Investigate the roughly 4% of games in which the engine rejected an
   action it had just listed as legal (`action_rejected`).
-- Extend the Standard campaign to the Modern and Pioneer meta sets.
+- Diagnose the Pioneer Azorius KL `CastSpell` / forced `CancelCast` loops and
+  their underlying legality/payment cause before rerunning strength studies.
+- Make the campaign runner report incomplete-game summaries as incomplete
+  instead of printing `ok` solely because a summary file exists; retain the
+  attempted games and resume semantics.
+- Extend the Modern and Pioneer pilot studies to the full 10-deck
+  round-robin after reliability repairs; model-family comparisons also remain
+  pending.
+- Diagnose the native-AI gap with matched information, compute, seat and
+  initial/trained-checkpoint controls; the current evidence does not establish
+  whether more training would close it (see `docs/EXPERIMENTS.md`).
 
 **Publication gate (Oct 5):** PR #2 is public and awaits the protected-main
 requirement of one approving reviewer with write access. Merge normally after
